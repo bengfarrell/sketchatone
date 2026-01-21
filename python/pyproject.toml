@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sketchatone"
+version = "1.0.0"
+description = "Sketchatone - Python implementation"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Ben Farrell", email = "ben@example.com"}
+]
+keywords = []
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "websockets>=11.0.0",
+    "typing-extensions>=4.0.0; python_version<'3.10'",
+    "inquirer>=3.1.0",
+    "colorama>=0.4.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/bengfarrell/sketchatone"
+Repository = "https://github.com/bengfarrell/sketchatone"
+Documentation = "https://github.com/bengfarrell/sketchatone#readme"
+Issues = "https://github.com/bengfarrell/sketchatone/issues"
+
+[project.scripts]
+# Add CLI entry points here as needed
+# sketchatone-cli = "sketchatone.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sketchatone*"]
+exclude = ["tests*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

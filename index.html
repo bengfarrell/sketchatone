@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sketchatone</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            min-height: 100vh;
+        }
+        
+        sketchatone-app {
+            display: block;
+            min-height: 100vh;
+        }
+
+        /* Ensure disabled Spectrum buttons show pointer cursor per Spectrum guidelines */
+        sp-button[disabled] {
+            cursor: pointer !important;
+        }
+    </style>
+</head>
+<body>
+    <sketchatone-app></sketchatone-app>
+    
+    <script type="module" src="/src/components/sketchatone-app/sketchatone-app.ts"></script>
+</body>
+</html>

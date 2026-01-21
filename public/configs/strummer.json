@@ -1,0 +1,12 @@
+{
+  "pressure_threshold": 0.1,
+  "velocity_scale": 1.0,
+  "notes": [],
+  "chord": "Am",
+  "lower_spread": 2,
+  "upper_spread": 2,
+  "strum_direction": "down",
+  "strum_speed": 20.0,
+  "sustain_time": 500.0,
+  "channel": 0
+}
