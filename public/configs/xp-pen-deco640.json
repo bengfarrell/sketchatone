@@ -1,0 +1,221 @@
+{
+  "name": "XP Pen Deco 640 (Multi-Mode)",
+  "manufacturer": "XP Pen",
+  "model": "Deco 640",
+  "description": "XP Pen Deco 640 with support for both driver and driverless modes",
+  "vendorId": "0x28bd",
+  "productId": "0x2904",
+  "deviceInfo": {
+    "vendor_id": 10429,
+    "product_id": 10500,
+    "product_string": "Deco 640",
+    "usage_page": 13,
+    "usage": 2,
+    "interfaces": [
+      13,
+      1,
+      65290
+    ]
+  },
+  "modes": [
+    {
+      "reportId": 2,
+      "buttonInterfaceReportId": 6,
+      "digitizerUsagePage": 13,
+      "stylusModeStatusByte": 160,
+      "capabilities": {
+        "hasButtons": true,
+        "buttonCount": 8,
+        "hasPressure": true,
+        "pressureLevels": 16384,
+        "hasTilt": true,
+        "resolution": {
+          "x": 31998,
+          "y": 17998
+        }
+      },
+      "byteCodeMappings": {
+        "x": {
+          "byteIndex": [2, 3],
+          "max": 31998,
+          "type": "multi-byte-range"
+        },
+        "y": {
+          "byteIndex": [4, 5],
+          "max": 17998,
+          "type": "multi-byte-range"
+        },
+        "pressure": {
+          "byteIndex": [6, 7],
+          "max": 16383,
+          "type": "multi-byte-range"
+        },
+        "status": {
+          "byteIndex": [1],
+          "type": "code",
+          "values": {
+            "160": { "state": "hover" },
+            "161": { "state": "contact" },
+            "162": { "state": "hover", "secondaryButtonPressed": true },
+            "163": { "state": "contact", "secondaryButtonPressed": true },
+            "164": { "state": "hover", "primaryButtonPressed": true },
+            "165": { "state": "contact", "primaryButtonPressed": true },
+            "192": { "state": "none" },
+            "240": { "state": "buttons" }
+          }
+        },
+        "tiltX": {
+          "byteIndex": [8],
+          "positiveMax": 60,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tiltY": {
+          "byteIndex": [9],
+          "positiveMax": 60,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tabletButtons": {
+          "byteIndex": [2],
+          "buttonCount": 8,
+          "type": "code",
+          "values": {
+            "1": { "button": 1 },
+            "2": { "button": 2 },
+            "4": { "button": 3 },
+            "8": { "button": 4 },
+            "16": { "button": 5 },
+            "32": { "button": 6 },
+            "64": { "button": 7 },
+            "128": { "button": 8 }
+          }
+        }
+      }
+    },
+    {
+      "reportId": 7,
+      "buttonInterfaceReportId": 6,
+      "digitizerUsagePage": 13,
+      "keyboardMappings": {
+        "description": "Keyboard shortcuts for WebHID mode when driver is active (blocks HID button interface)",
+        "buttons": [
+          {
+            "button": 1,
+            "keys": ["KeyB"]
+          },
+          {
+            "button": 2,
+            "keys": ["KeyE"]
+          },
+          {
+            "button": 3,
+            "keys": ["BracketLeft"]
+          },
+          {
+            "button": 4,
+            "keys": ["BracketRight"]
+          },
+          {
+            "button": 5,
+            "keys": ["ControlLeft", "NumpadSubtract"]
+          },
+          {
+            "button": 6,
+            "keys": ["ControlLeft", "NumpadAdd"]
+          },
+          {
+            "button": 7,
+            "keys": ["ControlLeft", "KeyZ"]
+          },
+          {
+            "button": 8,
+            "keys": ["ControlLeft", "ShiftLeft", "KeyZ"]
+          }
+        ]
+      },
+      "stylusModeStatusByte": 160,
+      "capabilities": {
+        "hasButtons": true,
+        "buttonCount": 8,
+        "hasPressure": true,
+        "pressureLevels": 16384,
+        "hasTilt": true,
+        "resolution": {
+          "x": 15999,
+          "y": 8999
+        }
+      },
+      "byteCodeMappings": {
+        "x": {
+          "byteIndex": [2, 3],
+          "max": 15999,
+          "type": "multi-byte-range"
+        },
+        "y": {
+          "byteIndex": [4, 5],
+          "max": 8999,
+          "type": "multi-byte-range"
+        },
+        "pressure": {
+          "byteIndex": [6, 7],
+          "max": 16383,
+          "type": "multi-byte-range"
+        },
+        "status": {
+          "byteIndex": [1],
+          "type": "code",
+          "values": {
+            "0": { "state": "keyboard" },
+            "1": { "state": "buttons" },
+            "3": { "state": "buttons" },
+            "160": { "state": "hover" },
+            "161": { "state": "contact" },
+            "162": { "state": "hover", "secondaryButtonPressed": true },
+            "163": { "state": "contact", "secondaryButtonPressed": true },
+            "164": { "state": "hover", "primaryButtonPressed": true },
+            "165": { "state": "contact", "primaryButtonPressed": true },
+            "192": { "state": "none" }
+          }
+        },
+        "tiltX": {
+          "byteIndex": [8],
+          "positiveMax": 60,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tiltY": {
+          "byteIndex": [9],
+          "positiveMax": 60,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tabletButtons": {
+          "byteIndex": [2],
+          "buttonCount": 8,
+          "type": "code",
+          "values": {
+            "5": { "button": 1 },
+            "8": { "button": 2 },
+            "29": { "button": 7 },
+            "47": { "button": 3 },
+            "48": { "button": 4 },
+            "86": { "button": 5 },
+            "87": { "button": 6 }
+          },
+          "statusOverrides": [
+            {
+              "scanCode": 29,
+              "statusByte": 3,
+              "buttonNumber": 8
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "note_duration": {
+    "min": 0.15,
+    "max": 1.5,
+    "multiplier": 1.0,
+    "curve": 1.0,
+    "spread": "inverse",
+    "control": "tiltXY",
+    "default": 1.0
+  },
+  "pitch_bend": {
+    "min": -1.0,
+    "max": 1.0,
+    "multiplier": 1.0,
+    "curve": 4.0,
+    "spread": "central",
+    "control": "yaxis",
+    "default": 0.0
+  },
+  "note_velocity": {
+    "min": 0,
+    "max": 127,
+    "multiplier": 1.0,
+    "curve": 4.0,
+    "spread": "direct",
+    "control": "pressure",
+    "default": 64
+  },
+  "strumming": {
+    "pluck_velocity_scale": 4.0,
+    "pressure_threshold": 0.1,
+    "midi_channel": 2,
+    "initial_notes": [],
+    "chord": "Am",
+    "upper_note_spread": 2,
+    "lower_note_spread": 2
+  },
+  "note_repeater": {
+    "active": false,
+    "pressure_multiplier": 1.0,
+    "frequency_multiplier": 1.0
+  },
+  "transpose": {
+    "active": false,
+    "semitones": 12
+  },
+  "stylus_buttons": {
+    "active": true,
+    "primary_button_action": "toggle-transpose",
+    "secondary_button_action": "toggle-repeater"
+  },
+  "strum_release": {
+    "active": false,
+    "midi_note": 38,
+    "midi_channel": null,
+    "max_duration": 0.25,
+    "velocity_multiplier": 1.0
+  },
+  "midi": {
+    "midi_output_backend": "rtmidi",
+    "midi_output_id": null,
+    "midi_input_id": null,
+    "jack_client_name": "sketchatone",
+    "jack_auto_connect": "chain0"
+  }
+}
