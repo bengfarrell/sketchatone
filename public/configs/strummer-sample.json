@@ -1,12 +1,11 @@
 {
-  "pressure_threshold": 0.1,
-  "velocity_scale": 1.0,
-  "notes": ["E2", "A2", "D3", "G3", "B3", "E4"],
-  "chord": null,
-  "lower_spread": 0,
-  "upper_spread": 0,
-  "strum_direction": "down",
-  "strum_speed": 20.0,
-  "sustain_time": 500.0,
-  "channel": 0
+  "strumming": {
+    "pressure_threshold": 0.1,
+    "pluck_velocity_scale": 4.0,
+    "initial_notes": ["E2", "A2", "D3", "G3", "B3", "E4"],
+    "chord": null,
+    "lower_note_spread": 0,
+    "upper_note_spread": 0,
+    "midi_channel": 0
+  }
 }

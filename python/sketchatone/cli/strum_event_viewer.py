@@ -27,10 +27,73 @@ from sketchatone.models.note import Note, NoteObject
 # Import blankslate's TabletReaderBase
 try:
     from blankslate.cli.tablet_reader_base import TabletReaderBase, Colors, colored
+    from blankslate.utils.finddevice import find_config_for_device
 except ImportError:
     print("Error: blankslate package not found.")
     print("Make sure blankslate is installed: pip install -e ../blankslate/python")
     sys.exit(1)
+
+# Default config directory (relative to python/ directory)
+DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs')
+
+
+def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFIG_DIR) -> str:
+    """
+    Resolve config path - if it's a directory or None, search for matching config.
+
+    Args:
+        config_arg: Config path argument (file, directory, or None)
+        default_dir: Default directory to search if config_arg is None
+
+    Returns:
+        Resolved config file path
+
+    Raises:
+        SystemExit: If no matching config is found
+    """
+    # If no config provided, use default directory
+    if config_arg is None:
+        search_dir = os.path.abspath(default_dir)
+        found_config = find_config_for_device(search_dir)
+        if found_config:
+            return found_config
+        else:
+            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
+            sys.exit(1)
+
+    # If it's a file with .json extension, use it directly
+    if config_arg.endswith('.json'):
+        if not os.path.exists(config_arg):
+            print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
+            sys.exit(1)
+        return config_arg
+
+    config_path = os.path.abspath(config_arg)
+
+    # If it's a directory, search for matching config
+    if os.path.isdir(config_path):
+        found_config = find_config_for_device(config_path)
+        if found_config:
+            return found_config
+        else:
+            print(colored(f'Error: No matching tablet config found in: {config_path}', Colors.RED))
+            sys.exit(1)
+
+    # If path doesn't exist and has no extension, try default directory
+    if not os.path.exists(config_path) and not os.path.splitext(config_arg)[1]:
+        search_dir = os.path.abspath(default_dir)
+        found_config = find_config_for_device(search_dir)
+        if found_config:
+            return found_config
+        else:
+            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
+            sys.exit(1)
+
+    # Otherwise treat as file path
+    if not os.path.exists(config_arg):
+        print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
+        sys.exit(1)
+    return config_arg
 
 
 def print_strummer_info(strummer_config: StrummerConfig):
@@ -385,6 +448,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+    # Auto-detect tablet from default config directory
+    python -m sketchatone.cli.strum_event_viewer
+
+    # Auto-detect tablet from specific directory
+    python -m sketchatone.cli.strum_event_viewer -c ./configs/
+
     # Basic usage with tablet config
     python -m sketchatone.cli.strum_event_viewer -c tablet-config.json
 
@@ -401,8 +470,7 @@ Examples:
 
     parser.add_argument(
         '-c', '--config',
-        required=True,
-        help='Path to tablet config JSON file'
+        help='Path to tablet config JSON file or directory (auto-detects from ../public/configs if not provided)'
     )
 
     parser.add_argument(
@@ -424,10 +492,8 @@ Examples:
 
     args = parser.parse_args()
 
-    # Validate config file exists
-    if not os.path.exists(args.config):
-        print(colored(f'Error: Config file not found: {args.config}', Colors.RED))
-        sys.exit(1)
+    # Resolve tablet config path (handles auto-detection from directory)
+    config_path = resolve_config_path(args.config)
 
     if args.strummer_config and not os.path.exists(args.strummer_config):
         print(colored(f'Error: Strummer config file not found: {args.strummer_config}', Colors.RED))
@@ -436,7 +502,7 @@ Examples:
     viewer = None
     try:
         viewer = StrumEventViewer(
-            config_path=args.config,
+            config_path=config_path,
             mock=args.mock,
             strummer_config_path=args.strummer_config,
             live_mode=args.live

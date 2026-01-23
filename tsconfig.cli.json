@@ -16,7 +16,8 @@
     "src/core/**/*.ts",
     "src/utils/**/*.ts",
     "src/models/**/*.ts",
-    "src/types/**/*.ts"
+    "src/types/**/*.ts",
+    "src/midi/**/*.ts"
   ],
   "exclude": [
     "node_modules",

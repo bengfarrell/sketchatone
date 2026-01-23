@@ -34,7 +34,8 @@
     }
   },
   "bin": {
-    "strum-events": "./dist/cli/strum-event-viewer.js"
+    "strum-events": "./dist/cli/strum-event-viewer.js",
+    "midi-strummer": "./dist/cli/midi-strummer.js"
   },
   "files": [
     "dist",
@@ -62,10 +63,13 @@
     "test:spectrumizer:ci": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --reporter=line",
     "test:spectrumizer:ui": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --ui",
     "test:spectrumizer:headed": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --headed",
-    "test:spectrumizer:debug": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --debug"
+    "test:spectrumizer:debug": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --debug",
+    "strum-events": "node dist/cli/strum-event-viewer.js",
+    "midi-strummer": "node dist/cli/midi-strummer.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@julusian/midi": "^3.6.1",
     "@spectrum-web-components/bundle": "^1.8.0",
     "blankslate": "file:../blankslate",
     "chalk": "^5.3.0",

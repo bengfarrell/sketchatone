@@ -128,18 +128,21 @@ describe('StrummerConfig', () => {
   it('should create default config', () => {
     const config = new StrummerConfig();
     expect(config.pressureThreshold).toBe(0.1);
-    expect(config.velocityScale).toBe(1.0);
-    expect(config.notes).toEqual(['C4', 'E4', 'G4', 'C5']);
+    expect(config.velocityScale).toBe(4.0); // New default pluckVelocityScale
+    expect(config.notes).toEqual(['C4', 'E4', 'G4']); // New default notes
   });
 
   it('should create config from partial data', () => {
-    const config = new StrummerConfig({
-      pressureThreshold: 0.2,
-      notes: ['D4', 'F#4', 'A4'],
+    // Use the new nested format for creating configs
+    const config = StrummerConfig.fromDict({
+      strumming: {
+        pressureThreshold: 0.2,
+        initialNotes: ['D4', 'F#4', 'A4'],
+      },
     });
     expect(config.pressureThreshold).toBe(0.2);
     expect(config.notes).toEqual(['D4', 'F#4', 'A4']);
-    expect(config.velocityScale).toBe(1.0); // default
+    expect(config.velocityScale).toBe(4.0); // default pluckVelocityScale
   });
 
   it('should load config from JSON file', () => {
@@ -147,10 +150,12 @@ describe('StrummerConfig', () => {
     const configPath = path.join(tmpDir, 'strummer.json');
 
     const configData = {
-      pressure_threshold: 0.15,
-      velocity_scale: 0.8,
-      notes: ['E4', 'G#4', 'B4'],
-      chord: 'E',
+      strumming: {
+        pressure_threshold: 0.15,
+        pluck_velocity_scale: 0.8,
+        initial_notes: ['E4', 'G#4', 'B4'],
+        chord: 'E',
+      },
     };
     fs.writeFileSync(configPath, JSON.stringify(configData));
 

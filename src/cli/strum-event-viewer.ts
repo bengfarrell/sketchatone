@@ -6,9 +6,11 @@
  * Extends blankslate's TabletReaderBase for direct device access.
  *
  * Usage:
- *   npx strum-events --config path/to/config.json
- *   npx strum-events --config path/to/config.json --strummer-config path/to/strummer.json
- *   npx strum-events --config path/to/config.json --mock
+ *   npm run strum-events
+ *   npm run strum-events -- --config ./configs/
+ *   npm run strum-events -- --config path/to/config.json
+ *   npm run strum-events -- --config path/to/config.json --strummer-config path/to/strummer.json
+ *   npm run strum-events -- --config path/to/config.json --mock
  */
 
 import chalk from 'chalk';
@@ -17,7 +19,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Import from blankslate CLI modules
-import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent } from 'blankslate/cli/tablet-reader-base.js';
+import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath } from 'blankslate/cli/tablet-reader-base.js';
+
+// Default config directory
+const DEFAULT_CONFIG_DIR = './public/configs';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { StrummerConfig } from '../models/strummer-config.js';
 import { Note, type NoteObject } from '../models/note.js';
@@ -247,6 +252,7 @@ class StrumEventViewer extends TabletReaderBase {
   private lastEvent: StrummerEvent | null = null;
   private lastLiveUpdate = 0;
   private strummerConfig: StrummerConfig;
+  private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
   strummer: Strummer;
 
   constructor(
@@ -357,8 +363,21 @@ class StrumEventViewer extends TabletReaderBase {
       this.startMockGestureCycle();
     }
 
+    // Keep the process alive (HID reader alone doesn't keep Node.js event loop active)
+    this.keepAliveInterval = setInterval(() => {}, 1000);
+
     // Set up shutdown handlers
     this.setupShutdownHandlers();
+  }
+
+  async stop(): Promise<void> {
+    // Clear keep-alive interval
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+
+    await super.stop();
   }
 }
 
@@ -368,7 +387,7 @@ async function main(): Promise<void> {
   program
     .name('strum-events')
     .description('View strum events from tablet input')
-    .requiredOption('-c, --config <path>', 'Path to tablet config JSON file')
+    .option('-c, --config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
     .option('-s, --strummer-config <path>', 'Path to strummer config JSON file')
     .option('-l, --live', 'Live dashboard mode (updates in place)')
     .option('-m, --mock', 'Use mock data instead of real device')
@@ -376,35 +395,37 @@ async function main(): Promise<void> {
       'after',
       `
 Examples:
+  # Auto-detect tablet from default config directory
+  npm run strum-events
+
+  # Auto-detect tablet from specific directory
+  npm run strum-events -- -c ./configs/
+
   # Basic usage with tablet config
-  npx strum-events -c tablet-config.json
+  npm run strum-events -- -c tablet-config.json
 
   # With custom strummer config
-  npx strum-events -c tablet-config.json -s strummer-config.json
+  npm run strum-events -- -c tablet-config.json -s strummer-config.json
 
   # Live dashboard mode
-  npx strum-events -c tablet-config.json --live
+  npm run strum-events -- -c tablet-config.json --live
 
   # Use mock data for testing
-  npx strum-events -c tablet-config.json --mock
+  npm run strum-events -- -c tablet-config.json --mock
 `
     );
 
   program.parse();
 
   const options = program.opts<{
-    config: string;
+    config?: string;
     strummerConfig?: string;
     live?: boolean;
     mock?: boolean;
   }>();
 
-  // Validate config file exists
-  const configPath = path.resolve(options.config);
-  if (!fs.existsSync(configPath)) {
-    console.error(chalk.red(`Error: Config file not found: ${configPath}`));
-    process.exit(1);
-  }
+  // Resolve tablet config path (handles auto-detection from directory)
+  const configPath = resolveConfigPath(options.config ?? DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_DIR);
 
   if (options.strummerConfig) {
     const strummerConfigPath = path.resolve(options.strummerConfig);

@@ -95,27 +95,25 @@ class TestFormatNote:
 
 class TestPrintStrummerInfo:
     """Tests for the print_strummer_info function"""
-    
+
     def test_print_strummer_info_basic(self, capsys):
         """Test printing basic strummer info"""
-        config = StrummerConfig(
-            pressure_threshold=0.15,
-            notes=['C4', 'E4', 'G4']
-        )
+        config = StrummerConfig()
+        config.strumming.pressure_threshold = 0.15
+        config.strumming.initial_notes = ['C4', 'E4', 'G4']
         print_strummer_info(config)
         captured = capsys.readouterr()
         assert 'Pressure Threshold' in captured.out
         assert '0.15' in captured.out
         assert 'Notes' in captured.out
         assert 'C4' in captured.out
-    
+
     def test_print_strummer_info_with_chord(self, capsys):
         """Test printing strummer info with chord"""
-        config = StrummerConfig(
-            pressure_threshold=0.1,
-            notes=['C4', 'E4', 'G4'],
-            chord='Cmaj'
-        )
+        config = StrummerConfig()
+        config.strumming.pressure_threshold = 0.1
+        config.strumming.initial_notes = ['C4', 'E4', 'G4']
+        config.strumming.chord = 'Cmaj'
         print_strummer_info(config)
         captured = capsys.readouterr()
         assert 'Chord' in captured.out
@@ -199,10 +197,12 @@ class TestStrumEventViewerInit:
     def strummer_config_file(self, tmp_path):
         """Create a temporary strummer config file"""
         config = {
-            "pressure_threshold": 0.2,
-            "velocity_scale": 0.8,
-            "notes": ["D4", "F#4", "A4", "D5"],
-            "chord": None
+            "strumming": {
+                "pressure_threshold": 0.2,
+                "pluck_velocity_scale": 0.8,
+                "initial_notes": ["D4", "F#4", "A4", "D5"],
+                "chord": None
+            }
         }
         config_path = tmp_path / "strummer_config.json"
         with open(config_path, 'w') as f:
@@ -221,7 +221,7 @@ class TestStrumEventViewerInit:
         
         # Should use default strummer config
         assert viewer.strummer_config.pressure_threshold == 0.1
-        assert viewer.strummer_config.notes == ["C4", "E4", "G4", "C5"]
+        assert viewer.strummer_config.notes == ["C4", "E4", "G4"]  # New default
         assert viewer.live_mode is False
     
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
@@ -296,44 +296,44 @@ class TestStrumEventViewerSetupNotes:
     def test_setup_notes_from_explicit_list(self, mock_base_init, tablet_config_file):
         """Test setting up notes from explicit note list"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
             mock=True
         )
-        
-        # Default config has ["C4", "E4", "G4", "C5"]
-        assert len(viewer.strummer.notes) == 4
+
+        # Default config has ["C4", "E4", "G4"] (new default)
+        assert len(viewer.strummer.notes) == 3
         assert viewer.strummer.notes[0].notation == 'C'
         assert viewer.strummer.notes[0].octave == 4
         assert viewer.strummer.notes[1].notation == 'E'
         assert viewer.strummer.notes[2].notation == 'G'
-        assert viewer.strummer.notes[3].notation == 'C'
-        assert viewer.strummer.notes[3].octave == 5
     
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     def test_setup_notes_from_chord(self, mock_base_init, tablet_config_file, tmp_path):
         """Test setting up notes from chord notation"""
         mock_base_init.return_value = None
-        
+
         # Create config with chord
         strummer_config = {
-            "pressure_threshold": 0.1,
-            "notes": [],
-            "chord": "Am",
-            "lower_spread": 0,
-            "upper_spread": 0
+            "strumming": {
+                "pressure_threshold": 0.1,
+                "initial_notes": [],
+                "chord": "Am",
+                "lower_note_spread": 0,
+                "upper_note_spread": 0
+            }
         }
         strummer_config_path = tmp_path / "strummer_chord.json"
         with open(strummer_config_path, 'w') as f:
             json.dump(strummer_config, f)
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
             mock=True,
             strummer_config_path=str(strummer_config_path)
         )
-        
+
         # Am chord should have A, C, E notes
         assert len(viewer.strummer.notes) >= 3
         note_names = [n.notation for n in viewer.strummer.notes]
