@@ -259,3 +259,138 @@ export class StrumReleaseConfig implements StrumReleaseConfigData {
     };
   }
 }
+
+/**
+ * Chord progression presets
+ * Maps preset names to arrays of chord names for tablet buttons
+ */
+export const CHORD_PROGRESSION_PRESETS: Record<string, string[]> = {
+  'c-major-pop': ['C', 'G', 'Am', 'F'], // I-V-vi-IV
+  'c-major-50s': ['C', 'Am', 'F', 'G'], // I-vi-IV-V
+  'g-major-pop': ['G', 'D', 'Em', 'C'], // I-V-vi-IV in G
+  'd-major-pop': ['D', 'A', 'Bm', 'G'], // I-V-vi-IV in D
+  'a-major-pop': ['A', 'E', 'F#m', 'D'], // I-V-vi-IV in A
+  'e-major-pop': ['E', 'B', 'C#m', 'A'], // I-V-vi-IV in E
+  'f-major-pop': ['F', 'C', 'Dm', 'Bb'], // I-V-vi-IV in F
+  'am-minor': ['Am', 'F', 'C', 'G'], // i-VI-III-VII (Aeolian)
+  'em-minor': ['Em', 'C', 'G', 'D'], // i-VI-III-VII in Em
+  'dm-minor': ['Dm', 'Bb', 'F', 'C'], // i-VI-III-VII in Dm
+};
+
+/**
+ * Get list of available preset names
+ */
+export function getChordProgressionPresetNames(): string[] {
+  return Object.keys(CHORD_PROGRESSION_PRESETS);
+}
+
+/**
+ * Tablet buttons configuration data
+ */
+export interface TabletButtonsConfigData {
+  /** Preset name (e.g., 'c-major-pop') or 'custom' for custom chords */
+  preset: string;
+  /** Chord names for each button (derived from preset or custom) */
+  chords: string[];
+  /** Currently active chord index (0-based) */
+  currentIndex: number;
+}
+
+/**
+ * Default tablet buttons configuration
+ */
+export const DEFAULT_TABLET_BUTTONS_CONFIG: TabletButtonsConfigData = {
+  preset: 'c-major-pop',
+  chords: ['C', 'G', 'Am', 'F'],
+  currentIndex: 0,
+};
+
+/**
+ * Configuration for tablet button chord progression.
+ * Maps tablet buttons to chords in a progression.
+ */
+export class TabletButtonsConfig implements TabletButtonsConfigData {
+  preset: string;
+  chords: string[];
+  currentIndex: number;
+
+  constructor(data: Partial<TabletButtonsConfigData> = {}) {
+    this.preset = data.preset ?? DEFAULT_TABLET_BUTTONS_CONFIG.preset;
+    // If preset is provided and valid, use its chords; otherwise use provided chords or default
+    if (this.preset !== 'custom' && CHORD_PROGRESSION_PRESETS[this.preset]) {
+      this.chords = CHORD_PROGRESSION_PRESETS[this.preset];
+    } else {
+      this.chords = data.chords ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
+    }
+    this.currentIndex = data.currentIndex ?? DEFAULT_TABLET_BUTTONS_CONFIG.currentIndex;
+  }
+
+  /**
+   * Create from dictionary or preset string
+   * Supports both object format and simple string preset format
+   */
+  static fromDict(data: Record<string, unknown> | string): TabletButtonsConfig {
+    // Handle simple string preset format (e.g., "c-major-pop")
+    if (typeof data === 'string') {
+      const preset = data;
+      const chords = CHORD_PROGRESSION_PRESETS[preset] ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
+      return new TabletButtonsConfig({
+        preset,
+        chords,
+        currentIndex: 0,
+      });
+    }
+
+    // Handle object format
+    return new TabletButtonsConfig({
+      preset: data.preset as string | undefined,
+      chords: data.chords as string[] | undefined,
+      currentIndex: (data.current_index ?? data.currentIndex) as number | undefined,
+    });
+  }
+
+  /**
+   * Convert to dictionary for JSON serialization
+   */
+  toDict(): TabletButtonsConfigData {
+    return {
+      preset: this.preset,
+      chords: this.chords,
+      currentIndex: this.currentIndex,
+    };
+  }
+
+  /**
+   * Get the currently active chord
+   */
+  getCurrentChord(): string {
+    return this.chords[this.currentIndex] ?? this.chords[0];
+  }
+
+  /**
+   * Advance to the next chord in the progression
+   */
+  nextChord(): string {
+    this.currentIndex = (this.currentIndex + 1) % this.chords.length;
+    return this.getCurrentChord();
+  }
+
+  /**
+   * Go to the previous chord in the progression
+   */
+  prevChord(): string {
+    this.currentIndex = (this.currentIndex - 1 + this.chords.length) % this.chords.length;
+    return this.getCurrentChord();
+  }
+
+  /**
+   * Set chord by button index (1-based, like tablet buttons)
+   */
+  setChordByButton(buttonNumber: number): string {
+    const index = buttonNumber - 1;
+    if (index >= 0 && index < this.chords.length) {
+      this.currentIndex = index;
+    }
+    return this.getCurrentChord();
+  }
+}

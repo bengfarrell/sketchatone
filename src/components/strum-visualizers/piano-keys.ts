@@ -1,0 +1,177 @@
+/**
+ * Piano Keys Component
+ * Visual piano keyboard display
+ * Copied from midi-strummer project (originally from piano-keys-webcomponent-v0)
+ */
+
+const Notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"];
+
+export interface Note {
+    name: string;
+    octave: number;
+}
+
+function* noteGenerator(startNote: string): IterableIterator<Note> {
+    const pivot = Notes.indexOf(startNote);
+    const layout = [...Notes.slice(pivot, Notes.length), ...Notes.slice(0, pivot)];
+    let octave = 0;
+    let first = true;
+    while (true) {
+        for (let i = 0; i < layout.length; i++) {
+            const note = layout[i];
+            if (note === "C" && !first) {
+                octave = octave + 1;
+            }
+            yield { name: note, octave: octave };
+            first = false;
+        }
+    }
+}
+
+const NaturalWidth = 10;
+const SharpWidth = 6;
+
+function sharpKey(note: string, octave: number, offset: number) {
+    return `<rect class="sharp-note note" data-note="${note}" data-octave="${octave}" x=${offset} y=1></rect>`;
+}
+
+function naturalKey(note: string, octave: number, offset: number) {
+    return `<rect class="natural-note note" data-note="${note}" data-octave="${octave}" x=${offset} y=1></rect>`;
+}
+
+export interface PianoElement extends HTMLElement {
+    setNoteDown(note: string, octave: number, secondary?: boolean): void;
+    setNoteUp(note: string, octave: number): void;
+}
+
+interface PianoAttributes {
+    keyCount: number;
+    keyboardLayout: string;
+    readOnly: boolean;
+}
+
+class Piano extends HTMLElement implements PianoElement {
+    private root: ShadowRoot;
+
+    static get observedAttributes() {
+        return ["key-count", "keyboard-layout", "read-only"];
+    }
+
+    get config(): PianoAttributes {
+        return {
+            keyCount: parseInt(this.getAttribute("key-count") || "88"),
+            keyboardLayout: this.getAttribute("keyboard-layout") || "A",
+            readOnly: this.hasAttribute("read-only"),
+        };
+    }
+
+    constructor() {
+        super();
+        this.root = this.attachShadow({ mode: "open" });
+        this.root.innerHTML = `<style>${this.getCss()}</style><div>${this.getNoteSvg()}`;
+    }
+
+    attributeChangedCallback() {
+        this.root.innerHTML = `<style>${this.getCss()}</style><div>${this.getNoteSvg()}</div>`;
+    }
+
+    setNoteDown(note: string, octave: number, secondary?: boolean) {
+        const elem = this.root.querySelector(keySelector(note, octave));
+        if (elem) {
+            elem.classList.add("depressed");
+            if (secondary) elem.classList.add("secondary");
+            elem.setAttribute("data-depressed", "data-depressed");
+        }
+    }
+
+    setNoteUp(note: string, octave: number) {
+        const elem = this.root.querySelector(keySelector(note, octave));
+        if (elem) {
+            elem.classList.remove("depressed");
+            elem.classList.remove("secondary");
+            elem.removeAttribute("data-depressed");
+        }
+    }
+
+    getNoteSvg() {
+        const noteCount = this.config.keyCount;
+        const generator = noteGenerator(this.config.keyboardLayout);
+        const notes = new Array(noteCount).fill(1).map(() => generator.next().value);
+        const naturalKeys = notes.filter((note) => !note.name.includes("#")).length;
+        const lastKeySharp = notes[notes.length - 1].name.includes("#");
+        const totalWidth = (naturalKeys * NaturalWidth) + (lastKeySharp ? SharpWidth / 2 : 0) + 2;
+        return `<svg viewBox="0 0 ${totalWidth} 52" version="1.1" xmlns="http://www.w3.org/2000/svg">
+            ${this.getKeysForNotes(notes)}
+        </svg>`;
+    }
+
+    getKeysForNotes(notes: Note[]) {
+        let totalOffset = -NaturalWidth + 1;
+        const offsets = notes.map((note: Note) => {
+            const isSharp = note.name.includes("#");
+            let thisOffset = 0;
+            if (isSharp) {
+                thisOffset = totalOffset + 7;
+            } else {
+                totalOffset = totalOffset + NaturalWidth;
+                thisOffset = totalOffset;
+            }
+            return { note: note.name, octave: note.octave, offset: thisOffset };
+        });
+
+        const naturalKeys = offsets.filter((pos) => !pos.note.includes("#"))
+            .map((pos) => naturalKey(pos.note, pos.octave, pos.offset));
+        const sharpKeys = offsets.filter((pos) => pos.note.includes("#"))
+            .map((pos) => sharpKey(pos.note, pos.octave, pos.offset));
+
+        return `<g>${naturalKeys}${sharpKeys}</g>`;
+    }
+
+    getCss() {
+        return `
+        :host {
+            --natural-key-color: #FFFFFF; 
+            --natural-key-outline-color: #555555;
+            --sharp-key-color: #555555;
+            --sharp-key-outline-color: #555555;
+            --depressed-key-color: #808080;
+            --depressed-secondary-key-color: #a9a9a9;
+            --depressed-key-transform: scale(1, 0.95);
+        }
+        :host { display: block; }
+        .natural-note {
+          stroke: var(--natural-key-outline-color);
+          fill: var(--natural-key-color);
+          width: ${NaturalWidth}px;
+          height: 50px;
+        }
+        .sharp-note {
+          stroke: var(--sharp-key-outline-color);
+          fill: var(--sharp-key-color);
+          width: ${SharpWidth}px;
+          height: 30px;
+        }
+        .depressed {
+          fill: var(--depressed-key-color);
+          transform: var(--depressed-key-transform);
+        }
+        .depressed.secondary {
+          fill: var(--depressed-secondary-key-color);
+          transform: var(--depressed-key-transform);
+        }
+        `;
+    }
+}
+
+const keySelector = (note: string, octave: number) => `[data-note="${note}"][data-octave="${octave}"]`;
+
+// Register custom element with HMR-safe check
+if (!customElements.get('piano-keys')) {
+    customElements.define('piano-keys', Piano);
+}
+
+declare global {
+    interface HTMLElementTagNameMap {
+        'piano-keys': PianoElement;
+    }
+}

@@ -15,7 +15,8 @@ from .strummer_features import (
     NoteRepeaterConfig,
     TransposeConfig,
     StylusButtonsConfig,
-    StrumReleaseConfig
+    StrumReleaseConfig,
+    TabletButtonsConfig
 )
 
 
@@ -95,6 +96,7 @@ class StrummerConfig:
     transpose: TransposeConfig = field(default_factory=TransposeConfig)
     stylus_buttons: StylusButtonsConfig = field(default_factory=StylusButtonsConfig)
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
+    tablet_buttons: TabletButtonsConfig = field(default_factory=TabletButtonsConfig)
 
     # Convenience properties for backward compatibility
     @property
@@ -138,6 +140,7 @@ class StrummerConfig:
         transpose_data = data.get('transpose', {})
         stylus_buttons_data = data.get('stylus_buttons', data.get('stylusButtons', {}))
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
+        tablet_buttons_data = data.get('tablet_buttons', data.get('tabletButtons'))
 
         return cls(
             note_duration=ParameterMapping.from_dict(note_duration_data) if note_duration_data else default_note_duration(),
@@ -147,7 +150,8 @@ class StrummerConfig:
             note_repeater=NoteRepeaterConfig.from_dict(note_repeater_data) if note_repeater_data else NoteRepeaterConfig(),
             transpose=TransposeConfig.from_dict(transpose_data) if transpose_data else TransposeConfig(),
             stylus_buttons=StylusButtonsConfig.from_dict(stylus_buttons_data) if stylus_buttons_data else StylusButtonsConfig(),
-            strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig()
+            strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
+            tablet_buttons=TabletButtonsConfig.from_dict(tablet_buttons_data)
         )
 
     @classmethod
@@ -167,7 +171,8 @@ class StrummerConfig:
             'note_repeater': self.note_repeater.to_dict(),
             'transpose': self.transpose.to_dict(),
             'stylus_buttons': self.stylus_buttons.to_dict(),
-            'strum_release': self.strum_release.to_dict()
+            'strum_release': self.strum_release.to_dict(),
+            'tablet_buttons': self.tablet_buttons.to_dict()
         }
 
     def to_json_file(self, path: str) -> None:

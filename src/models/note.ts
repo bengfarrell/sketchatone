@@ -256,7 +256,10 @@ export class Note {
       );
     }
 
-    return [...lower, ...notes, ...upper];
+    // Combine and sort by pitch (MIDI note number)
+    const combined = [...lower, ...notes, ...upper];
+    combined.sort((a, b) => Note.noteToMidi(a) - Note.noteToMidi(b));
+    return combined;
   }
 
   /**

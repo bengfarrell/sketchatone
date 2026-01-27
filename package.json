@@ -35,7 +35,8 @@
   },
   "bin": {
     "strum-events": "./dist/cli/strum-event-viewer.js",
-    "midi-strummer": "./dist/cli/midi-strummer.js"
+    "midi-strummer": "./dist/cli/midi-strummer.js",
+    "strummer-websocket": "./dist/cli/strummer-websocket-server.js"
   },
   "files": [
     "dist",
@@ -45,7 +46,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc --project tsconfig.build.json && vite build",
+    "build": "tsc --project tsconfig.build.json && vite build && tsc --project tsconfig.cli.json",
     "build:cli": "tsc --project tsconfig.cli.json",
     "preview": "vite preview",
     "test": "vitest run",
@@ -65,10 +66,10 @@
     "test:spectrumizer:headed": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --headed",
     "test:spectrumizer:debug": "APP_ROOT_COMPONENT=sketchatone-app playwright test --config=playwright.spectrumizer.config.ts --debug",
     "strum-events": "node dist/cli/strum-event-viewer.js",
-    "midi-strummer": "node dist/cli/midi-strummer.js"
+    "midi-strummer": "node dist/cli/midi-strummer.js",
+    "strummer-websocket": "node dist/cli/strummer-websocket-server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@julusian/midi": "^3.6.1",
     "@spectrum-web-components/bundle": "^1.8.0",
     "blankslate": "file:../blankslate",

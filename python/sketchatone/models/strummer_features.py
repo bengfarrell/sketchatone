@@ -5,8 +5,8 @@ Configuration models for optional strummer features.
 Based on midi-strummer's feature configuration system.
 """
 
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Literal
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, Literal, List
 
 
 # Stylus button actions
@@ -25,9 +25,9 @@ ButtonAction = Literal[
 class NoteRepeaterConfig:
     """
     Configuration for the note repeater feature.
-    
+
     When active, notes are repeated at a frequency controlled by pressure.
-    
+
     Attributes:
         active: Whether the repeater is enabled
         pressure_multiplier: Scale factor for pressure-to-frequency mapping
@@ -36,7 +36,7 @@ class NoteRepeaterConfig:
     active: bool = False
     pressure_multiplier: float = 1.0
     frequency_multiplier: float = 1.0
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'NoteRepeaterConfig':
         """Create from dictionary (supports both snake_case and camelCase)"""
@@ -45,7 +45,7 @@ class NoteRepeaterConfig:
             pressure_multiplier=data.get('pressure_multiplier', data.get('pressureMultiplier', 1.0)),
             frequency_multiplier=data.get('frequency_multiplier', data.get('frequencyMultiplier', 1.0))
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
@@ -59,16 +59,16 @@ class NoteRepeaterConfig:
 class TransposeConfig:
     """
     Configuration for the transpose feature.
-    
+
     When active, all notes are transposed by the specified number of semitones.
-    
+
     Attributes:
         active: Whether transpose is enabled
         semitones: Number of semitones to transpose (positive=up, negative=down)
     """
     active: bool = False
     semitones: int = 12
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TransposeConfig':
         """Create from dictionary"""
@@ -76,7 +76,7 @@ class TransposeConfig:
             active=data.get('active', False),
             semitones=data.get('semitones', 12)
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
@@ -89,9 +89,9 @@ class TransposeConfig:
 class StylusButtonsConfig:
     """
     Configuration for stylus button actions.
-    
+
     Maps the primary and secondary stylus buttons to actions.
-    
+
     Attributes:
         active: Whether stylus button handling is enabled
         primary_button_action: Action for primary button
@@ -100,7 +100,7 @@ class StylusButtonsConfig:
     active: bool = True
     primary_button_action: ButtonAction = "toggle-transpose"
     secondary_button_action: ButtonAction = "toggle-repeater"
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StylusButtonsConfig':
         """Create from dictionary (supports both snake_case and camelCase)"""
@@ -109,7 +109,7 @@ class StylusButtonsConfig:
             primary_button_action=data.get('primary_button_action', data.get('primaryButtonAction', 'toggle-transpose')),
             secondary_button_action=data.get('secondary_button_action', data.get('secondaryButtonAction', 'toggle-repeater'))
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
@@ -123,9 +123,9 @@ class StylusButtonsConfig:
 class StrumReleaseConfig:
     """
     Configuration for the strum release feature.
-    
+
     When active, a release event triggers a specific MIDI note (e.g., for drum sounds).
-    
+
     Attributes:
         active: Whether strum release is enabled
         midi_note: MIDI note number to send on release (e.g., 38 for snare)
@@ -138,7 +138,7 @@ class StrumReleaseConfig:
     midi_channel: Optional[int] = None
     max_duration: float = 0.25
     velocity_multiplier: float = 1.0
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrumReleaseConfig':
         """Create from dictionary (supports both snake_case and camelCase)"""
@@ -149,7 +149,7 @@ class StrumReleaseConfig:
             max_duration=data.get('max_duration', data.get('maxDuration', 0.25)),
             velocity_multiplier=data.get('velocity_multiplier', data.get('velocityMultiplier', 1.0))
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
@@ -159,3 +159,88 @@ class StrumReleaseConfig:
             'max_duration': self.max_duration,
             'velocity_multiplier': self.velocity_multiplier
         }
+
+
+
+# Chord progression presets for tablet buttons
+CHORD_PROGRESSION_PRESETS: Dict[str, List[str]] = {
+    'c-major-pop': ['C', 'G', 'Am', 'F'],           # I-V-vi-IV
+    'c-major-50s': ['C', 'Am', 'F', 'G'],           # I-vi-IV-V
+    'c-major-axis': ['Am', 'F', 'C', 'G'],          # vi-IV-I-V
+    'c-major-royal': ['F', 'C', 'G', 'Am'],         # IV-I-V-vi
+    'a-minor-pop': ['Am', 'F', 'C', 'G'],           # i-VI-III-VII
+    'a-minor-andalusian': ['Am', 'G', 'F', 'E'],    # i-VII-VI-V
+    'g-major-country': ['G', 'C', 'D', 'G'],        # I-IV-V-I
+    'd-major-folk': ['D', 'G', 'A', 'D'],           # I-IV-V-I
+    'e-minor-rock': ['Em', 'C', 'G', 'D'],          # i-VI-III-VII
+    'blues-12bar': ['C7', 'C7', 'C7', 'C7', 'F7', 'F7', 'C7', 'C7', 'G7', 'F7', 'C7', 'G7'],
+}
+
+
+def get_chord_progression_preset_names() -> List[str]:
+    """Get list of available chord progression preset names"""
+    return list(CHORD_PROGRESSION_PRESETS.keys())
+
+
+@dataclass
+class TabletButtonsConfig:
+    """Configuration for tablet button chord progression"""
+    preset: str = 'c-major-pop'
+    chords: List[str] = field(default_factory=lambda: ['C', 'G', 'Am', 'F'])
+    current_index: int = 0
+
+    @classmethod
+    def from_dict(cls, data: Any) -> 'TabletButtonsConfig':
+        """Create from dictionary or string preset name"""
+        if data is None:
+            return cls()
+
+        # Support string preset format (e.g., "c-major-pop")
+        if isinstance(data, str):
+            preset = data
+            chords = CHORD_PROGRESSION_PRESETS.get(preset, ['C', 'G', 'Am', 'F'])
+            return cls(preset=preset, chords=list(chords), current_index=0)
+
+        # Full object format
+        preset = data.get('preset', 'c-major-pop')
+        chords = data.get('chords')
+        if chords is None:
+            chords = CHORD_PROGRESSION_PRESETS.get(preset, ['C', 'G', 'Am', 'F'])
+
+        return cls(
+            preset=preset,
+            chords=list(chords),
+            current_index=data.get('current_index', data.get('currentIndex', 0))
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            'preset': self.preset,
+            'chords': self.chords,
+            'current_index': self.current_index
+        }
+
+    def get_current_chord(self) -> str:
+        """Get the current chord in the progression"""
+        if not self.chords:
+            return 'C'
+        return self.chords[self.current_index % len(self.chords)]
+
+    def next_chord(self) -> str:
+        """Move to next chord and return it"""
+        if self.chords:
+            self.current_index = (self.current_index + 1) % len(self.chords)
+        return self.get_current_chord()
+
+    def prev_chord(self) -> str:
+        """Move to previous chord and return it"""
+        if self.chords:
+            self.current_index = (self.current_index - 1) % len(self.chords)
+        return self.get_current_chord()
+
+    def set_chord_by_button(self, button_number: int) -> str:
+        """Set chord by button number (1-indexed) and return it"""
+        if self.chords and button_number > 0:
+            self.current_index = (button_number - 1) % len(self.chords)
+        return self.get_current_chord()

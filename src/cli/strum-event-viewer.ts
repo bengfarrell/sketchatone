@@ -281,18 +281,20 @@ class StrumEventViewer extends TabletReaderBase {
   }
 
   private setupNotes(): void {
-    let notes: NoteObject[] = [];
+    let baseNotes: NoteObject[] = [];
 
     if (this.strummerConfig.chord) {
       // Parse chord notation
-      const chordNotes = Note.parseChord(this.strummerConfig.chord);
-      notes = Note.fillNoteSpread(chordNotes, this.strummerConfig.lowerSpread, this.strummerConfig.upperSpread);
+      baseNotes = Note.parseChord(this.strummerConfig.chord);
     } else {
       // Use explicit notes from config
       for (const noteStr of this.strummerConfig.notes) {
-        notes.push(Note.parseNotation(noteStr));
+        baseNotes.push(Note.parseNotation(noteStr));
       }
     }
+
+    // Apply spread to both chord and initialNotes
+    const notes = Note.fillNoteSpread(baseNotes, this.strummerConfig.lowerSpread, this.strummerConfig.upperSpread);
 
     this.strummer.notes = notes;
   }

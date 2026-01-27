@@ -29,6 +29,7 @@ import { Note, type NoteObject } from '../models/note.js';
 import { RtMidiBackend } from '../midi/rtmidi-backend.js';
 import { MidiStrummerBridge } from '../midi/bridge.js';
 import type { MidiBackendProtocol } from '../midi/protocol.js';
+import { strummerEventBus, type TabletEventData, type StrumEventData, type StrumNoteEventData } from '../utils/strummer-event-bus.js';
 
 /**
  * Create a progress bar
@@ -107,20 +108,22 @@ class MidiStrummer extends TabletReaderBase {
   }
 
   private setupNotes(): void {
-    let notes: NoteObject[] = [];
+    let baseNotes: NoteObject[] = [];
 
     if (this.config.chord) {
-      const chordNotes = Note.parseChord(this.config.chord);
-      notes = Note.fillNoteSpread(
-        chordNotes,
-        this.config.strummer.lowerSpread,
-        this.config.strummer.upperSpread
-      );
+      baseNotes = Note.parseChord(this.config.chord);
     } else {
       for (const noteStr of this.config.notes) {
-        notes.push(Note.parseNotation(noteStr));
+        baseNotes.push(Note.parseNotation(noteStr));
       }
     }
+
+    // Apply spread to both chord and initialNotes
+    const notes = Note.fillNoteSpread(
+      baseNotes,
+      this.config.strummer.lowerSpread,
+      this.config.strummer.upperSpread
+    );
 
     this.strummer.notes = notes;
   }
@@ -180,7 +183,22 @@ class MidiStrummer extends TabletReaderBase {
 
       // Extract normalized values
       const normalized = normalizeTabletEvent(events);
-      const { x, y, pressure, state } = normalized;
+      const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
+
+      // Emit tablet event to global event bus (throttled)
+      const tabletEventData: TabletEventData = {
+        x,
+        y,
+        pressure,
+        tiltX,
+        tiltY,
+        tiltXY,
+        primaryButtonPressed,
+        secondaryButtonPressed,
+        state: state as 'hover' | 'contact' | 'out-of-range',
+        timestamp: Date.now(),
+      };
+      strummerEventBus.emitTabletEvent(tabletEventData);
 
       // Update strummer bounds
       this.strummer.updateBounds(1.0, 1.0);
@@ -204,10 +222,35 @@ class MidiStrummer extends TabletReaderBase {
             }
           }
 
+          // Emit strum event to global event bus (throttled)
+          const strumEventData: StrumEventData = {
+            type: 'strum',
+            notes: event.notes.map((n: StrumNoteData): StrumNoteEventData => ({
+              note: {
+                notation: n.note.notation,
+                octave: n.note.octave,
+                midiNote: Note.noteToMidi(n.note),
+              },
+              velocity: n.velocity,
+            })),
+            velocity: event.notes[0]?.velocity ?? 0,
+            timestamp: Date.now(),
+          };
+          strummerEventBus.emitStrumEvent(strumEventData);
+
           if (!this.liveMode) {
             this.printStrumEvent(event, x, y, pressure);
           }
         } else if (event.type === 'release') {
+          // Emit release event to global event bus (throttled)
+          const releaseEventData: StrumEventData = {
+            type: 'release',
+            notes: [],
+            velocity: event.velocity,
+            timestamp: Date.now(),
+          };
+          strummerEventBus.emitStrumEvent(releaseEventData);
+
           if (!this.liveMode) {
             this.printReleaseEvent(event, x, y, pressure);
           }
@@ -415,6 +458,9 @@ class MidiStrummer extends TabletReaderBase {
     if (this.backend) {
       this.backend.disconnect();
     }
+
+    // Clean up event bus
+    strummerEventBus.cleanup();
 
     await super.stop();
   }
