@@ -41,8 +41,6 @@ export class DashboardPanel extends LitElement {
     @property({ type: Boolean })
     minimized = false;
 
-    @property({ type: Boolean, reflect: true })
-    transparent = false;
 
     @state()
     private isMinimized = false;
@@ -134,6 +132,7 @@ export class DashboardPanel extends LitElement {
                             ` : ''}
                             ${this.hasActiveControl ? html`
                                 <sp-switch
+                                    data-spectrum-pattern="switch-s"
                                     ?checked="${this.active}"
                                     @change="${this.handleActiveChange}"
                                     class="header-switch"
@@ -145,14 +144,14 @@ export class DashboardPanel extends LitElement {
                         </div>
                         <div class="header-controls">
                             ${this.minimizable ? html`
-                                <sp-action-button size="xs" quiet
+                                <sp-action-button data-spectrum-pattern="action-button-quiet-xs" size="xs" quiet
                                     @click="${this.toggleMinimize}"
                                     title="${this.isMinimized ? 'Maximize' : 'Minimize'}">
                                     ${this.isMinimized ? '▼' : '▲'}
                                 </sp-action-button>
                             ` : ''}
                             ${this.closable ? html`
-                                <sp-action-button size="xs" quiet
+                                <sp-action-button data-spectrum-pattern="action-button-quiet-xs" size="xs" quiet
                                     @click="${this.handleClose}" title="Close">✕</sp-action-button>
                             ` : ''}
                         </div>

@@ -22,23 +22,7 @@ export const styles = css`
         box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     }
 
-    :host([transparent]) .panel {
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        border-radius: 0;
-    }
 
-    :host([transparent]) .panel:hover {
-        border-color: transparent;
-        box-shadow: none;
-    }
-
-    :host([transparent]) .panel-header {
-        background: transparent;
-        border-bottom: none;
-    }
-    
     .panel.minimized {
         height: auto;
     }

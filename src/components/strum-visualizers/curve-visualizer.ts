@@ -110,86 +110,82 @@ export class CurveVisualizer extends LitElement {
         const curvePath = this.generateCurvePath(this.config, curveWidth, curveHeight);
 
         return html`
-            <div class="curve-container" style="background: #eee; padding: 16px; border-radius: 8px;">
-                <div class="graph-container" style="background: white; padding: 8px;">
                     <svg viewBox="0 0 ${graphWidth} ${graphHeight}" style="width: 100%; height: auto; display: block;">
                         <rect x="${padding}" y="${padding}"
                               width="${innerWidth}" height="${innerHeight}"
-                              fill="#f8f9fa" stroke="#dee2e6" stroke-width="1" />
+                              fill="var(--spectrum-gray-100)" stroke="var(--spectrum-gray-300)" stroke-width="1" />
 
                         <line x1="${padding}" y1="${padding}"
                               x2="${padding}" y2="${graphHeight - padding}"
-                              stroke="#868e96" stroke-width="1.5" />
+                              stroke="var(--spectrum-gray-600)" stroke-width="1.5" />
                         <line x1="${padding}" y1="${graphHeight - padding}"
                               x2="${graphWidth - padding}" y2="${graphHeight - padding}"
-                              stroke="#868e96" stroke-width="1.5" />
+                              stroke="var(--spectrum-gray-600)" stroke-width="1.5" />
 
                         <text x="${padding - 8}" y="${graphHeight - padding + 4}"
-                              font-size="10" fill="#495057" text-anchor="end">${this.config.min.toFixed(1)}</text>
+                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="end">${this.config.min.toFixed(1)}</text>
                         <text x="${padding - 8}" y="${padding + 4}"
-                              font-size="10" fill="#495057" text-anchor="end">${this.config.max.toFixed(1)}</text>
+                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="end">${this.config.max.toFixed(1)}</text>
                         <text x="${padding - 12}" y="${padding + innerHeight / 2}"
-                              font-size="10" fill="#495057" text-anchor="middle"
+                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="middle"
                               transform="rotate(-90, ${padding - 12}, ${padding + innerHeight / 2})">${this.outputLabel}</text>
 
                         <polyline points="${curvePath}"
                             fill="none" stroke="${this.color}" stroke-width="2.5" stroke-linecap="round"
                             transform="translate(${padding + strokeInset}, ${padding + strokeInset})" />
                     </svg>
-                </div>
-                <p style="margin: 8px 0 0; font-size: 12px; color: #666;">Label: ${this.label} | Control: ${this.control}</p>
+                <p style="font-size: 12px; color: var(--spectrum-gray-700);">Label: ${this.label} | Control: ${this.control}</p>
                 
                 <div class="controls-grid">
                     <div class="control-selector-top">
                         <label class="control-selector-label">Controlled by:</label>
-                        <sp-picker size="s" value="${this.control}" @change=${this.handleControlChange}>
-                            <sp-menu-item value="yaxis">Y-Axis Position</sp-menu-item>
-                            <sp-menu-item value="pressure">Stylus Pressure</sp-menu-item>
-                            <sp-menu-item value="tiltX">Tilt X</sp-menu-item>
-                            <sp-menu-item value="tiltY">Tilt Y</sp-menu-item>
-                            <sp-menu-item value="tiltXY">Tilt X+Y</sp-menu-item>
+                        <sp-picker data-spectrum-pattern="picker-s" size="s" value="${this.control}" @change=${this.handleControlChange}>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="yaxis">Y-Axis Position</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="pressure">Stylus Pressure</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltX">Tilt X</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltY">Tilt Y</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltXY">Tilt X+Y</sp-menu-item>
                         </sp-picker>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Spread</label>
-                        <sp-picker size="s" value="${this.config.spread}" 
+                        <sp-picker data-spectrum-pattern="picker-s" size="s" value="${this.config.spread}"
                             @change=${(e: Event) => this.handleConfigChange('spread', (e.target as any).value)}>
-                            <sp-menu-item value="direct">Direct</sp-menu-item>
-                            <sp-menu-item value="inverse">Inverse</sp-menu-item>
-                            <sp-menu-item value="central">Central</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="direct">Direct</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="inverse">Inverse</sp-menu-item>
+                            <sp-menu-item data-spectrum-pattern="menu-item" value="central">Central</sp-menu-item>
                         </sp-picker>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Min</label>
-                        <sp-number-field size="s" value="${this.config.min}" step="0.1"
+                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.min}" step="0.1"
                             @change=${(e: Event) => this.handleConfigChange('min', parseFloat((e.target as any).value))}>
                         </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Max</label>
-                        <sp-number-field size="s" value="${this.config.max}" step="0.1"
+                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.max}" step="0.1"
                             @change=${(e: Event) => this.handleConfigChange('max', parseFloat((e.target as any).value))}>
                         </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Curve</label>
-                        <sp-number-field size="s" value="${this.config.curve}" step="0.1" min="0.1"
+                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.curve}" step="0.1" min="0.1"
                             @change=${(e: Event) => this.handleConfigChange('curve', parseFloat((e.target as any).value))}>
                         </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Multiplier</label>
-                        <sp-number-field size="s" value="${this.config.multiplier}" step="0.1" min="0" max="2"
+                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.multiplier}" step="0.1" min="0" max="2"
                             @change=${(e: Event) => this.handleConfigChange('multiplier', parseFloat((e.target as any).value))}>
                         </sp-number-field>
                     </div>
                 </div>
-            </div>
         `;
     }
 }

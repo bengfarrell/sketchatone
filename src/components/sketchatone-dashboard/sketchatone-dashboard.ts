@@ -276,6 +276,7 @@ export class SketchatoneDashboard extends LitElement {
             </div>
             <div class="header-controls">
               <sp-action-button
+                data-spectrum-pattern="action-button-quiet"
                 quiet
                 @click=${this.handleThemeToggle}
                 aria-label=${this.themeColor === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
@@ -287,7 +288,7 @@ export class SketchatoneDashboard extends LitElement {
           </div>
           <div class="connection-row">
             <div class="save-button-group">
-              <sp-button size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleSaveConfig}>
+              <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.fullConfig} @click=${this.handleSaveConfig}>
                 Save Config
               </sp-button>
             </div>
@@ -297,20 +298,21 @@ export class SketchatoneDashboard extends LitElement {
                   <span class="status-dot"></span>
                   ${this.websocketServerInfo || 'Connected'}
                 </div>
-                <sp-button size="s" variant="secondary" @click=${this.disconnectWebSocket}>
+                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
                   Disconnect
                 </sp-button>
               </div>
             ` : html`
               <div class="connection-group">
                 <sp-textfield
+                  data-spectrum-pattern="textfield-s"
                   size="s"
                   placeholder="ws://localhost:8081"
                   value=${this.websocketUrl}
                   @input=${this.handleWebSocketUrlChange}
                   style="width: 250px;">
                 </sp-textfield>
-                <sp-button size="s" variant="primary" @click=${this.connectWebSocket}>
+                <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
                   Connect
                 </sp-button>
               </div>
@@ -419,7 +421,7 @@ export class SketchatoneDashboard extends LitElement {
             <div class="section-content">
               <div class="settings-grid">
                 <!-- Curve Visualizers -->
-                <dashboard-panel title="Note Velocity" size="small" .draggable=${false} .minimizable=${false} transparent>
+                <dashboard-panel title="Note Velocity" size="small" .draggable=${false} .minimizable=${false}>
                   <curve-visualizer
                     label="Note Velocity"
                     parameterKey="noteVelocity"
@@ -430,7 +432,7 @@ export class SketchatoneDashboard extends LitElement {
                   </curve-visualizer>
                 </dashboard-panel>
 
-                <dashboard-panel title="Note Duration" size="small" .draggable=${false} .minimizable=${false} transparent>
+                <dashboard-panel title="Note Duration" size="small" .draggable=${false} .minimizable=${false}>
                   <curve-visualizer
                     label="Note Duration"
                     parameterKey="noteDuration"
@@ -441,7 +443,7 @@ export class SketchatoneDashboard extends LitElement {
                   </curve-visualizer>
                 </dashboard-panel>
 
-                <dashboard-panel title="Pitch Bend" size="small" .draggable=${false} .minimizable=${false} transparent>
+                <dashboard-panel title="Pitch Bend" size="small" .draggable=${false} .minimizable=${false}>
                   <curve-visualizer
                     label="Pitch Bend"
                     parameterKey="pitchBend"
@@ -457,27 +459,27 @@ export class SketchatoneDashboard extends LitElement {
                   <div class="settings-form">
                     <div class="setting-row">
                       <label>Pluck Velocity Scale</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumming?.pluckVelocityScale ?? 4.0}" step="0.1" min="0.1" max="10"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pluckVelocityScale ?? 4.0}" step="0.1" min="0.1" max="10"
                         @change=${(e: Event) => this.updateConfig('strummer.strumming.pluckVelocityScale', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Pressure Threshold</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
                         @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>MIDI Channel</label>
-                      <sp-number-field value="${(this.fullConfig?.strummer?.strumming?.midiChannel ?? 0) + 1}" step="1" min="1" max="16"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${(this.fullConfig?.strummer?.strumming?.midiChannel ?? 0) + 1}" step="1" min="1" max="16"
                         @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value) - 1)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Upper Note Spread</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3}" step="1" min="0" max="12"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3}" step="1" min="0" max="12"
                         @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Lower Note Spread</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
                         @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                   </div>
@@ -490,28 +492,28 @@ export class SketchatoneDashboard extends LitElement {
                   <div class="settings-form">
                     <div class="setting-row">
                       <label>Primary Button</label>
-                      <sp-picker label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.primaryButtonAction ?? 'toggle-transpose'}"
+                      <sp-picker data-spectrum-pattern="picker-s" label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.primaryButtonAction ?? 'toggle-transpose'}"
                         @change=${(e: Event) => this.updateConfig('strummer.stylusButtons.primaryButtonAction', (e.target as HTMLInputElement).value)}>
-                        <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                        <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                        <sp-menu-item value="momentary-transpose">Momentary Transpose</sp-menu-item>
-                        <sp-menu-item value="momentary-repeater">Momentary Repeater</sp-menu-item>
-                        <sp-menu-item value="octave-up">Octave Up</sp-menu-item>
-                        <sp-menu-item value="octave-down">Octave Down</sp-menu-item>
-                        <sp-menu-item value="none">None</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-transpose">Toggle Transpose</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-repeater">Toggle Repeater</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-transpose">Momentary Transpose</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-repeater">Momentary Repeater</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-up">Octave Up</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-down">Octave Down</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="none">None</sp-menu-item>
                       </sp-picker>
                     </div>
                     <div class="setting-row">
                       <label>Secondary Button</label>
-                      <sp-picker label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.secondaryButtonAction ?? 'toggle-repeater'}"
+                      <sp-picker data-spectrum-pattern="picker-s" label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.secondaryButtonAction ?? 'toggle-repeater'}"
                         @change=${(e: Event) => this.updateConfig('strummer.stylusButtons.secondaryButtonAction', (e.target as HTMLInputElement).value)}>
-                        <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                        <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                        <sp-menu-item value="momentary-transpose">Momentary Transpose</sp-menu-item>
-                        <sp-menu-item value="momentary-repeater">Momentary Repeater</sp-menu-item>
-                        <sp-menu-item value="octave-up">Octave Up</sp-menu-item>
-                        <sp-menu-item value="octave-down">Octave Down</sp-menu-item>
-                        <sp-menu-item value="none">None</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-transpose">Toggle Transpose</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-repeater">Toggle Repeater</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-transpose">Momentary Transpose</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-repeater">Momentary Repeater</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-up">Octave Up</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-down">Octave Down</sp-menu-item>
+                        <sp-menu-item data-spectrum-pattern="menu-item" value="none">None</sp-menu-item>
                       </sp-picker>
                     </div>
                   </div>
@@ -524,12 +526,12 @@ export class SketchatoneDashboard extends LitElement {
                   <div class="settings-form">
                     <div class="setting-row">
                       <label>Pressure Multiplier</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.noteRepeater?.pressureMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.noteRepeater?.pressureMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
                         @change=${(e: Event) => this.updateConfig('strummer.noteRepeater.pressureMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Frequency Multiplier</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.noteRepeater?.frequencyMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.noteRepeater?.frequencyMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
                         @change=${(e: Event) => this.updateConfig('strummer.noteRepeater.frequencyMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                   </div>
@@ -542,7 +544,7 @@ export class SketchatoneDashboard extends LitElement {
                   <div class="settings-form">
                     <div class="setting-row">
                       <label>Semitones</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.transpose?.semitones ?? 12}" step="1" min="-24" max="24"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.transpose?.semitones ?? 12}" step="1" min="-24" max="24"
                         @change=${(e: Event) => this.updateConfig('strummer.transpose.semitones', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                   </div>
@@ -555,22 +557,22 @@ export class SketchatoneDashboard extends LitElement {
                   <div class="settings-form">
                     <div class="setting-row">
                       <label>MIDI Note</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38}" step="1" min="0" max="127"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38}" step="1" min="0" max="127"
                         @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>MIDI Channel</label>
-                      <sp-number-field value="${(this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 9) + 1}" step="1" min="1" max="16"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${(this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 9) + 1}" step="1" min="1" max="16"
                         @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value) - 1)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Max Duration</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25}" step="0.05" min="0.05" max="2"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25}" step="0.05" min="0.05" max="2"
                         @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Velocity Multiplier</label>
-                      <sp-number-field value="${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0}" step="0.1" min="0.1" max="2"
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0}" step="0.1" min="0.1" max="2"
                         @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
                     </div>
                   </div>
@@ -594,12 +596,13 @@ export class SketchatoneDashboard extends LitElement {
                     <div class="preset-row">
                       <span class="setting-label">Preset</span>
                       <sp-picker
+                        data-spectrum-pattern="picker-s"
                         label="Preset"
                         value=${this.fullConfig?.strummer?.tabletButtons?.preset || 'c-major-pop'}
                         @change=${(e: Event) => this.updateConfig('strummer.tabletButtons.preset', (e.target as HTMLSelectElement).value)}
                       >
                         ${getChordProgressionPresetNames().map(name => html`
-                          <sp-menu-item value=${name}>${name}</sp-menu-item>
+                          <sp-menu-item data-spectrum-pattern="menu-item" value=${name}>${name}</sp-menu-item>
                         `)}
                       </sp-picker>
                     </div>

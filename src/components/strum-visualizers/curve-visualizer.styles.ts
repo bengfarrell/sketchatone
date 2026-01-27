@@ -2,24 +2,9 @@ import { css } from 'lit';
 
 export const styles = css`
     :host {
-        display: block;
-    }
-
-    .curve-container {
         display: flex;
         flex-direction: column;
         gap: 12px;
-        padding: 8px;
-    }
-
-    .graph-container {
-        width: 100%;
-    }
-
-    .graph-container svg {
-        display: block;
-        width: 100%;
-        height: auto;
     }
 
     .controls-grid {
