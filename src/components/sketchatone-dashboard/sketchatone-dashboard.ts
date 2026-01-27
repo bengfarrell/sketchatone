@@ -177,6 +177,18 @@ export class SketchatoneDashboard extends LitElement {
     this.resetData();
   }
 
+  private handleSaveConfig(): void {
+    if (!this.fullConfig) return;
+    const json = JSON.stringify(this.fullConfig, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'strummer-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   /**
    * Send a config update to the server
    */
@@ -274,6 +286,11 @@ export class SketchatoneDashboard extends LitElement {
             </div>
           </div>
           <div class="connection-row">
+            <div class="save-button-group">
+              <sp-button size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleSaveConfig}>
+                Save Config
+              </sp-button>
+            </div>
             ${this.websocketConnected ? html`
               <div class="connection-group">
                 <div class="status-badge connected">

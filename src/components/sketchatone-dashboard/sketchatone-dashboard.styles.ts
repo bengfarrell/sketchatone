@@ -49,12 +49,19 @@ export const styles = css`
   .connection-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 16px;
   }
 
   .connection-group {
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .save-button-group {
+    display: flex;
+    align-items: center;
   }
 
   .status-badge {
