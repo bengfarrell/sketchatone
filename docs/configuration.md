@@ -141,7 +141,9 @@ The strummer config file defines musical settings and can optionally include MID
   "transpose": { ... },
   "stylus_buttons": { ... },
   "strum_release": { ... },
-  "midi": { ... }
+  "tablet_buttons": { ... },
+  "midi": { ... },
+  "server": { ... }
 }
 ```
 
@@ -416,3 +418,65 @@ JACK auto-connect modes:
 - `"chain0"` - Connect to Zynthian Chain 0
 - `"all-chains"` - Connect to all Zynthian chains
 - `null` - No auto-connect
+
+---
+
+### tablet_buttons
+
+Maps tablet hardware buttons to chord progressions.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `preset` | string | "c-major-pop" | Preset name or "custom" |
+| `chords` | string[] | ["C","G","Am","F"] | Chord names for each button |
+| `current_index` | number | 0 | Currently active chord index |
+
+#### Available Presets
+
+| Preset | Chords | Description |
+|--------|--------|-------------|
+| `"c-major-pop"` | C, G, Am, F | I-V-vi-IV in C |
+| `"c-major-50s"` | C, Am, F, G | I-vi-IV-V in C |
+| `"g-major-pop"` | G, D, Em, C | I-V-vi-IV in G |
+| `"d-major-pop"` | D, A, Bm, G | I-V-vi-IV in D |
+| `"a-major-pop"` | A, E, F#m, D | I-V-vi-IV in A |
+| `"a-minor-pop"` | Am, F, C, G | i-VI-III-VII in Am |
+| `"e-minor-pop"` | Em, C, G, D | i-VI-III-VII in Em |
+
+```json
+{
+  "tablet_buttons": {
+    "preset": "c-major-pop",
+    "chords": ["C", "G", "Am", "F"],
+    "current_index": 0
+  }
+}
+```
+
+**Note:** If `preset` is set to a valid preset name, the `chords` array is automatically populated from the preset. Use `"custom"` preset to specify your own chord progression.
+
+---
+
+### server
+
+Server configuration for HTTP and WebSocket servers.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `http_port` | number\|null | null | HTTP server port for serving webapps (null = disabled) |
+| `ws_port` | number\|null | null | WebSocket server port (null = disabled) |
+| `ws_message_throttle` | number | 150 | WebSocket message throttle interval in milliseconds |
+| `device_finding_poll_interval` | number\|null | null | Poll interval in ms for device detection (null = quit if no device) |
+
+```json
+{
+  "server": {
+    "http_port": 8080,
+    "ws_port": 8081,
+    "ws_message_throttle": 150,
+    "device_finding_poll_interval": 2000
+  }
+}
+```
+
+**Note:** When `device_finding_poll_interval` is set, the server will poll for a tablet device at the specified interval instead of quitting when no device is found. This enables hot-plug support.
