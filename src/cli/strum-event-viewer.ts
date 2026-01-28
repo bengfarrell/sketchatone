@@ -10,7 +10,6 @@
  *   npm run strum-events -- --config ./configs/
  *   npm run strum-events -- --config path/to/config.json
  *   npm run strum-events -- --config path/to/config.json --strummer-config path/to/strummer.json
- *   npm run strum-events -- --config path/to/config.json --mock
  */
 
 import chalk from 'chalk';
@@ -361,10 +360,6 @@ class StrumEventViewer extends TabletReaderBase {
     console.log(chalk.green('✓ Started reading data'));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
-    if (this.isMockMode) {
-      this.startMockGestureCycle();
-    }
-
     // Keep the process alive (HID reader alone doesn't keep Node.js event loop active)
     this.keepAliveInterval = setInterval(() => {}, 1000);
 
@@ -392,7 +387,6 @@ async function main(): Promise<void> {
     .option('-c, --config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
     .option('-s, --strummer-config <path>', 'Path to strummer config JSON file')
     .option('-l, --live', 'Live dashboard mode (updates in place)')
-    .option('-m, --mock', 'Use mock data instead of real device')
     .addHelpText(
       'after',
       `
@@ -411,9 +405,6 @@ Examples:
 
   # Live dashboard mode
   npm run strum-events -- -c tablet-config.json --live
-
-  # Use mock data for testing
-  npm run strum-events -- -c tablet-config.json --mock
 `
     );
 
@@ -423,7 +414,6 @@ Examples:
     config?: string;
     strummerConfig?: string;
     live?: boolean;
-    mock?: boolean;
   }>();
 
   // Resolve tablet config path (handles auto-detection from directory)
@@ -440,7 +430,6 @@ Examples:
   let viewer: StrumEventViewer | null = null;
   try {
     viewer = new StrumEventViewer(configPath, {
-      mock: options.mock,
       strummerConfigPath: options.strummerConfig ? path.resolve(options.strummerConfig) : undefined,
       liveMode: options.live,
     });

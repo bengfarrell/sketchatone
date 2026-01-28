@@ -55,9 +55,25 @@ export interface CombinedEventData extends TabletEventData {
 }
 
 /**
+ * Device status - indicates whether the tablet is connected to the server
+ */
+export type DeviceStatus = 'connected' | 'disconnected';
+
+/**
+ * Device status message from server
+ * Sent when device connects/disconnects, and to new clients on connection
+ */
+export interface DeviceStatusData {
+  status: DeviceStatus;
+  deviceConnected: boolean;
+  message: string;
+  timestamp: number;
+}
+
+/**
  * WebSocket message types from server to client
  */
-export type ServerMessageType = 'tablet' | 'config';
+export type ServerMessageType = 'tablet' | 'config' | 'status';
 
 /**
  * Server config data sent on connection
@@ -95,9 +111,20 @@ export interface ConfigMessage {
 }
 
 /**
+ * Status message from server
+ */
+export interface StatusMessage {
+  type: 'status';
+  status: DeviceStatus;
+  deviceConnected: boolean;
+  message: string;
+  timestamp: number;
+}
+
+/**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode';
 
 /**
  * Set throttle client message
@@ -120,9 +147,17 @@ export interface UpdateConfigMessage {
 }
 
 /**
+ * Set mode client message
+ */
+export interface SetModeMessage {
+  type: 'set-mode';
+  mode: string;
+}
+
+/**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage;
 
 /**
  * Tablet data for visualization components

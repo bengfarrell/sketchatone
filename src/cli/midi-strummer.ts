@@ -436,10 +436,6 @@ class MidiStrummer extends TabletReaderBase {
     console.log(chalk.green('✓ Started reading tablet data'));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
-    if (this.isMockMode) {
-      this.startMockGestureCycle();
-    }
-
     if (this.liveMode) {
       // Clear screen for live mode
       process.stdout.write('\x1b[2J\x1b[H');
@@ -478,7 +474,6 @@ async function main(): Promise<void> {
     .option('-p, --port <port>', 'MIDI output port name or index (overrides config)')
     .option('-d, --duration <seconds>', 'Note duration in seconds (overrides config)', parseFloat)
     .option('-l, --live', 'Live dashboard mode (updates in place)')
-    .option('-m, --mock', 'Use mock data instead of real device')
     .addHelpText(
       'after',
       `
@@ -504,8 +499,8 @@ Examples:
   # Specify MIDI port by name
   npm run midi-strummer -- -t tablet.json -p "IAC Driver"
 
-  # Live dashboard mode with mock data
-  npm run midi-strummer -- -t tablet.json --mock --live
+  # Live dashboard mode
+  npm run midi-strummer -- -t tablet.json --live
 `
     );
 
@@ -518,7 +513,6 @@ Examples:
     port?: string;
     duration?: number;
     live?: boolean;
-    mock?: boolean;
   }>();
 
   // Resolve tablet config path (handles auto-detection from directory)
@@ -542,7 +536,6 @@ Examples:
   let strummer: MidiStrummer | null = null;
   try {
     strummer = new MidiStrummer(tabletConfigPath, {
-      mock: options.mock,
       strummerConfigPath: options.strummerConfig ? path.resolve(options.strummerConfig) : undefined,
       liveMode: options.live,
       midiChannel: options.channel,

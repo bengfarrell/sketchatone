@@ -25,6 +25,71 @@ import {
 } from './strummer-features.js';
 
 /**
+ * Server configuration data
+ */
+export interface ServerConfigData {
+  /** HTTP server port for serving webapps (null = disabled) */
+  httpPort: number | null;
+  /** WebSocket server port (null = disabled) */
+  wsPort: number | null;
+  /** WebSocket message throttle interval in milliseconds */
+  wsMessageThrottle: number;
+  /** Poll interval in milliseconds for waiting for device (null = quit if no device) */
+  deviceFindingPollInterval: number | null;
+}
+
+/**
+ * Default server configuration
+ */
+export const DEFAULT_SERVER_CONFIG: ServerConfigData = {
+  httpPort: null,
+  wsPort: null,
+  wsMessageThrottle: 150,
+  deviceFindingPollInterval: null,
+};
+
+/**
+ * Server configuration class
+ */
+export class ServerConfig implements ServerConfigData {
+  httpPort: number | null;
+  wsPort: number | null;
+  wsMessageThrottle: number;
+  deviceFindingPollInterval: number | null;
+
+  constructor(data: Partial<ServerConfigData> = {}) {
+    this.httpPort = data.httpPort ?? DEFAULT_SERVER_CONFIG.httpPort;
+    this.wsPort = data.wsPort ?? DEFAULT_SERVER_CONFIG.wsPort;
+    this.wsMessageThrottle = data.wsMessageThrottle ?? DEFAULT_SERVER_CONFIG.wsMessageThrottle;
+    this.deviceFindingPollInterval = data.deviceFindingPollInterval ?? DEFAULT_SERVER_CONFIG.deviceFindingPollInterval;
+  }
+
+  /**
+   * Create from dictionary (supports both snake_case and camelCase)
+   */
+  static fromDict(data: Record<string, unknown>): ServerConfig {
+    return new ServerConfig({
+      httpPort: (data.http_port ?? data.httpPort) as number | null | undefined,
+      wsPort: (data.ws_port ?? data.wsPort) as number | null | undefined,
+      wsMessageThrottle: (data.ws_message_throttle ?? data.wsMessageThrottle) as number | undefined,
+      deviceFindingPollInterval: (data.device_finding_poll_interval ?? data.deviceFindingPollInterval) as number | null | undefined,
+    });
+  }
+
+  /**
+   * Convert to dictionary for JSON serialization
+   */
+  toDict(): ServerConfigData {
+    return {
+      httpPort: this.httpPort,
+      wsPort: this.wsPort,
+      wsMessageThrottle: this.wsMessageThrottle,
+      deviceFindingPollInterval: this.deviceFindingPollInterval,
+    };
+  }
+}
+
+/**
  * MIDI configuration data
  */
 export interface MidiConfigData {
@@ -95,6 +160,7 @@ export class MidiConfig implements MidiConfigData {
 export interface MidiStrummerConfigData {
   strummer: StrummerConfigData;
   midi: MidiConfigData;
+  server: ServerConfigData;
 }
 
 /**
@@ -103,17 +169,21 @@ export interface MidiStrummerConfigData {
  * This combines:
  * - Full strummer configuration (notes, mappings, features)
  * - MIDI configuration (ports, channels)
+ * - Server configuration (HTTP/WebSocket ports, throttle, poll)
  */
 export class MidiStrummerConfig {
   private _strummer: StrummerConfig;
   private _midi: MidiConfig;
+  private _server: ServerConfig;
 
   constructor(data: {
     strummer?: StrummerConfig;
     midi?: MidiConfig;
+    server?: ServerConfig;
   } = {}) {
     this._strummer = data.strummer ?? new StrummerConfig();
     this._midi = data.midi ?? new MidiConfig();
+    this._server = data.server ?? new ServerConfig();
   }
 
   // Strummer config accessors
@@ -174,6 +244,27 @@ export class MidiStrummerConfig {
     return this._midi.useVirtualPorts;
   }
 
+  // Server config accessors
+  get server(): ServerConfig {
+    return this._server;
+  }
+
+  get httpPort(): number | null {
+    return this._server.httpPort;
+  }
+
+  get wsPort(): number | null {
+    return this._server.wsPort;
+  }
+
+  get wsMessageThrottle(): number {
+    return this._server.wsMessageThrottle;
+  }
+
+  get deviceFindingPollInterval(): number | null {
+    return this._server.deviceFindingPollInterval;
+  }
+
   // Backward compatibility properties
   get pressureThreshold(): number {
     return this._strummer.pressureThreshold;
@@ -213,11 +304,19 @@ export class MidiStrummerConfig {
   }
 
   /**
+   * Get the server config portion
+   */
+  toServerConfig(): ServerConfig {
+    return this._server;
+  }
+
+  /**
    * Create from dictionary.
    */
   static fromDict(data: Record<string, unknown>): MidiStrummerConfig {
     const strummerData = (data.strummer ?? {}) as Record<string, unknown>;
     const midiData = (data.midi ?? {}) as Record<string, unknown>;
+    const serverData = (data.server ?? {}) as Record<string, unknown>;
 
     return new MidiStrummerConfig({
       strummer: Object.keys(strummerData).length > 0
@@ -226,6 +325,9 @@ export class MidiStrummerConfig {
       midi: Object.keys(midiData).length > 0
         ? MidiConfig.fromDict(midiData)
         : new MidiConfig(),
+      server: Object.keys(serverData).length > 0
+        ? ServerConfig.fromDict(serverData)
+        : new ServerConfig(),
     });
   }
 
@@ -245,6 +347,7 @@ export class MidiStrummerConfig {
     return {
       strummer: this._strummer.toDict(),
       midi: this._midi.toDict(),
+      server: this._server.toDict(),
     };
   }
 

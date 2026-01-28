@@ -24,6 +24,16 @@ export interface TabletEventData {
   secondaryButtonPressed: boolean;
   state: 'hover' | 'contact' | 'out-of-range';
   timestamp: number;
+  // Tablet hardware buttons
+  tabletButtons?: number;
+  button1?: boolean;
+  button2?: boolean;
+  button3?: boolean;
+  button4?: boolean;
+  button5?: boolean;
+  button6?: boolean;
+  button7?: boolean;
+  button8?: boolean;
 }
 
 /**

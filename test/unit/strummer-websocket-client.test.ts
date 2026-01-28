@@ -367,6 +367,8 @@ describe('StrummerWebSocketClient', () => {
         tiltXY: 11.18,
         primaryButtonPressed: true,
         secondaryButtonPressed: false,
+        state: 'contact',
+        timestamp: 1234567890,
       });
 
       client.cleanup();
@@ -650,6 +652,164 @@ describe('StrummerWebSocketClient', () => {
       // Callback should not be called after cleanup
       // Note: The WebSocket is closed, so this won't actually trigger
       expect(callback).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('device status events', () => {
+    it('should have null deviceStatus initially', () => {
+      const client = new StrummerWebSocketClient();
+      expect(client.deviceStatus).toBeNull();
+      client.cleanup();
+    });
+
+    it('should have isDeviceConnected as false initially', () => {
+      const client = new StrummerWebSocketClient();
+      expect(client.isDeviceConnected).toBe(false);
+      client.cleanup();
+    });
+
+    it('should emit device status events when receiving status messages', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      client.onDeviceStatus(callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith({
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      client.cleanup();
+    });
+
+    it('should update deviceStatus property when receiving status messages', () => {
+      const client = new StrummerWebSocketClient();
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      expect(client.deviceStatus).toEqual({
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      client.cleanup();
+    });
+
+    it('should update isDeviceConnected based on status message', () => {
+      const client = new StrummerWebSocketClient();
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      // Device connected
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      expect(client.isDeviceConnected).toBe(true);
+
+      // Device disconnected
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'disconnected',
+        deviceConnected: false,
+        message: 'Device disconnected',
+        timestamp: 1234567891,
+      });
+
+      expect(client.isDeviceConnected).toBe(false);
+
+      client.cleanup();
+    });
+
+    it('should handle disconnected status', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      client.onDeviceStatus(callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'disconnected',
+        deviceConnected: false,
+        message: 'No tablet connected',
+        timestamp: 1234567890,
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith({
+        status: 'disconnected',
+        deviceConnected: false,
+        message: 'No tablet connected',
+        timestamp: 1234567890,
+      });
+      expect(client.isDeviceConnected).toBe(false);
+
+      client.cleanup();
+    });
+
+    it('should unsubscribe from device status events', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      const unsubscribe = client.onDeviceStatus(callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'connected',
+        deviceConnected: true,
+        message: 'Device connected',
+        timestamp: 1234567890,
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+
+      unsubscribe();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'status',
+        status: 'disconnected',
+        deviceConnected: false,
+        message: 'Device disconnected',
+        timestamp: 1234567891,
+      });
+
+      // Should not have been called again after unsubscribe
+      expect(callback).toHaveBeenCalledTimes(1);
+
+      client.cleanup();
     });
   });
 });

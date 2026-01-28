@@ -30,7 +30,6 @@ import '../strum-visualizers/strum-events-display.js';
 import {
   normalizeTabletData,
   formatValue,
-  extractPressedButtons,
   type TabletData,
 } from 'blankslate';
 
@@ -136,8 +135,10 @@ export class SketchatoneDashboard extends LitElement {
     // Normalize and update tablet data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.tabletData = normalizeTabletData(data as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.pressedButtons = extractPressedButtons(data as any);
+
+    // Extract pressed buttons from individual button fields
+    // The server sends button1, button2, etc. as booleans
+    this.pressedButtons = this.extractButtonsFromData(data);
 
     // Create event for display
     const event: StrumTabletEvent = {
@@ -244,6 +245,25 @@ export class SketchatoneDashboard extends LitElement {
   private get fullConfig(): MidiStrummerConfigData | null {
     if (!this.strummerConfig?.config) return null;
     return this.strummerConfig.config as unknown as MidiStrummerConfigData;
+  }
+
+  /**
+   * Extract pressed tablet hardware buttons from combined event data
+   * The server sends button1, button2, etc. as boolean fields
+   */
+  private extractButtonsFromData(data: CombinedEventData): Set<number> {
+    const pressed = new Set<number>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = data as any;
+    if (d.button1) pressed.add(1);
+    if (d.button2) pressed.add(2);
+    if (d.button3) pressed.add(3);
+    if (d.button4) pressed.add(4);
+    if (d.button5) pressed.add(5);
+    if (d.button6) pressed.add(6);
+    if (d.button7) pressed.add(7);
+    if (d.button8) pressed.add(8);
+    return pressed;
   }
 
   private toggleStrumVisualizers() {

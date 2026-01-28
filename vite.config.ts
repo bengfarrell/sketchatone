@@ -35,6 +35,9 @@ export default defineConfig({
       '@spectrum-web-components/tray',
     ],
     alias: [
+      // Resolve blankslate CLI imports (for tablet-reader-base, node-hid-reader)
+      { find: 'blankslate/cli/tablet-reader-base.js', replacement: resolve(__dirname, '../blankslate/dist/cli/tablet-reader-base.js') },
+      { find: 'blankslate/cli/node-hid-reader.js', replacement: resolve(__dirname, '../blankslate/dist/cli/node-hid-reader.js') },
       // Resolve blankslate component imports directly (more specific paths first)
       { find: 'blankslate/components/hid-dashboard/hid-dashboard.js', replacement: resolve(__dirname, '../blankslate/dist/components/hid-dashboard/hid-dashboard.js') },
       { find: 'blankslate/components/hid-data-reader/hid-data-reader.js', replacement: resolve(__dirname, '../blankslate/dist/components/hid-data-reader/hid-data-reader.js') },
@@ -51,13 +54,13 @@ export default defineConfig({
     exclude: ['blankslate'],
   },
   build: {
-    outDir: 'dist',
-    lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      formats: ['es'],
-    },
+    outDir: 'dist/public',
+    emptyOutDir: true,
     rollupOptions: {
-      external: /^lit/,
+      input: {
+        tablet: resolve(__dirname, 'index.html'),
+        web: resolve(__dirname, 'web.html'),
+      },
     },
   },
   server: {

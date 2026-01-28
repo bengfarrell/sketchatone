@@ -213,57 +213,53 @@ class TestStrumEventViewerInit:
     def test_init_with_default_strummer_config(self, mock_base_init, tablet_config_file):
         """Test initialization with default strummer config"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
-        
+
         # Should use default strummer config
         assert viewer.strummer_config.pressure_threshold == 0.1
         assert viewer.strummer_config.notes == ["C4", "E4", "G4"]  # New default
         assert viewer.live_mode is False
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     def test_init_with_custom_strummer_config(self, mock_base_init, tablet_config_file, strummer_config_file):
         """Test initialization with custom strummer config"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
-            mock=True,
             strummer_config_path=strummer_config_file
         )
-        
+
         # Should use custom strummer config
         assert viewer.strummer_config.pressure_threshold == 0.2
         assert viewer.strummer_config.velocity_scale == 0.8
         assert viewer.strummer_config.notes == ["D4", "F#4", "A4", "D5"]
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     def test_init_live_mode(self, mock_base_init, tablet_config_file):
         """Test initialization with live mode enabled"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
-            mock=True,
             live_mode=True
         )
-        
+
         assert viewer.live_mode is True
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     def test_strummer_configured_correctly(self, mock_base_init, tablet_config_file, strummer_config_file):
         """Test that strummer is configured with correct parameters"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
-            mock=True,
             strummer_config_path=strummer_config_file
         )
-        
+
         # Strummer should be configured with values from config
         assert viewer.strummer.pressure_threshold == 0.2
         assert viewer.strummer.velocity_scale == 0.8
@@ -298,8 +294,7 @@ class TestStrumEventViewerSetupNotes:
         mock_base_init.return_value = None
 
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
 
         # Default config has ["C4", "E4", "G4"] (new default)
@@ -308,7 +303,7 @@ class TestStrumEventViewerSetupNotes:
         assert viewer.strummer.notes[0].octave == 4
         assert viewer.strummer.notes[1].notation == 'E'
         assert viewer.strummer.notes[2].notation == 'G'
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     def test_setup_notes_from_chord(self, mock_base_init, tablet_config_file, tmp_path):
         """Test setting up notes from chord notation"""
@@ -330,7 +325,6 @@ class TestStrumEventViewerSetupNotes:
 
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
-            mock=True,
             strummer_config_path=str(strummer_config_path)
         )
 
@@ -371,82 +365,78 @@ class TestStrumEventViewerHandlePacket:
         """Test that handle_packet increments packet count"""
         mock_base_init.return_value = None
         mock_process.return_value = {'x': 0.5, 'y': 0.5, 'pressure': 0.0, 'state': 'hover'}
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
         viewer.packet_count = 0
-        
+
         viewer.handle_packet(b'\x00' * 10)
         assert viewer.packet_count == 1
-        
+
         viewer.handle_packet(b'\x00' * 10)
         assert viewer.packet_count == 2
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     def test_handle_packet_updates_strummer_bounds(self, mock_process, mock_base_init, tablet_config_file):
         """Test that handle_packet updates strummer bounds"""
         mock_base_init.return_value = None
         mock_process.return_value = {'x': 0.5, 'y': 0.5, 'pressure': 0.0, 'state': 'hover'}
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
         viewer.packet_count = 0
-        
+
         viewer.handle_packet(b'\x00' * 10)
-        
+
         # Strummer should have bounds set to 1.0 (normalized)
         assert viewer.strummer._width == 1.0
         assert viewer.strummer._height == 1.0
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     @patch('sketchatone.cli.strum_event_viewer.print_strum_event')
     def test_handle_packet_triggers_strum_event(self, mock_print, mock_process, mock_base_init, tablet_config_file):
         """Test that handle_packet triggers strum events correctly"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
             config_path=tablet_config_file,
-            mock=True,
             live_mode=False
         )
         viewer.packet_count = 0
-        
+
         # Simulate a sequence that triggers a strum:
         # 1. First touch with pressure (tap detection starts)
         mock_process.return_value = {'x': 0.1, 'y': 0.5, 'pressure': 0.5, 'state': 'contact'}
         for _ in range(5):  # Fill pressure buffer
             viewer.handle_packet(b'\x00' * 10)
-        
+
         # Check if strum event was triggered and printed
         if viewer.last_event:
             assert viewer.last_event['type'] == 'strum'
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     def test_handle_packet_stores_last_event(self, mock_process, mock_base_init, tablet_config_file):
         """Test that handle_packet stores the last event"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
         viewer.packet_count = 0
-        
+
         # Initially no last event
         assert viewer.last_event is None
-        
+
         # Simulate packets that trigger a strum
         mock_process.return_value = {'x': 0.1, 'y': 0.5, 'pressure': 0.5, 'state': 'contact'}
         for _ in range(5):
             viewer.handle_packet(b'\x00' * 10)
-        
+
         # After strum, last_event should be set
         if viewer.last_event:
             assert 'type' in viewer.last_event
@@ -460,7 +450,7 @@ class TestStrumEventViewerIntegration:
         """Path to real tablet config if available"""
         config_path = os.path.join(
             os.path.dirname(__file__),
-            '..', '..', '..', 'public', 'configs', 'xpdeco640.json'
+            '..', '..', '..', 'public', 'configs', 'xp-pen-deco640.json'
         )
         if os.path.exists(config_path):
             return config_path
@@ -470,12 +460,11 @@ class TestStrumEventViewerIntegration:
     def test_init_with_real_config(self, mock_base_init, real_tablet_config):
         """Test initialization with real tablet config"""
         mock_base_init.return_value = None
-        
+
         viewer = StrumEventViewer(
-            config_path=real_tablet_config,
-            mock=True
+            config_path=real_tablet_config
         )
-        
+
         # Should initialize without errors
         assert viewer.strummer is not None
         assert len(viewer.strummer.notes) > 0
@@ -483,7 +472,7 @@ class TestStrumEventViewerIntegration:
 
 class TestEdgeCases:
     """Tests for edge cases and error handling"""
-    
+
     @pytest.fixture
     def tablet_config_file(self, tmp_path):
         """Create a temporary tablet config file"""
@@ -503,40 +492,38 @@ class TestEdgeCases:
         with open(config_path, 'w') as f:
             json.dump(config, f)
         return str(config_path)
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     def test_handle_packet_with_missing_values(self, mock_process, mock_base_init, tablet_config_file):
         """Test handle_packet with missing values in processed data"""
         mock_base_init.return_value = None
         mock_process.return_value = {}  # Empty dict
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
         viewer.packet_count = 0
-        
+
         # Should not crash with missing values
         viewer.handle_packet(b'\x00' * 10)
         assert viewer.packet_count == 1
-    
+
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     def test_handle_packet_with_exception(self, mock_process, mock_base_init, tablet_config_file, capsys):
         """Test handle_packet handles exceptions gracefully"""
         mock_base_init.return_value = None
         mock_process.side_effect = Exception("Test error")
-        
+
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            mock=True
+            config_path=tablet_config_file
         )
         viewer.packet_count = 0
-        
+
         # Should not crash, should log error
         viewer.handle_packet(b'\x00' * 10)
-        
+
         # Check that error was logged to stderr
         captured = capsys.readouterr()
         assert 'ERROR' in captured.err or 'Test error' in captured.err
@@ -558,3 +545,106 @@ class TestEdgeCases:
         except (ValueError, Exception):
             # Acceptable to raise an error for invalid input
             pass
+
+class TestNoteClass:
+    """Tests for the Note class - matching Node.js tests"""
+    
+    def test_parse_notation_basic(self):
+        """Test parsing basic notation"""
+        note = Note.parse_notation('C4')
+        assert note.notation == 'C'
+        assert note.octave == 4
+    
+    def test_parse_notation_with_sharp(self):
+        """Test parsing notation with sharp"""
+        note = Note.parse_notation('C#4')
+        assert note.notation == 'C#'
+        assert note.octave == 4
+    
+    def test_parse_notation_with_flat(self):
+        """Test parsing notation with flat"""
+        note = Note.parse_notation('Bb3')
+        assert note.notation == 'Bb'
+        assert note.octave == 3
+    
+    def test_parse_notation_default_octave(self):
+        """Test parsing notation without octave defaults to 4"""
+        note = Note.parse_notation('G')
+        assert note.notation == 'G'
+        assert note.octave == 4
+    
+    def test_parse_chord_major(self):
+        """Test parsing major chord"""
+        notes = Note.parse_chord('C')
+        assert len(notes) == 3
+        assert notes[0].notation == 'C'
+        assert notes[1].notation == 'E'
+        assert notes[2].notation == 'G'
+    
+    def test_parse_chord_minor(self):
+        """Test parsing minor chord"""
+        notes = Note.parse_chord('Am')
+        assert len(notes) == 3
+        assert notes[0].notation == 'A'
+        assert notes[1].notation == 'C'
+        assert notes[2].notation == 'E'
+    
+    def test_parse_chord_seventh(self):
+        """Test parsing seventh chord"""
+        notes = Note.parse_chord('G7')
+        assert len(notes) == 4
+        assert notes[0].notation == 'G'
+        assert notes[1].notation == 'B'
+        assert notes[2].notation == 'D'
+        assert notes[3].notation == 'F'
+    
+    def test_fill_note_spread_upper(self):
+        """Test filling note spread with upper notes"""
+        base_notes = [
+            NoteObject(notation='C', octave=4, secondary=False),
+            NoteObject(notation='E', octave=4, secondary=False),
+            NoteObject(notation='G', octave=4, secondary=False),
+        ]
+        filled = Note.fill_note_spread(base_notes, 0, 3)
+        
+        assert len(filled) == 6  # 3 base + 3 upper
+        assert filled[3].octave == 5  # First upper note
+        assert filled[3].secondary is True
+    
+    def test_fill_note_spread_lower(self):
+        """Test filling note spread with lower notes"""
+        base_notes = [
+            NoteObject(notation='C', octave=4, secondary=False),
+            NoteObject(notation='E', octave=4, secondary=False),
+            NoteObject(notation='G', octave=4, secondary=False),
+        ]
+        filled = Note.fill_note_spread(base_notes, 3, 0)
+        
+        assert len(filled) == 6  # 3 lower + 3 base
+        assert filled[0].octave == 3  # First lower note
+        assert filled[0].secondary is True
+    
+    def test_transpose_note_up(self):
+        """Test transposing note up"""
+        note = NoteObject(notation='C', octave=4, secondary=False)
+        transposed = note.transpose(2)
+        assert transposed.notation == 'D'
+        assert transposed.octave == 4
+    
+    def test_transpose_note_down(self):
+        """Test transposing note down"""
+        note = NoteObject(notation='C', octave=4, secondary=False)
+        transposed = note.transpose(-2)
+        assert transposed.notation == 'A#'
+        assert transposed.octave == 3
+    
+    def test_note_to_midi(self):
+        """Test converting note to MIDI"""
+        note = NoteObject(notation='C', octave=4, secondary=False)
+        midi = note.to_midi()
+        assert midi == 48  # C4 = 48
+    
+    def test_note_to_string(self):
+        """Test converting note to string"""
+        note = NoteObject(notation='C#', octave=4, secondary=False)
+        assert str(note) == 'C#4'

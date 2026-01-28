@@ -8,7 +8,6 @@ Extends blankslate's TabletReaderBase for direct device access.
 Usage:
     python -m sketchatone.cli.strum_event_viewer --config path/to/config.json
     python -m sketchatone.cli.strum_event_viewer --config path/to/config.json --strummer-config path/to/strummer.json
-    python -m sketchatone.cli.strum_event_viewer --config path/to/config.json --mock
 """
 
 import argparse
@@ -321,11 +320,10 @@ class StrumEventViewer(TabletReaderBase):
     def __init__(
         self,
         config_path: str,
-        mock: bool = False,
         strummer_config_path: Optional[str] = None,
         live_mode: bool = False
     ):
-        super().__init__(config_path, mock=mock, exit_on_stop=True)
+        super().__init__(config_path, exit_on_stop=True)
         self.live_mode = live_mode
         self.last_event: Optional[Dict[str, Any]] = None
         self.last_live_update = 0
@@ -386,9 +384,6 @@ class StrumEventViewer(TabletReaderBase):
         print(colored('Press Ctrl+C to stop\n', Colors.GRAY))
 
         self.is_running = True
-
-        if self.is_mock_mode:
-            self.start_mock_gesture_cycle_sync()
 
         # Keep process alive
         try:
@@ -462,9 +457,6 @@ Examples:
 
     # Live dashboard mode
     python -m sketchatone.cli.strum_event_viewer -c tablet-config.json --live
-
-    # Use mock data for testing
-    python -m sketchatone.cli.strum_event_viewer -c tablet-config.json --mock
 """
     )
 
@@ -484,12 +476,6 @@ Examples:
         help='Live dashboard mode (updates in place)'
     )
 
-    parser.add_argument(
-        '-m', '--mock',
-        action='store_true',
-        help='Use mock data instead of real device'
-    )
-
     args = parser.parse_args()
 
     # Resolve tablet config path (handles auto-detection from directory)
@@ -503,7 +489,6 @@ Examples:
     try:
         viewer = StrumEventViewer(
             config_path=config_path,
-            mock=args.mock,
             strummer_config_path=args.strummer_config,
             live_mode=args.live
         )

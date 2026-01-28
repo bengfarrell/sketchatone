@@ -29,11 +29,11 @@
   "strumming": {
     "pluck_velocity_scale": 4.0,
     "pressure_threshold": 0.1,
-    "midi_channel": 2,
-    "initial_notes": [],
-    "chord": "Am",
-    "upper_note_spread": 2,
-    "lower_note_spread": 2
+    "midi_channel": null,
+    "initial_notes": ["C4", "E4", "G4"],
+    "chord": null,
+    "upper_note_spread": 3,
+    "lower_note_spread": 3
   },
   "note_repeater": {
     "active": false,
@@ -56,12 +56,23 @@
     "max_duration": 0.25,
     "velocity_multiplier": 1.0
   },
-  "tablet_buttons": "c-major-pop",
+  "tablet_buttons": {
+    "preset": "c-major-pop",
+    "chords": ["C", "G", "Am", "F"],
+    "current_index": 0
+  },
   "midi": {
     "midi_output_backend": "rtmidi",
     "midi_output_id": null,
     "midi_input_id": null,
     "jack_client_name": "sketchatone",
-    "jack_auto_connect": "chain0"
+    "jack_auto_connect": "chain0",
+    "note_duration": 1.5
+  },
+  "server": {
+    "http_port": 8080,
+    "ws_port": 8081,
+    "ws_message_throttle": 150,
+    "device_finding_poll_interval": 2000
   }
 }

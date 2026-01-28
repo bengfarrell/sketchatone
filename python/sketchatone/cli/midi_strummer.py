@@ -135,7 +135,6 @@ class MidiStrummer(TabletReaderBase):
     def __init__(
         self,
         tablet_config_path: str,
-        mock: bool = False,
         strummer_config_path: Optional[str] = None,
         live_mode: bool = False,
         # CLI overrides (take precedence over config file)
@@ -146,7 +145,7 @@ class MidiStrummer(TabletReaderBase):
         jack_client_name: Optional[str] = None,
         jack_auto_connect: Optional[str] = None
     ):
-        super().__init__(tablet_config_path, mock=mock, exit_on_stop=True)
+        super().__init__(tablet_config_path, exit_on_stop=True)
         self.live_mode = live_mode
         self.last_event: Optional[Dict[str, Any]] = None
         self.last_live_update = 0
@@ -294,9 +293,6 @@ class MidiStrummer(TabletReaderBase):
         print(colored('Press Ctrl+C to stop\n', Colors.GRAY))
 
         self.is_running = True
-
-        if self.is_mock_mode:
-            self.start_mock_gesture_cycle_sync()
 
         if self.live_mode:
             # Clear screen for live mode
@@ -526,8 +522,8 @@ Examples:
     # Override MIDI channel
     python -m sketchatone.cli.midi_strummer -t tablet.json --channel 1
 
-    # Live dashboard mode with mock data
-    python -m sketchatone.cli.midi_strummer -t tablet.json --mock --live
+    # Live dashboard mode
+    python -m sketchatone.cli.midi_strummer -t tablet.json --live
 """
     )
 
@@ -584,12 +580,6 @@ Examples:
         help='Live dashboard mode (updates in place)'
     )
 
-    parser.add_argument(
-        '-m', '--mock',
-        action='store_true',
-        help='Use mock data instead of real device'
-    )
-
     args = parser.parse_args()
 
     # Resolve tablet config path (handles auto-detection from directory)
@@ -603,7 +593,6 @@ Examples:
     try:
         strummer = MidiStrummer(
             tablet_config_path=tablet_config_path,
-            mock=args.mock,
             strummer_config_path=args.strummer_config,
             live_mode=args.live,
             # CLI overrides

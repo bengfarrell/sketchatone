@@ -280,6 +280,55 @@ describe('Strummer', () => {
     expect(state.baseNotes).toHaveLength(1); // Only non-secondary
     expect(state.timestamp).toBeGreaterThan(0);
   });
+
+  it('should trigger release event when pressure drops', () => {
+    const strummer = new Strummer();
+    strummer.notes = [createNote('C', 4), createNote('E', 4), createNote('G', 4), createNote('C', 5)];
+    strummer.updateBounds(1.0, 1.0);
+
+    // Trigger a strum first
+    strummer.strum(0.5, 0.05);
+    strummer.strum(0.5, 0.15);
+    strummer.strum(0.5, 0.2);
+    strummer.strum(0.5, 0.25);
+
+    // Now release pressure
+    const result = strummer.strum(0.5, 0.05);
+
+    expect(result).not.toBeNull();
+    if (result) {
+      expect(result.type).toBe('release');
+    }
+  });
+
+  it('should inherit from EventEmitter', () => {
+    const strummer = new Strummer();
+
+    // Should have EventEmitter methods
+    expect(typeof strummer.on).toBe('function');
+    expect(typeof strummer.emit).toBe('function');
+    expect(typeof strummer.off).toBe('function');
+  });
+
+  it('should strum across multiple strings', () => {
+    const strummer = new Strummer();
+    strummer.notes = [createNote('C', 4), createNote('E', 4), createNote('G', 4)];
+    strummer.updateBounds(1.0, 1.0);
+
+    // First, trigger initial strum on first string
+    strummer.strum(0.1, 0.05);
+    strummer.strum(0.1, 0.15);
+    strummer.strum(0.1, 0.2);
+    strummer.strum(0.1, 0.25);
+
+    // Now move to last string while maintaining pressure
+    const result = strummer.strum(0.9, 0.5);
+
+    expect(result).not.toBeNull();
+    if (result && result.type === 'strum') {
+      expect(result.notes.length).toBeGreaterThanOrEqual(1);
+    }
+  });
 });
 
 describe('Note', () => {

@@ -40,7 +40,6 @@ python -m sketchatone.cli.midi_strummer -t <tablet-config> [options]
 | `--jack-client-name` | | string | JACK client name (overrides config) |
 | `--jack-auto-connect` | | string | JACK auto-connect target (overrides config) |
 | `--live` | `-l` | flag | Live dashboard mode (updates in place) |
-| `--mock` | `-m` | flag | Use mock data instead of real device |
 
 ### Examples
 
@@ -63,8 +62,8 @@ python -m sketchatone.cli.midi_strummer -t tablet.json -p 2
 # Specify MIDI port by name
 python -m sketchatone.cli.midi_strummer -t tablet.json -p "IAC Driver"
 
-# Live dashboard mode with mock data
-python -m sketchatone.cli.midi_strummer -t tablet.json --mock --live
+# Live dashboard mode
+python -m sketchatone.cli.midi_strummer -t tablet.json --live
 ```
 
 ### Config File Format
@@ -113,7 +112,6 @@ python -m sketchatone.cli.strum_event_viewer -c <tablet-config> [options]
 |----------|-------|------|-------------|
 | `--strummer-config` | `-s` | path | Path to strummer config JSON file |
 | `--live` | `-l` | flag | Live dashboard mode (updates in place) |
-| `--mock` | `-m` | flag | Use mock data instead of real device |
 
 ### Examples
 
@@ -126,10 +124,53 @@ python -m sketchatone.cli.strum_event_viewer -c tablet-config.json -s strummer-c
 
 # Live dashboard mode
 python -m sketchatone.cli.strum_event_viewer -c tablet-config.json --live
-
-# Use mock data for testing
-python -m sketchatone.cli.strum_event_viewer -c tablet-config.json --mock
 ```
+
+---
+
+## server
+
+WebSocket and HTTP server for streaming tablet/strummer events to web clients and serving the bundled webapps.
+
+### Usage
+
+```bash
+python -m sketchatone.cli.server [options]
+```
+
+### Optional Arguments
+
+| Argument | Short | Type | Description |
+|----------|-------|------|-------------|
+| `--tablet-config` | `-t` | path | Path to tablet config JSON file or directory (auto-detects from ../public/configs if not provided) |
+| `--strummer-config` | `-s` | path | Path to strummer config JSON file |
+| `--ws-port` | | int | WebSocket server port (default: 8081) |
+| `--http-port` | | int | HTTP server port for serving webapps (optional) |
+| `--throttle` | | int | Event throttle interval in milliseconds (default: 150) |
+| `--poll` | | int | Poll interval in milliseconds for waiting for device. If not set, quit if no device found. |
+
+### Examples
+
+```bash
+# Start WebSocket server only (default port 8081)
+python -m sketchatone.cli.server
+
+# Start both WebSocket and HTTP servers
+python -m sketchatone.cli.server --ws-port 8081 --http-port 3000
+
+# With device polling (hot-plug support)
+python -m sketchatone.cli.server --poll 2000
+```
+
+### Building Webapps
+
+Before using the HTTP server to serve webapps, build them using the Node.js build:
+
+```bash
+npm run build
+```
+
+This outputs the bundled webapps to `dist/public/`.
 
 ---
 

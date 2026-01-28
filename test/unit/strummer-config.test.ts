@@ -182,4 +182,56 @@ describe('StrummerConfig', () => {
       expect(config.channel).toBe(9);
     });
   });
+
+  describe('File I/O', () => {
+    it('should load config from JSON file', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'strummer-test-'));
+      const configPath = path.join(tmpDir, 'strummer.json');
+
+      const configData = {
+        strumming: {
+          pressure_threshold: 0.15,
+          pluck_velocity_scale: 0.8,
+          initial_notes: ['E4', 'G#4', 'B4'],
+          chord: 'E',
+        },
+      };
+      fs.writeFileSync(configPath, JSON.stringify(configData));
+
+      const config = StrummerConfig.fromJsonFile(configPath);
+      expect(config.pressureThreshold).toBe(0.15);
+      expect(config.velocityScale).toBe(0.8);
+      expect(config.notes).toEqual(['E4', 'G#4', 'B4']);
+      expect(config.chord).toBe('E');
+
+      // Cleanup
+      fs.unlinkSync(configPath);
+      fs.rmdirSync(tmpDir);
+    });
+
+    it('should save config to JSON file', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'strummer-test-'));
+      const configPath = path.join(tmpDir, 'strummer-out.json');
+
+      const config = new StrummerConfig({
+        strumming: new StrummingConfig({ chord: 'Bm' }),
+      });
+      config.toJsonFile(configPath);
+
+      const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      expect(data.strumming.chord).toBe('Bm');
+
+      // Cleanup
+      fs.unlinkSync(configPath);
+      fs.rmdirSync(tmpDir);
+    });
+  });
 });

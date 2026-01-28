@@ -46,7 +46,6 @@ npm run midi-strummer [-- options]
 | `--port` | `-p` | string/int | MIDI output port name or index (overrides config) |
 | `--duration` | `-d` | float | Note duration in seconds (overrides config) |
 | `--live` | `-l` | flag | Live dashboard mode (updates in place) |
-| `--mock` | `-m` | flag | Use mock data instead of real device |
 
 ### Examples
 
@@ -72,8 +71,8 @@ npm run midi-strummer -- -t tablet.json -p 2
 # Specify MIDI port by name
 npm run midi-strummer -- -t tablet.json -p "IAC Driver"
 
-# Live dashboard mode with mock data
-npm run midi-strummer -- -t tablet.json --mock --live
+# Live dashboard mode
+npm run midi-strummer -- -t tablet.json --live
 ```
 
 ### Config File Format
@@ -117,7 +116,6 @@ npm run strum-events [-- options]
 | `--config` | `-c` | path | Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided) |
 | `--strummer-config` | `-s` | path | Path to strummer config JSON file |
 | `--live` | `-l` | flag | Live dashboard mode (updates in place) |
-| `--mock` | `-m` | flag | Use mock data instead of real device |
 
 ### Examples
 
@@ -136,10 +134,59 @@ npm run strum-events -- -c tablet-config.json -s strummer-config.json
 
 # Live dashboard mode
 npm run strum-events -- -c tablet-config.json --live
-
-# Use mock data for testing
-npm run strum-events -- -c tablet-config.json --mock
 ```
+
+---
+
+## server
+
+WebSocket and HTTP server for streaming tablet/strummer events to web clients and serving the bundled webapps.
+
+### Usage
+
+```bash
+npm run server [-- options]
+```
+
+Or directly:
+
+```bash
+node ./dist/cli/server.js [options]
+```
+
+### Optional Arguments
+
+| Argument | Short | Type | Description |
+|----------|-------|------|-------------|
+| `--tablet-config` | `-t` | path | Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided) |
+| `--strummer-config` | `-s` | path | Path to strummer config JSON file |
+| `--ws-port` | | int | WebSocket server port (default: 8081) |
+| `--http-port` | | int | HTTP server port for serving webapps (optional) |
+| `--throttle` | | int | Event throttle interval in milliseconds (default: 150) |
+| `--poll` | | int | Poll interval in milliseconds for waiting for device. If not set, quit if no device found. |
+
+### Examples
+
+```bash
+# Start WebSocket server only (default port 8081)
+npm run server
+
+# Start both WebSocket and HTTP servers
+npm run server -- --ws-port 8081 --http-port 3000
+
+# With device polling (hot-plug support)
+npm run server -- --poll 2000
+```
+
+### Building Webapps
+
+Before using the HTTP server to serve webapps, build them first:
+
+```bash
+npm run build
+```
+
+This outputs the bundled webapps to `dist/public/`.
 
 ---
 

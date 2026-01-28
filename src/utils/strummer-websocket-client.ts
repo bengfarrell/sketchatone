@@ -1,7 +1,7 @@
 /**
  * Strummer WebSocket Client
  *
- * A WebSocket client that connects to the strummer-websocket-server and provides
+ * A WebSocket client that connects to the server and provides
  * tablet and strum event data to frontend components.
  */
 
@@ -13,6 +13,8 @@ import type {
   ServerConfigData,
   TabletVisualizerData,
   ClientMessage,
+  DeviceStatus,
+  DeviceStatusData,
 } from '../types/tablet-events.js';
 
 /**
@@ -25,6 +27,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'err
  */
 export interface StrummerWebSocketClientEvents {
   'connection-state': ConnectionState;
+  'device-status': DeviceStatusData;
   'tablet': TabletEventData;
   'strum': StrumEventData;
   'combined': CombinedEventData;
@@ -47,7 +50,7 @@ export interface StrummerWebSocketClientOptions {
 }
 
 /**
- * WebSocket client for connecting to the strummer-websocket-server
+ * WebSocket client for connecting to the server
  */
 export class StrummerWebSocketClient extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -58,6 +61,7 @@ export class StrummerWebSocketClient extends EventEmitter {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _connectionState: ConnectionState = 'disconnected';
+  private _deviceStatus: DeviceStatusData | null = null;
   private _config: ServerConfigData | null = null;
   private _lastTabletData: TabletVisualizerData = {
     x: 0,
@@ -100,10 +104,24 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
-   * Check if connected
+   * Check if connected to the WebSocket server
    */
   get isConnected(): boolean {
     return this._connectionState === 'connected';
+  }
+
+  /**
+   * Get the device status (available after connection)
+   */
+  get deviceStatus(): DeviceStatusData | null {
+    return this._deviceStatus;
+  }
+
+  /**
+   * Check if the tablet device is connected to the server
+   */
+  get isDeviceConnected(): boolean {
+    return this._deviceStatus?.deviceConnected ?? false;
   }
 
   /**
@@ -180,6 +198,13 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Set the current mode
+   */
+  setMode(mode: string): void {
+    this.send({ type: 'set-mode', mode });
+  }
+
+  /**
    * Update a config value on the server
    * @param path Dot-notation path to the config property (e.g., 'strummer.strumming.pluckVelocityScale')
    * @param value The new value for the property
@@ -228,6 +253,22 @@ export class StrummerWebSocketClient extends EventEmitter {
     return () => this.off('config', callback as any);
   }
 
+  /**
+   * Subscribe to mode change events
+   */
+  onModeChange(callback: (mode: string) => void): () => void {
+    this.on<string>('mode-change', callback);
+    return () => this.off('mode-change', callback as any);
+  }
+
+  /**
+   * Subscribe to device status changes (tablet connected/disconnected from server)
+   */
+  onDeviceStatus(callback: (status: DeviceStatusData) => void): () => void {
+    this.on<DeviceStatusData>('device-status', callback);
+    return () => this.off('device-status', callback as any);
+  }
+
   private setConnectionState(state: ConnectionState): void {
     if (this._connectionState !== state) {
       this._connectionState = state;
@@ -251,9 +292,37 @@ export class StrummerWebSocketClient extends EventEmitter {
           // The data is spread directly into the message, not nested under 'data'
           this.handleCombinedEvent(message);
           break;
+        case 'tablet':
+          // Handle tablet-only messages with nested data property
+          if (message.data) {
+            this._lastTabletData = message.data;
+            this.emit('tablet', message.data);
+          }
+          break;
+        case 'strum':
+          // Handle strum messages with nested data property
+          if (message.data) {
+            this.emit('strum', message.data);
+          }
+          break;
+        case 'mode-change':
+          // Handle mode change messages
+          if (message.data && message.data.mode) {
+            this.emit('mode-change', message.data.mode);
+          }
+          break;
         case 'config':
           this._config = message.data;
           this.emit<ServerConfigData>('config', message.data);
+          break;
+        case 'status':
+          this._deviceStatus = {
+            status: message.status,
+            deviceConnected: message.deviceConnected,
+            message: message.message,
+            timestamp: message.timestamp
+          };
+          this.emit<DeviceStatusData>('device-status', this._deviceStatus);
           break;
       }
     } catch (error) {

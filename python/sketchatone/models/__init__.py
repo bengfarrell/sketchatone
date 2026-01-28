@@ -12,6 +12,7 @@ from .strummer_features import (
 )
 from .strummer_config import StrummerConfig, StrummingConfig
 from .midi_config import MidiConfig
+from .server_config import ServerConfig
 from .midi_strummer_config import MidiStrummerConfig
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     'StrummerConfig',
     'StrummingConfig',
     'MidiConfig',
+    'ServerConfig',
     'MidiStrummerConfig'
 ]

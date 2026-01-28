@@ -11,6 +11,7 @@ import json
 
 from .strummer_config import StrummerConfig
 from .midi_config import MidiConfig
+from .server_config import ServerConfig
 
 
 @dataclass
@@ -18,17 +19,21 @@ class MidiStrummerConfig:
     """
     Combined configuration for MIDI strummer.
 
-    Contains both the full strummer configuration (with all features)
-    and MIDI backend settings.
+    Contains both the full strummer configuration (with all features),
+    MIDI backend settings, and server configuration.
 
-    Can be loaded from a single JSON file that contains both strummer
-    settings and a 'midi' section for MIDI backend configuration.
+    Can be loaded from a single JSON file that contains strummer
+    settings, a 'midi' section for MIDI backend configuration,
+    and a 'server' section for HTTP/WebSocket server settings.
     """
     # Full strummer config (includes parameter mappings and features)
     strummer: StrummerConfig = field(default_factory=StrummerConfig)
 
     # MIDI backend settings
     midi: MidiConfig = field(default_factory=MidiConfig)
+
+    # Server settings
+    server: ServerConfig = field(default_factory=ServerConfig)
 
     # Convenience properties for backward compatibility
     @property
@@ -83,13 +88,31 @@ class MidiStrummerConfig:
     def note_duration(self) -> float:
         return self.midi.note_duration
 
+    # Server config convenience properties
+    @property
+    def http_port(self) -> Optional[int]:
+        return self.server.http_port
+
+    @property
+    def ws_port(self) -> Optional[int]:
+        return self.server.ws_port
+
+    @property
+    def ws_message_throttle(self) -> int:
+        return self.server.ws_message_throttle
+
+    @property
+    def device_finding_poll_interval(self) -> Optional[int]:
+        return self.server.device_finding_poll_interval
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MidiStrummerConfig':
         """
         Create a MidiStrummerConfig from a dictionary.
         """
-        # Extract MIDI section if present
+        # Extract MIDI and server sections if present
         midi_data = data.get('midi', {})
+        server_data = data.get('server', {})
 
         # Load strummer config
         strummer = StrummerConfig.from_dict(data)
@@ -97,7 +120,10 @@ class MidiStrummerConfig:
         # Load MIDI config
         midi = MidiConfig.from_dict(midi_data) if midi_data else MidiConfig()
 
-        return cls(strummer=strummer, midi=midi)
+        # Load server config
+        server = ServerConfig.from_dict(server_data) if server_data else ServerConfig()
+
+        return cls(strummer=strummer, midi=midi, server=server)
 
     @classmethod
     def from_json_file(cls, path: str) -> 'MidiStrummerConfig':
@@ -110,12 +136,14 @@ class MidiStrummerConfig:
     def from_separate_configs(
         cls,
         strummer_config: Optional[StrummerConfig] = None,
-        midi_config: Optional[MidiConfig] = None
+        midi_config: Optional[MidiConfig] = None,
+        server_config: Optional[ServerConfig] = None
     ) -> 'MidiStrummerConfig':
-        """Create from separate StrummerConfig and MidiConfig objects"""
+        """Create from separate StrummerConfig, MidiConfig, and ServerConfig objects"""
         return cls(
             strummer=strummer_config or StrummerConfig(),
-            midi=midi_config or MidiConfig()
+            midi=midi_config or MidiConfig(),
+            server=server_config or ServerConfig()
         )
 
     def to_strummer_config(self) -> StrummerConfig:
@@ -126,10 +154,15 @@ class MidiStrummerConfig:
         """Get the MIDI configuration"""
         return self.midi
 
+    def to_server_config(self) -> ServerConfig:
+        """Get the server configuration"""
+        return self.server
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         result = self.strummer.to_dict()
         result['midi'] = self.midi.to_dict()
+        result['server'] = self.server.to_dict()
         return result
 
     def to_json_file(self, path: str) -> None:
