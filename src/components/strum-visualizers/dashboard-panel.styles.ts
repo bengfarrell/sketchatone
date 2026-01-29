@@ -96,7 +96,24 @@ export const styles = css`
     :host([hasActiveControl]:not([active])) .panel-title {
         opacity: 0.4;
     }
-    
+
+    :host([hasActiveControl]:not([active])) .panel {
+        background-color: var(--spectrum-gray-75);
+        border-color: var(--spectrum-gray-200);
+    }
+
+    :host([hasActiveControl]:not([active])) .panel-header {
+        background: var(--spectrum-gray-100);
+        border-bottom-color: var(--spectrum-gray-200);
+    }
+
+    :host([hasActiveControl]:not([active])) .panel-content {
+        opacity: 0.3;
+        pointer-events: none;
+        user-select: none;
+        filter: grayscale(0.5);
+    }
+
     .header-switch {
         flex-shrink: 0;
         margin: 0;
