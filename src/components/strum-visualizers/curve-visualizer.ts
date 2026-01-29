@@ -188,7 +188,7 @@ export class CurveVisualizer extends LitElement {
                                   y1="${padding}"
                                   x2="${padding + strokeInset + curveWidth / 2}"
                                   y2="${graphHeight - padding}"
-                                  stroke="#ffd43b"
+                                  stroke="var(--spectrum-notice-color-900)"
                                   stroke-width="1"
                                   stroke-dasharray="3,3"
                                   opacity="0.5" />
@@ -204,7 +204,7 @@ export class CurveVisualizer extends LitElement {
                                   y1="${padding}"
                                   x2="${padding + strokeInset + (hoverPosition * curveWidth)}"
                                   y2="${graphHeight - padding}"
-                                  stroke="#51cf66"
+                                  stroke="var(--spectrum-positive-color-900)"
                                   stroke-width="2"
                                   opacity="0.6"
                                   stroke-dasharray="4,4" />
@@ -214,7 +214,7 @@ export class CurveVisualizer extends LitElement {
                                   y="${padding - 8}"
                                   text-anchor="middle"
                                   font-size="11"
-                                  fill="#51cf66"
+                                  fill="var(--spectrum-positive-color-900)"
                                   font-weight="600">
                                 ${outputValue.toFixed(3)}
                             </text>

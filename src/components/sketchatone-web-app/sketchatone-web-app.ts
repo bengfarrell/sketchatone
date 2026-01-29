@@ -79,7 +79,7 @@ export class SketchatoneWebApp extends LitElement {
         <div class="app">
           ${this.currentPage === 'walkthrough' ? html`
             <div class="nav-bar">
-              <sp-button variant="secondary" @click=${this._handleBackToDashboard}>
+              <sp-button data-spectrum-pattern="button-secondary" variant="secondary" @click=${this._handleBackToDashboard}>
                 ← Back to Dashboard
               </sp-button>
             </div>

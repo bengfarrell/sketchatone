@@ -32,6 +32,7 @@ import { Note, type NoteObject } from '../models/note.js';
 import { RtMidiBackend } from '../midi/rtmidi-backend.js';
 import { MidiStrummerBridge } from '../midi/bridge.js';
 import type { MidiBackendProtocol } from '../midi/protocol.js';
+import { RtMidiInput, MIDI_INPUT_NOTE_EVENT, type MidiInputNoteEvent } from '../midi/rtmidi-input.js';
 import {
   strummerEventBus,
   StrummerEventBus,
@@ -102,6 +103,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
   // MIDI support
   private backend: MidiBackendProtocol | null = null;
   private bridge: MidiStrummerBridge | null = null;
+  private midiInput: RtMidiInput | null = null;
+  private midiInputDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   public notesPlayed: number = 0;
   private actions: Actions;
 
@@ -335,6 +338,123 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Initialize MIDI input for external keyboard
+   * If inputPort is null, listens to ALL available MIDI inputs (discovery mode)
+   * If inputPort is specified, connects only to that port
+   */
+  private async setupMidiInput(): Promise<boolean> {
+    try {
+      this.midiInput = new RtMidiInput();
+      const inputPort = this.config.inputPort;
+
+      let connected = false;
+      if (inputPort === null || inputPort === undefined) {
+        // Discovery mode: listen to all ports
+        connected = await this.midiInput.connectAll();
+      } else {
+        // Specific port mode
+        connected = await this.midiInput.connect(inputPort);
+      }
+
+      if (!connected) {
+        console.log(chalk.yellow('[MIDI Input] No MIDI input ports available'));
+        return false;
+      }
+
+      // Listen for note events with debounce logic
+      // Similar to browser-side implementation: only update strummer when notes are held,
+      // and use debounce to handle rapid releases when releasing a chord
+      this.midiInput.on<MidiInputNoteEvent>(MIDI_INPUT_NOTE_EVENT, (event) => {
+        // Broadcast MIDI input event to all clients (for UI display)
+        this.broadcastMidiInput(event);
+
+        // Clear any pending debounce timer
+        if (this.midiInputDebounceTimer) {
+          clearTimeout(this.midiInputDebounceTimer);
+          this.midiInputDebounceTimer = null;
+        }
+
+        if (event.added) {
+          // Note was added - update immediately
+          this.updateNotesFromMidiInput(event.notes);
+        } else if (event.removed) {
+          // Note was removed - debounce to handle rapid releases
+          this.midiInputDebounceTimer = setTimeout(() => {
+            this.midiInputDebounceTimer = null;
+            // Only update if there are still notes held
+            // If all notes released, keep the last chord
+            if (this.midiInput && this.midiInput.notes.length > 0) {
+              this.updateNotesFromMidiInput(this.midiInput.notes);
+            }
+          }, 100); // 100ms debounce
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error(chalk.red(`MIDI input not available: ${error}`));
+      return false;
+    }
+  }
+
+  /**
+   * Broadcast MIDI input event to all connected clients
+   */
+  private broadcastMidiInput(event: MidiInputNoteEvent): void {
+    if (!this.wss) return;
+
+    const midiInputMessage = {
+      type: 'midi-input',
+      notes: event.notes,
+      added: event.added,
+      removed: event.removed,
+      portName: event.portName,
+      availablePorts: this.midiInput?.connectedPorts ?? [],
+    };
+
+    const data = JSON.stringify(midiInputMessage);
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+
+  /**
+   * Send MIDI input status to a specific client
+   */
+  private sendMidiInputStatus(client: WebSocket): void {
+    if (!this.midiInput) return;
+
+    const midiInputMessage = {
+      type: 'midi-input-status',
+      connected: this.midiInput.isConnected,
+      availablePorts: this.midiInput.connectedPorts,
+      currentNotes: this.midiInput.notes,
+    };
+
+    client.send(JSON.stringify(midiInputMessage));
+  }
+
+  /**
+   * Update strummer notes from MIDI input
+   */
+  private updateNotesFromMidiInput(noteStrings: string[]): void {
+    if (noteStrings.length === 0) return;
+
+    // Update the config's initialNotes
+    this.config.strummer.strumming.initialNotes = noteStrings;
+
+    // Reconfigure strummer with new notes
+    this.setupNotes();
+
+    // Broadcast config change to all connected clients
+    this.broadcastConfig();
+
+    console.log(chalk.cyan(`[MIDI Input] Notes: ${noteStrings.join(', ')}`));
+  }
+
+  /**
    * Print MIDI configuration info
    */
   private printMidiConfig(): void {
@@ -342,6 +462,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     console.log(chalk.cyan('  Channel: ') + chalk.white(this.config.channel.toString()));
     if (this.config.outputPort !== null) {
       console.log(chalk.cyan('  Output Port: ') + chalk.white(String(this.config.outputPort)));
+    }
+    if (this.config.inputPort !== null) {
+      console.log(chalk.cyan('  Input Port: ') + chalk.white(String(this.config.inputPort)));
     }
     console.log(chalk.cyan('  Note Duration: ') + chalk.white(`${this.config.noteDuration.default}s`));
   }
@@ -821,13 +944,26 @@ class StrummerWebSocketServer extends TabletReaderBase {
     console.log(chalk.cyan.bold('║') + chalk.white.bold('              STRUMMER WEBSOCKET SERVER                     ') + chalk.cyan.bold('║'));
     console.log(chalk.cyan.bold('╚════════════════════════════════════════════════════════════╝\n'));
 
-    // Initialize MIDI
+    // Initialize MIDI output
     console.log(chalk.gray('Initializing MIDI...'));
     if (await this.setupMidi()) {
-      console.log(chalk.green('✓ MIDI initialized'));
+      console.log(chalk.green('✓ MIDI output initialized'));
       this.printMidiConfig();
     } else {
       console.log(chalk.yellow('⚠ MIDI not available - running without MIDI output'));
+    }
+
+    // Initialize MIDI input (for external keyboard)
+    // If inputPort is null, listens to ALL ports (discovery mode)
+    // If inputPort is specified, connects only to that port
+    console.log(chalk.gray('Initializing MIDI input...'));
+    if (await this.setupMidiInput()) {
+      const portInfo = this.config.inputPort === null
+        ? `listening to all ports (${this.midiInput?.connectedPorts.length ?? 0} found)`
+        : this.midiInput?.currentInputName;
+      console.log(chalk.green(`✓ MIDI input: ${portInfo}`));
+    } else {
+      console.log(chalk.yellow('⚠ No MIDI input ports available'));
     }
 
     // Start HTTP server if port configured
@@ -863,6 +999,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Send current device status to new client
       this.sendStatus(ws);
+
+      // Send MIDI input status to new client
+      this.sendMidiInputStatus(ws);
 
       ws.on('message', (message) => {
         try {
@@ -972,10 +1111,14 @@ async function main(): Promise<void> {
     .option('-d, --duration <seconds>', 'Note duration in seconds', parseFloat)
     // Debug/test options
     .option('--dump-config', 'Load config, print as JSON, and exit (for testing)')
+    .option('--list-ports', 'List available MIDI input and output ports, then exit')
     .addHelpText(
       'after',
       `
 Examples:
+  # List available MIDI ports
+  npm run server -- --list-ports
+
   # Start with WebSocket only (default port 8081)
   npm run server
 

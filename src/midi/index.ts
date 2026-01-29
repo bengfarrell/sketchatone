@@ -24,3 +24,11 @@
 export type { MidiBackendProtocol, MidiBackendOptions } from './protocol.js';
 export { RtMidiBackend } from './rtmidi-backend.js';
 export { MidiStrummerBridge, type MidiStrummerBridgeOptions } from './bridge.js';
+export {
+  RtMidiInput,
+  MIDI_INPUT_NOTE_EVENT,
+  MIDI_INPUT_CONNECTION_EVENT,
+  type MidiInputNoteEvent,
+  type MidiInputConnectionEvent,
+  type MidiInputPort,
+} from './rtmidi-input.js';

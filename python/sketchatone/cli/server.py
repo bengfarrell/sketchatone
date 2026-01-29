@@ -32,6 +32,7 @@ from sketchatone.models.midi_strummer_config import MidiStrummerConfig
 from sketchatone.models.note import Note, NoteObject
 from sketchatone.midi.bridge import MidiStrummerBridge
 from sketchatone.midi.protocol import MidiBackendProtocol
+from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
 
 # Import blankslate's TabletReaderBase
 try:
@@ -400,6 +401,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.bridge: Optional[MidiStrummerBridge] = None
         self.notes_played = 0
 
+        # MIDI input (for external keyboards)
+        self.midi_input: Optional[RtMidiInput] = None
+        self._midi_input_debounce_timer: Optional[threading.Timer] = None
+
         # Create Actions handler for stylus buttons
         self.actions = Actions(
             config={
@@ -539,6 +544,113 @@ class StrummerWebSocketServer(TabletReaderBase):
             if self.config.jack_auto_connect:
                 print(colored('  JACK Auto-connect: ', Colors.CYAN) +
                       colored(self.config.jack_auto_connect, Colors.WHITE))
+
+    def _setup_midi_input(self) -> bool:
+        """
+        Initialize MIDI input for external keyboard.
+        If midi_input_id is None, listens to ALL available MIDI inputs (discovery mode).
+        If midi_input_id is specified, connects only to that port.
+        """
+        try:
+            self.midi_input = RtMidiInput()
+            input_port = self.config.midi.midi_input_id
+
+            connected = False
+            if input_port is None:
+                # Discovery mode: listen to all ports
+                connected = self.midi_input.connect_all()
+            else:
+                # Specific port mode
+                connected = self.midi_input.connect(input_port)
+
+            if not connected:
+                print(colored('[MIDI Input] No MIDI input ports available', Colors.YELLOW))
+                return False
+
+            # Listen for note events with debounce logic
+            def on_midi_note(event: MidiInputNoteEvent) -> None:
+                # Broadcast MIDI input event to all clients (for UI display)
+                self._broadcast_midi_input(event)
+
+                # Clear any pending debounce timer
+                if self._midi_input_debounce_timer:
+                    self._midi_input_debounce_timer.cancel()
+                    self._midi_input_debounce_timer = None
+
+                if event.get('added'):
+                    # Note was added - update immediately
+                    self._update_notes_from_midi_input(event['notes'])
+                elif event.get('removed'):
+                    # Note was removed - debounce to handle rapid releases
+                    def debounced_update():
+                        self._midi_input_debounce_timer = None
+                        # Only update if there are still notes held
+                        # If all notes released, keep the last chord
+                        if self.midi_input and len(self.midi_input.notes) > 0:
+                            self._update_notes_from_midi_input(self.midi_input.notes)
+
+                    self._midi_input_debounce_timer = threading.Timer(0.1, debounced_update)
+                    self._midi_input_debounce_timer.daemon = True
+                    self._midi_input_debounce_timer.start()
+
+            self.midi_input.on_note(on_midi_note)
+            return True
+
+        except Exception as e:
+            print(colored(f'MIDI input not available: {e}', Colors.RED))
+            return False
+
+    def _broadcast_midi_input(self, event: MidiInputNoteEvent) -> None:
+        """Broadcast MIDI input event to all connected clients"""
+        if not self.clients:
+            return
+
+        midi_input_message = {
+            'type': 'midi-input',
+            'notes': event.get('notes', []),
+            'added': event.get('added'),
+            'removed': event.get('removed'),
+            'portName': event.get('port_name'),
+            'availablePorts': [
+                {'id': p['id'], 'name': p['name']}
+                for p in (self.midi_input.connected_ports if self.midi_input else [])
+            ],
+        }
+
+        self._broadcast(json.dumps(midi_input_message))
+
+    async def _send_midi_input_status(self, websocket: WebSocketServerProtocol) -> None:
+        """Send MIDI input status to a specific client"""
+        if not self.midi_input:
+            return
+
+        midi_input_message = {
+            'type': 'midi-input-status',
+            'connected': self.midi_input.is_connected,
+            'availablePorts': [
+                {'id': p['id'], 'name': p['name']}
+                for p in self.midi_input.connected_ports
+            ],
+            'currentNotes': self.midi_input.notes,
+        }
+
+        await websocket.send(json.dumps(midi_input_message))
+
+    def _update_notes_from_midi_input(self, note_strings: List[str]) -> None:
+        """Update strummer notes from MIDI input"""
+        if not note_strings:
+            return
+
+        # Update the config's initial_notes
+        self.config.strummer.strumming.initial_notes = note_strings
+
+        # Reconfigure strummer with new notes
+        self._setup_notes()
+
+        # Broadcast config change to all connected clients
+        self.broadcast_config()
+
+        print(colored(f'[MIDI Input] Notes: {", ".join(note_strings)}', Colors.CYAN))
 
     async def start(self) -> None:
         """Start the reader - required by TabletReaderBase abstract method"""
@@ -797,7 +909,10 @@ class StrummerWebSocketServer(TabletReaderBase):
             'message': message_text,
             'timestamp': int(time.time() * 1000)
         }))
-        
+
+        # Send MIDI input status to new client
+        await self._send_midi_input_status(websocket)
+
         try:
             async for message in websocket:
                 await self._handle_client_message(websocket, message)
@@ -1223,13 +1338,27 @@ class StrummerWebSocketServer(TabletReaderBase):
         self._main_loop = asyncio.get_event_loop()
         http_server = None
 
-        # Initialize MIDI
-        print(colored('Initializing MIDI...', Colors.GRAY))
+        # Initialize MIDI output
+        print(colored('Initializing MIDI output...', Colors.GRAY))
         if self._setup_midi():
-            print(colored('✓ MIDI initialized', Colors.GREEN))
+            print(colored('✓ MIDI output initialized', Colors.GREEN))
             self._print_midi_config()
         else:
             print(colored('⚠ MIDI not available - running without MIDI output', Colors.YELLOW))
+
+        # Initialize MIDI input (for external keyboard)
+        # If midi_input_id is None, listens to ALL ports (discovery mode)
+        # If midi_input_id is specified, connects only to that port
+        print(colored('Initializing MIDI input...', Colors.GRAY))
+        if self._setup_midi_input():
+            input_port = self.config.midi.midi_input_id
+            if input_port is None:
+                port_info = f"listening to all ports ({len(self.midi_input.connected_ports) if self.midi_input else 0} found)"
+            else:
+                port_info = self.midi_input.current_input_name if self.midi_input else str(input_port)
+            print(colored(f'✓ MIDI input: {port_info}', Colors.GREEN))
+        else:
+            print(colored('⚠ No MIDI input ports available', Colors.YELLOW))
 
         # Start event bus
         self.event_bus.start(self._main_loop)

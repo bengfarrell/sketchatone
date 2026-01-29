@@ -17,6 +17,28 @@ import type {
   DeviceStatusData,
 } from '../types/tablet-events.js';
 
+/** MIDI input port info from server */
+export interface ServerMidiInputPort {
+  id: number;
+  name: string;
+}
+
+/** MIDI input event from server */
+export interface ServerMidiInputEvent {
+  notes: string[];
+  added?: string;
+  removed?: string;
+  portName?: string;
+  availablePorts: ServerMidiInputPort[];
+}
+
+/** MIDI input status from server */
+export interface ServerMidiInputStatus {
+  connected: boolean;
+  availablePorts: ServerMidiInputPort[];
+  currentNotes: string[];
+}
+
 /**
  * Connection state
  */
@@ -32,6 +54,8 @@ export interface StrummerWebSocketClientEvents {
   'strum': StrumEventData;
   'combined': CombinedEventData;
   'config': ServerConfigData;
+  'midi-input': ServerMidiInputEvent;
+  'midi-input-status': ServerMidiInputStatus;
   'error': Error;
 }
 
@@ -269,6 +293,22 @@ export class StrummerWebSocketClient extends EventEmitter {
     return () => this.off('device-status', callback as any);
   }
 
+  /**
+   * Subscribe to MIDI input events from server
+   */
+  onMidiInput(callback: (event: ServerMidiInputEvent) => void): () => void {
+    this.on<ServerMidiInputEvent>('midi-input', callback);
+    return () => this.off('midi-input', callback as any);
+  }
+
+  /**
+   * Subscribe to MIDI input status from server
+   */
+  onMidiInputStatus(callback: (status: ServerMidiInputStatus) => void): () => void {
+    this.on<ServerMidiInputStatus>('midi-input-status', callback);
+    return () => this.off('midi-input-status', callback as any);
+  }
+
   private setConnectionState(state: ConnectionState): void {
     if (this._connectionState !== state) {
       this._connectionState = state;
@@ -323,6 +363,24 @@ export class StrummerWebSocketClient extends EventEmitter {
             timestamp: message.timestamp
           };
           this.emit<DeviceStatusData>('device-status', this._deviceStatus);
+          break;
+        case 'midi-input':
+          // MIDI input event from server (notes changed)
+          this.emit<ServerMidiInputEvent>('midi-input', {
+            notes: message.notes ?? [],
+            added: message.added,
+            removed: message.removed,
+            portName: message.portName,
+            availablePorts: message.availablePorts ?? [],
+          });
+          break;
+        case 'midi-input-status':
+          // MIDI input status from server (initial state on connect)
+          this.emit<ServerMidiInputStatus>('midi-input-status', {
+            connected: message.connected ?? false,
+            availablePorts: message.availablePorts ?? [],
+            currentNotes: message.currentNotes ?? [],
+          });
           break;
       }
     } catch (error) {

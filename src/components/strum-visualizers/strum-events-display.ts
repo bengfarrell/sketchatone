@@ -290,7 +290,7 @@ export class StrumEventsDisplay extends LitElement {
             <span class="strum-type ${strumData.type}">${strumData.type}</span>
           ` : ''}
         </div>
-        
+
         ${strumData && strumData.type === 'strum' && strumData.notes.length > 0 ? html`
           <div class="strum-notes">
             ${strumData.notes.map(n => html`

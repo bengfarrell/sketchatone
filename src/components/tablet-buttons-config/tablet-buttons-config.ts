@@ -383,8 +383,9 @@ export class TabletButtonsConfigComponent extends LitElement {
           if (paramDef.type === 'number') {
             return html`
               <div class="param-field">
-                <sp-field-label size="s">${paramDef.label}</sp-field-label>
+                <sp-field-label data-spectrum-pattern="field-label-s" size="s">${paramDef.label}</sp-field-label>
                 <sp-number-field
+                  data-spectrum-pattern="number-field-s"
                   size="s"
                   .value="${value}"
                   min="${paramDef.min ?? ''}"
@@ -402,8 +403,9 @@ export class TabletButtonsConfigComponent extends LitElement {
           } else if (paramDef.type === 'text') {
             return html`
               <div class="param-field">
-                <sp-field-label size="s">${paramDef.label}</sp-field-label>
+                <sp-field-label data-spectrum-pattern="field-label-s" size="s">${paramDef.label}</sp-field-label>
                 <sp-textfield
+                  data-spectrum-pattern="textfield-s"
                   size="s"
                   .value="${value}"
                   @change="${(ev: Event) => {
@@ -433,12 +435,13 @@ export class TabletButtonsConfigComponent extends LitElement {
       <div class="button-config" style="${buttonStyle}">
         <div class="button-label">Button ${buttonNumber}</div>
         <sp-picker
+          data-spectrum-pattern="picker-s"
           size="s"
           .value="${state.actionName}"
           @change="${(e: Event) => this.handleActionChange(buttonNumber, e)}"
         >
           ${this.actions.map(
-            (action) => html` <sp-menu-item value="${action.value}">${action.label}</sp-menu-item> `
+            (action) => html` <sp-menu-item data-spectrum-pattern="menu-item" value="${action.value}">${action.label}</sp-menu-item> `
           )}
         </sp-picker>
         ${this.renderParamControls(buttonNumber)}
@@ -452,13 +455,14 @@ export class TabletButtonsConfigComponent extends LitElement {
 
     return html`
       <div class="chord-progression-config">
-        <sp-field-label size="m">Chord Progression</sp-field-label>
-        <sp-picker size="m" .value="${this.selectedProgression}" @change="${this.handleProgressionChange}">
-          ${progressionNames.map((name) => html` <sp-menu-item value="${name}">${name}</sp-menu-item> `)}
+        <sp-field-label data-spectrum-pattern="field-label-m" size="m">Chord Progression</sp-field-label>
+        <sp-picker data-spectrum-pattern="picker-m" size="m" .value="${this.selectedProgression}" @change="${this.handleProgressionChange}">
+          ${progressionNames.map((name) => html` <sp-menu-item data-spectrum-pattern="menu-item" value="${name}">${name}</sp-menu-item> `)}
         </sp-picker>
 
-        <sp-field-label size="m">Octave</sp-field-label>
+        <sp-field-label data-spectrum-pattern="field-label-m" size="m">Octave</sp-field-label>
         <sp-number-field
+          data-spectrum-pattern="number-field-m"
           size="m"
           .value="${this.selectedOctave}"
           min="0"
@@ -495,8 +499,8 @@ export class TabletButtonsConfigComponent extends LitElement {
     return html`
       <div class="config-section">
         <div class="mode-toggle">
-          <sp-field-label size="m">Chord Progression Mode</sp-field-label>
-          <sp-switch ?checked="${this.useChordProgressionMode}" @change="${this.handleModeToggle}">
+          <sp-field-label data-spectrum-pattern="field-label-m" size="m">Chord Progression Mode</sp-field-label>
+          <sp-switch data-spectrum-pattern="switch" ?checked="${this.useChordProgressionMode}" @change="${this.handleModeToggle}">
             ${this.useChordProgressionMode ? 'On' : 'Off'}
           </sp-switch>
         </div>

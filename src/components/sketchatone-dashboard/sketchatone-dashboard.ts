@@ -11,6 +11,8 @@ import { styles } from './sketchatone-dashboard.styles.js';
 import '@spectrum-web-components/button/sp-button.js';
 import '@spectrum-web-components/action-button/sp-action-button.js';
 import '@spectrum-web-components/textfield/sp-textfield.js';
+import '@spectrum-web-components/picker/sp-picker.js';
+import '@spectrum-web-components/menu/sp-menu-item.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
@@ -37,11 +39,17 @@ import {
 } from 'blankslate';
 
 // Local WebSocket client with config update support
-import { StrummerWebSocketClient } from '../../utils/strummer-websocket-client.js';
+import {
+  StrummerWebSocketClient,
+  type ServerMidiInputEvent,
+  type ServerMidiInputStatus,
+  type ServerMidiInputPort,
+} from '../../utils/strummer-websocket-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
 import { TabletButtonsConfig } from '../../models/strummer-features.js';
+import { Note, type NoteObject } from '../../models/note.js';
 
 // Shared tablet interaction controller for curve visualizers
 import { sharedTabletInteraction } from '../../controllers/index.js';
@@ -103,6 +111,19 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private tabletVisualizersExpanded = true;
 
+  // Server MIDI input state (from Node.js server)
+  @state()
+  private serverMidiConnected = false;
+
+  @state()
+  private serverMidiPorts: ServerMidiInputPort[] = [];
+
+  @state()
+  private serverMidiNotes: NoteObject[] = [];
+
+  @state()
+  private lastMidiPortName: string | null = null;
+
   // WebSocket client instance
   private wsClient = new StrummerWebSocketClient();
 
@@ -132,6 +153,30 @@ export class SketchatoneDashboard extends LitElement {
 
     this.wsClient.onCombinedEvent((data: CombinedEventData) => {
       this.handleTabletData(data);
+    });
+
+    // Listen for server MIDI input status (sent on connect)
+    this.wsClient.onMidiInputStatus((status: ServerMidiInputStatus) => {
+      this.serverMidiConnected = status.connected;
+      this.serverMidiPorts = status.availablePorts;
+      this.serverMidiNotes = status.currentNotes.map((n) => Note.parseNotation(n));
+    });
+
+    // Listen for server MIDI input events (notes changed)
+    this.wsClient.onMidiInput((event: ServerMidiInputEvent) => {
+      this.serverMidiNotes = event.notes.map((n) => Note.parseNotation(n));
+      this.lastMidiPortName = event.portName ?? null;
+      this.serverMidiPorts = event.availablePorts;
+      this.serverMidiConnected = true;
+    });
+  }
+
+  /**
+   * Copy port name to clipboard
+   */
+  private copyPortName(portName: string) {
+    navigator.clipboard.writeText(portName).then(() => {
+      console.log(`Copied "${portName}" to clipboard`);
     });
   }
 
@@ -467,6 +512,40 @@ export class SketchatoneDashboard extends LitElement {
                       </span>
                     </div>
                   </div>
+                </div>
+
+                <!-- MIDI Input Panel -->
+                <div class="visualizer-card compact midi-panel">
+                  <div class="midi-panel-header">
+                    <span class="midi-panel-title">MIDI Input</span>
+                    <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
+                      <span class="status-dot"></span>
+                      ${this.serverMidiPorts.length} ports
+                    </div>
+                  </div>
+                  <div class="midi-notes compact">
+                    <span class="midi-notes-label">Notes:</span>
+                    <span class="midi-notes-value">${this.serverMidiNotes.length > 0
+                      ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
+                      : '—'}</span>
+                  </div>
+                  ${this.lastMidiPortName ? html`
+                    <div class="midi-source">from: ${this.lastMidiPortName}</div>
+                  ` : ''}
+                  ${this.serverMidiPorts.length > 0 ? html`
+                    <div class="midi-ports-list">
+                      <span class="midi-ports-label">Ports (click to copy):</span>
+                      <ul class="midi-ports">
+                        ${this.serverMidiPorts.map((port) => html`
+                          <li class="midi-port-item ${port.name === this.lastMidiPortName ? 'active' : ''}"
+                              @click=${() => this.copyPortName(port.name)}
+                              title="Click to copy for config">
+                            ${port.name}
+                          </li>
+                        `)}
+                      </ul>
+                    </div>
+                  ` : ''}
                 </div>
 
                 <!-- Events Panel -->

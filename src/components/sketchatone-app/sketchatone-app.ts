@@ -43,7 +43,7 @@ export class SketchatoneApp extends LitElement {
           <h1>${this.message}</h1>
           <div class="content">
             <p>Application is ready.</p>
-            <sp-button variant="primary" @click=${this._handleClick}>
+            <sp-button data-spectrum-pattern="button-primary" variant="primary" @click=${this._handleClick}>
               Get Started
             </sp-button>
           </div>

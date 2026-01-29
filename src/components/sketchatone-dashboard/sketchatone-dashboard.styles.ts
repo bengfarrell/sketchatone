@@ -79,6 +79,15 @@ export const styles = css`
     color: var(--spectrum-green-900);
   }
 
+  .status-badge.disconnected {
+    background: var(--spectrum-gray-200);
+    color: var(--spectrum-gray-700);
+  }
+
+  .status-badge.disconnected .status-dot {
+    background: var(--spectrum-gray-500);
+  }
+
   .status-dot {
     width: 8px;
     height: 8px;
@@ -384,5 +393,104 @@ export const styles = css`
       grid-column: span 1;
     }
 
+  }
+
+  /* MIDI Input Panel (inside visualizers-grid) */
+  .visualizer-card.midi-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .midi-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .midi-panel-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--spectrum-gray-900);
+  }
+
+  .status-badge.small {
+    font-size: 0.8rem;
+    padding: 3px 8px;
+  }
+
+  .midi-notes {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--spectrum-blue-100);
+    border-radius: 6px;
+    font-size: 0.875rem;
+  }
+
+  .midi-notes.compact {
+    padding: 6px 10px;
+    font-size: 0.875rem;
+  }
+
+  .midi-notes-label {
+    color: var(--spectrum-blue-900);
+    font-weight: 500;
+  }
+
+  .midi-notes-value {
+    color: var(--spectrum-blue-900);
+    font-family: monospace;
+    font-weight: 600;
+  }
+
+  .midi-source {
+    font-size: 0.8rem;
+    color: var(--spectrum-gray-700);
+    font-style: italic;
+  }
+
+  .midi-ports-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .midi-ports-label {
+    font-size: 0.875rem;
+    color: var(--spectrum-gray-800);
+  }
+
+  .midi-ports {
+    list-style: none;
+    margin: 6px 0 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .midi-port-item {
+    padding: 6px 10px;
+    background: var(--spectrum-gray-200);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--spectrum-gray-900);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .midi-port-item:hover {
+    background: var(--spectrum-gray-300);
+  }
+
+  .midi-port-item.active {
+    background: var(--spectrum-green-200);
+    border-left: 3px solid var(--spectrum-green-700);
+    color: var(--spectrum-green-900);
   }
 `;
