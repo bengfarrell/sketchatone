@@ -7,6 +7,7 @@
 import { LitElement, html, svg } from 'lit';
 import { property } from 'lit/decorators.js';
 import { styles } from './curve-visualizer.styles.js';
+import { sharedTabletInteraction } from '../../controllers/index.js';
 
 import '@spectrum-web-components/picker/sp-picker.js';
 import '@spectrum-web-components/menu/sp-menu-item.js';
@@ -49,6 +50,51 @@ export class CurveVisualizer extends LitElement {
 
     @property({ type: Number, hasChanged: () => true })
     hoverPosition: number | null = null;
+
+    constructor() {
+        super();
+        // Register with the shared tablet interaction controller
+        sharedTabletInteraction.addHost(this);
+    }
+
+    /**
+     * Calculate hover position based on controller state and control type
+     */
+    private getHoverPositionFromController(): number | null {
+        const state = sharedTabletInteraction.state;
+
+        switch (this.control) {
+            case 'yaxis':
+                // Y-axis uses tablet Y position (normalized 0-1)
+                // Show position even when just hovering (not pressed)
+                return state.tabletY;
+
+            case 'pressure':
+                // Pressure from pen (0-1) - only show when pressed
+                return state.tiltPressed ? state.tiltPressure : null;
+
+            case 'tiltX':
+                // Tilt X normalized from -1..1 to 0..1 - only show when pressed
+                return state.tiltPressed ? (state.tiltX + 1) / 2 : null;
+
+            case 'tiltY':
+                // Tilt Y normalized from -1..1 to 0..1 - only show when pressed
+                return state.tiltPressed ? (state.tiltY + 1) / 2 : null;
+
+            case 'tiltXY':
+                // Combined tilt magnitude with sign - use value from controller
+                // Only show when pressed
+                if (state.tiltPressed) {
+                    // state.tiltXY ranges from -1 to +1, normalize to 0-1 for display
+                    const normalized = (state.tiltXY + 1) / 2;
+                    return normalized;
+                }
+                return null;
+
+            default:
+                return null;
+        }
+    }
 
     private handleControlChange(e: Event) {
         const target = e.target as any;
@@ -109,6 +155,12 @@ export class CurveVisualizer extends LitElement {
 
         const curvePath = this.generateCurvePath(this.config, curveWidth, curveHeight);
 
+        // Get hover position from controller based on current control type
+        const hoverPosition = this.getHoverPositionFromController();
+
+        // Calculate final output value if we have a hover position
+        const outputValue = hoverPosition !== null ? this.calculateOutputValue(this.config, hoverPosition) : null;
+
         return html`
                     <svg viewBox="0 0 ${graphWidth} ${graphHeight}" style="width: 100%; height: auto; display: block;">
                         <rect x="${padding}" y="${padding}"
@@ -130,9 +182,43 @@ export class CurveVisualizer extends LitElement {
                               font-size="10" fill="var(--spectrum-gray-800)" text-anchor="middle"
                               transform="rotate(-90, ${padding - 12}, ${padding + innerHeight / 2})">${this.outputLabel}</text>
 
+                        <!-- Center line for central spread -->
+                        ${this.config.spread === 'central' ? svg`
+                            <line x1="${padding + strokeInset + curveWidth / 2}"
+                                  y1="${padding}"
+                                  x2="${padding + strokeInset + curveWidth / 2}"
+                                  y2="${graphHeight - padding}"
+                                  stroke="#ffd43b"
+                                  stroke-width="1"
+                                  stroke-dasharray="3,3"
+                                  opacity="0.5" />
+                        ` : ''}
+
                         <polyline points="${curvePath}"
                             fill="none" stroke="${this.color}" stroke-width="2.5" stroke-linecap="round"
                             transform="translate(${padding + strokeInset}, ${padding + strokeInset})" />
+
+                        <!-- Hover position indicator -->
+                        ${hoverPosition !== null && outputValue !== null ? svg`
+                            <line x1="${padding + strokeInset + (hoverPosition * curveWidth)}"
+                                  y1="${padding}"
+                                  x2="${padding + strokeInset + (hoverPosition * curveWidth)}"
+                                  y2="${graphHeight - padding}"
+                                  stroke="#51cf66"
+                                  stroke-width="2"
+                                  opacity="0.6"
+                                  stroke-dasharray="4,4" />
+
+                            <!-- Output value label -->
+                            <text x="${padding + strokeInset + (hoverPosition * curveWidth)}"
+                                  y="${padding - 8}"
+                                  text-anchor="middle"
+                                  font-size="11"
+                                  fill="#51cf66"
+                                  font-weight="600">
+                                ${outputValue.toFixed(3)}
+                            </text>
+                        ` : ''}
                     </svg>
                 <p style="font-size: 12px; color: var(--spectrum-gray-700);">Label: ${this.label} | Control: ${this.control}</p>
                 

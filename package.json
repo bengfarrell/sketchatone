@@ -68,7 +68,8 @@
     "test:spectrumizer:debug": "APP_ROOT_COMPONENT=sketchatone-tablet-app playwright test --config=playwright.spectrumizer.config.ts --debug",
     "strum-events": "node dist/cli/strum-event-viewer.js",
     "midi-strummer": "node dist/cli/midi-strummer.js",
-    "server": "node dist/cli/server.js"
+    "server": "node dist/cli/server.js",
+    "dev-server": "npm run build:cli && node dist/cli/server.js"
   },
   "dependencies": {
     "@julusian/midi": "^3.6.1",

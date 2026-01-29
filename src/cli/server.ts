@@ -26,8 +26,12 @@ import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resol
 // Default config directory
 const DEFAULT_CONFIG_DIR = './public/configs';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
+import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
 import { Note, type NoteObject } from '../models/note.js';
+import { RtMidiBackend } from '../midi/rtmidi-backend.js';
+import { MidiStrummerBridge } from '../midi/bridge.js';
+import type { MidiBackendProtocol } from '../midi/protocol.js';
 import {
   strummerEventBus,
   StrummerEventBus,
@@ -95,6 +99,36 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private clientCount: number = 0;
   private deviceConnected: boolean = false;
   private publicDir: string;
+  // MIDI support
+  private backend: MidiBackendProtocol | null = null;
+  private bridge: MidiStrummerBridge | null = null;
+  public notesPlayed: number = 0;
+  private actions: Actions;
+
+  // State tracking for stylus buttons
+  private buttonState = {
+    primaryButtonPressed: false,
+    secondaryButtonPressed: false,
+  };
+
+  // State tracking for tablet hardware buttons (1-8)
+  private tabletButtonState: Record<string, boolean> = {
+    button1: false,
+    button2: false,
+    button3: false,
+    button4: false,
+    button5: false,
+    button6: false,
+    button7: false,
+    button8: false,
+  };
+
+  // State tracking for note repeater
+  private repeaterState = {
+    notes: [] as StrumNoteData[],
+    lastRepeatTime: 0,
+    isHolding: false,
+  };
 
   constructor(
     tabletConfigPath: string,
@@ -103,6 +137,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
       wsPort?: number;
       httpPort?: number;
       throttleMs?: number;
+      // MIDI options
+      midiChannel?: number;
+      midiPort?: string | number;
+      noteDuration?: number;
     } = {}
   ) {
     super(tabletConfigPath, options);
@@ -112,6 +150,17 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.config = MidiStrummerConfig.fromJsonFile(options.strummerConfigPath);
     } else {
       this.config = new MidiStrummerConfig();
+    }
+
+    // Apply CLI overrides for MIDI settings
+    if (options.midiChannel !== undefined) {
+      this.config.midi.channel = options.midiChannel;
+    }
+    if (options.midiPort !== undefined) {
+      this.config.midi.outputPort = options.midiPort;
+    }
+    if (options.noteDuration !== undefined) {
+      this.config.noteDuration.default = options.noteDuration;
     }
 
     // CLI args take precedence over config file values
@@ -131,6 +180,17 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Set up notes
     this.setupNotes();
+
+    // Create Actions handler for stylus buttons
+    this.actions = new Actions(
+      {
+        noteRepeater: this.config.noteRepeater,
+        transpose: this.config.transpose,
+        lowerSpread: this.config.strummer.lowerSpread,
+        upperSpread: this.config.strummer.upperSpread,
+      },
+      this.strummer
+    );
   }
 
   /**
@@ -198,6 +258,92 @@ class StrummerWebSocketServer extends TabletReaderBase {
     );
 
     this.strummer.notes = notes;
+  }
+
+  /**
+   * Get the control input value based on the control type.
+   *
+   * @param control - Control source type
+   * @param inputs - Object containing input values
+   * @returns Normalized control value (0.0 to 1.0), or null if control is "none"
+   */
+  private getControlValue(
+    control: string,
+    inputs: {
+      x?: number;
+      y?: number;
+      pressure?: number;
+      tiltX?: number;
+      tiltY?: number;
+      tiltXY?: number;
+      pressureVelocity?: number;
+    }
+  ): number | null {
+    switch (control) {
+      case 'none':
+        return null;
+      case 'pressure':
+        return inputs.pressure ?? 0;
+      case 'tiltX':
+        // tiltX from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltX ?? 0) + 1.0) / 2.0;
+      case 'tiltY':
+        // tiltY from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltY ?? 0) + 1.0) / 2.0;
+      case 'tiltXY':
+        // tiltXY from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltXY ?? 0) + 1.0) / 2.0;
+      case 'xaxis':
+        return inputs.x ?? 0.5;
+      case 'yaxis':
+        return inputs.y ?? 0.5;
+      case 'velocity':
+        return inputs.pressureVelocity ?? inputs.pressure ?? 0;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Initialize MIDI backend and bridge
+   */
+  private async setupMidi(): Promise<boolean> {
+    try {
+      this.backend = new RtMidiBackend({
+        channel: this.config.channel,
+        useVirtualPorts: this.config.useVirtualPorts,
+      });
+
+      // Connect backend
+      const port = this.config.outputPort;
+      if (!(await this.backend.connect(port))) {
+        console.error(chalk.red('Failed to connect MIDI backend'));
+        return false;
+      }
+
+      // Create bridge
+      this.bridge = new MidiStrummerBridge(this.strummer, this.backend, {
+        noteDuration: this.config.noteDuration.default,
+        autoConnect: false, // We'll handle events manually
+      });
+
+      return true;
+    } catch (error) {
+      console.error(chalk.red(`MIDI backend not available: ${error}`));
+      return false;
+    }
+  }
+
+  /**
+   * Print MIDI configuration info
+   */
+  private printMidiConfig(): void {
+    console.log(chalk.white.bold('MIDI Config:'));
+    console.log(chalk.cyan('  Channel: ') + chalk.white(this.config.channel.toString()));
+    if (this.config.outputPort !== null) {
+      console.log(chalk.cyan('  Output Port: ') + chalk.white(String(this.config.outputPort)));
+    }
+    console.log(chalk.cyan('  Note Duration: ') + chalk.white(`${this.config.noteDuration.default}s`));
   }
 
   /**
@@ -370,7 +516,15 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Convert snake_case to camelCase
+   */
+  private snakeToCamel(str: string): string {
+    return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  }
+
+  /**
    * Set a config value using dot-notation path
+   * Supports both snake_case and camelCase paths
    */
   private setConfigValue(path: string, value: unknown): void {
     const parts = path.split('.');
@@ -379,15 +533,27 @@ class StrummerWebSocketServer extends TabletReaderBase {
     let current: Record<string, unknown> = this.config as unknown as Record<string, unknown>;
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
-      if (current[part] === undefined || current[part] === null) {
+      const camelPart = this.snakeToCamel(part);
+
+      // Try camelCase first, then original
+      if (current[camelPart] !== undefined && current[camelPart] !== null) {
+        current = current[camelPart] as Record<string, unknown>;
+      } else if (current[part] !== undefined && current[part] !== null) {
+        current = current[part] as Record<string, unknown>;
+      } else {
         throw new Error(`Invalid path: ${path}`);
       }
-      current = current[part] as Record<string, unknown>;
     }
 
-    // Set the value
+    // Set the value - try camelCase first
     const lastPart = parts[parts.length - 1];
-    current[lastPart] = value;
+    const camelLastPart = this.snakeToCamel(lastPart);
+
+    if (camelLastPart in current || !(lastPart in current)) {
+      current[camelLastPart] = value;
+    } else {
+      current[lastPart] = value;
+    }
   }
 
   /**
@@ -406,11 +572,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   protected handlePacket(data: Uint8Array): void {
-    // Skip all processing if no clients are connected
-    if (!this.hasClients()) {
-      return;
-    }
-
     try {
       this.packetCount++;
 
@@ -420,6 +581,85 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Extract normalized values
       const normalized = normalizeTabletEvent(events);
       const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
+
+      // Handle stylus button presses
+      const stylusButtonsCfg = this.config.stylusButtons;
+
+      // Detect button down events (transition from not pressed to pressed)
+      if (stylusButtonsCfg?.active) {
+        if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
+          // Primary button just pressed
+          const action = stylusButtonsCfg.primaryButtonAction;
+          this.actions.execute(action, { button: 'Primary' });
+        }
+
+        if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
+          // Secondary button just pressed
+          const action = stylusButtonsCfg.secondaryButtonAction;
+          this.actions.execute(action, { button: 'Secondary' });
+        }
+      }
+
+      // Update stylus button states
+      this.buttonState.primaryButtonPressed = primaryButtonPressed;
+      this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
+
+      // Handle tablet hardware button presses (buttons 1-8)
+      const tabletButtonsCfg = this.config.tabletButtons;
+      for (let i = 1; i <= 8; i++) {
+        const buttonKey = `button${i}` as keyof typeof normalized;
+        const buttonPressed = Boolean(normalized[buttonKey]);
+        const stateKey = `button${i}`;
+
+        // Detect button down event (transition from not pressed to pressed)
+        if (buttonPressed && !this.tabletButtonState[stateKey]) {
+          // Button just pressed - execute configured action
+          const action = tabletButtonsCfg?.getButtonAction(i);
+          if (action) {
+            this.actions.execute(action, { button: `Tablet${i}` });
+          }
+        }
+
+        // Update tablet button state
+        this.tabletButtonState[stateKey] = buttonPressed;
+      }
+
+      // Apply pitch bend based on configuration
+      const pitchBendCfg = this.config.pitchBend;
+      if (pitchBendCfg && this.backend) {
+        const controlValue = this.getControlValue(pitchBendCfg.control, {
+          x,
+          y,
+          pressure,
+          tiltX,
+          tiltY,
+          tiltXY,
+        });
+        if (controlValue !== null) {
+          const bendValue = pitchBendCfg.mapValue(controlValue);
+          this.backend.sendPitchBend?.(bendValue);
+        }
+      }
+
+      // Calculate dynamic note duration based on configuration
+      const noteDurationCfg = this.config.noteDuration;
+      let currentNoteDuration = noteDurationCfg.default;
+      if (noteDurationCfg) {
+        const controlValue = this.getControlValue(noteDurationCfg.control, {
+          x,
+          y,
+          pressure,
+          tiltX,
+          tiltY,
+          tiltXY,
+        });
+        if (controlValue !== null) {
+          currentNoteDuration = noteDurationCfg.mapValue(controlValue);
+        }
+      }
+
+      // Get note velocity configuration for applying curve
+      const noteVelocityCfg = this.config.noteVelocity;
 
       // Emit tablet event to event bus (throttled)
       const tabletEventData: TabletEventData = {
@@ -452,8 +692,52 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Process strum
       const event = this.strummer.strum(x, pressure);
 
+      // Get note repeater configuration
+      const noteRepeaterCfg = this.config.noteRepeater;
+      const noteRepeaterEnabled = noteRepeaterCfg?.active ?? false;
+      const pressureMultiplier = noteRepeaterCfg?.pressureMultiplier ?? 1.0;
+      const frequencyMultiplier = noteRepeaterCfg?.frequencyMultiplier ?? 1.0;
+
+      // Get transpose state from actions
+      const transposeEnabled = this.actions.isTransposeActive();
+      const transposeSemitones = this.actions.getTransposeSemitones();
+
       if (event) {
         if (event.type === 'strum') {
+          // Store notes for repeater and mark as holding
+          this.repeaterState.notes = event.notes;
+          this.repeaterState.isHolding = true;
+          this.repeaterState.lastRepeatTime = Date.now() / 1000;
+
+          // Send MIDI notes
+          for (const noteData of event.notes) {
+            const rawVelocity = noteData.velocity;
+
+            // Apply velocity curve from note_velocity config
+            let velocity = rawVelocity;
+            if (noteVelocityCfg && rawVelocity > 0) {
+              // Normalize velocity to 0-1 range
+              const normalizedVel = rawVelocity / 127;
+              // Apply the parameter mapping (includes curve)
+              velocity = Math.floor(noteVelocityCfg.mapValue(normalizedVel));
+              // Clamp to MIDI range
+              velocity = Math.max(1, Math.min(127, velocity));
+            }
+
+            if (this.backend && velocity > 0) {
+              // Apply transpose if enabled
+              const noteToPlay = transposeEnabled
+                ? Note.transpose(noteData.note, transposeSemitones)
+                : noteData.note;
+              this.backend.sendNote(
+                noteToPlay,
+                velocity,
+                currentNoteDuration
+              );
+              this.notesPlayed++;
+            }
+          }
+
           // Emit strum event to event bus (throttled)
           const strumEventData: StrumEventData = {
             type: 'strum',
@@ -470,6 +754,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
           };
           this.eventBus.emitStrumEvent(strumEventData);
         } else if (event.type === 'release') {
+          // Stop holding - no more repeats
+          this.repeaterState.isHolding = false;
+          this.repeaterState.notes = [];
+
           // Emit release event to event bus (throttled)
           const releaseEventData: StrumEventData = {
             type: 'release',
@@ -478,6 +766,49 @@ class StrummerWebSocketServer extends TabletReaderBase {
             timestamp: Date.now(),
           };
           this.eventBus.emitStrumEvent(releaseEventData);
+        }
+      }
+
+      // Handle note repeater - fire repeatedly while holding
+      if (noteRepeaterEnabled && this.repeaterState.isHolding && this.repeaterState.notes.length > 0) {
+        const currentTime = Date.now() / 1000;
+        const timeSinceLastRepeat = currentTime - this.repeaterState.lastRepeatTime;
+
+        // Apply frequency multiplier to duration (higher = faster repeats)
+        const repeatInterval = frequencyMultiplier > 0
+          ? currentNoteDuration / frequencyMultiplier
+          : currentNoteDuration;
+
+        // Check if it's time for another repeat
+        if (timeSinceLastRepeat >= repeatInterval) {
+          for (const noteData of this.repeaterState.notes) {
+            // Use the original note's velocity with pressure multiplier applied
+            const originalVelocity = noteData.velocity ?? 100;
+            let rawRepeatVelocity = Math.floor(originalVelocity * pressureMultiplier);
+            rawRepeatVelocity = Math.max(1, Math.min(127, rawRepeatVelocity));
+
+            // Apply velocity curve from note_velocity config
+            let repeatVelocity = rawRepeatVelocity;
+            if (noteVelocityCfg && rawRepeatVelocity > 0) {
+              const normalizedVel = rawRepeatVelocity / 127;
+              repeatVelocity = Math.floor(noteVelocityCfg.mapValue(normalizedVel));
+              repeatVelocity = Math.max(1, Math.min(127, repeatVelocity));
+            }
+
+            if (this.backend && repeatVelocity > 0) {
+              // Apply transpose if enabled
+              const noteToPlay = transposeEnabled
+                ? Note.transpose(noteData.note, transposeSemitones)
+                : noteData.note;
+              this.backend.sendNote(
+                noteToPlay,
+                repeatVelocity,
+                currentNoteDuration
+              );
+            }
+          }
+
+          this.repeaterState.lastRepeatTime = currentTime;
         }
       }
     } catch (e) {
@@ -489,6 +820,15 @@ class StrummerWebSocketServer extends TabletReaderBase {
     console.log(chalk.cyan.bold('\n╔════════════════════════════════════════════════════════════╗'));
     console.log(chalk.cyan.bold('║') + chalk.white.bold('              STRUMMER WEBSOCKET SERVER                     ') + chalk.cyan.bold('║'));
     console.log(chalk.cyan.bold('╚════════════════════════════════════════════════════════════╝\n'));
+
+    // Initialize MIDI
+    console.log(chalk.gray('Initializing MIDI...'));
+    if (await this.setupMidi()) {
+      console.log(chalk.green('✓ MIDI initialized'));
+      this.printMidiConfig();
+    } else {
+      console.log(chalk.yellow('⚠ MIDI not available - running without MIDI output'));
+    }
 
     // Start HTTP server if port configured
     if (this.httpPort) {
@@ -626,6 +966,12 @@ async function main(): Promise<void> {
     .option('--http-port <number>', 'HTTP server port for serving webapps', parseInt)
     .option('--throttle <ms>', 'Throttle interval in milliseconds (default: 150)', parseInt)
     .option('--poll <ms>', 'Poll interval in milliseconds for waiting for device. If not set, quit if no device found.', parseInt)
+    // MIDI options
+    .option('--channel <number>', 'MIDI channel (0-15)', parseInt)
+    .option('-p, --port <port>', 'MIDI output port (name or index)')
+    .option('-d, --duration <seconds>', 'Note duration in seconds', parseFloat)
+    // Debug/test options
+    .option('--dump-config', 'Load config, print as JSON, and exit (for testing)')
     .addHelpText(
       'after',
       `
@@ -641,6 +987,9 @@ Examples:
 
   # With custom throttle (100ms = 10 events/second max)
   npm run server -- --throttle 100
+
+  # With MIDI output on channel 1
+  npm run server -- --channel 1 --port 0
 `
     );
 
@@ -653,6 +1002,12 @@ Examples:
     httpPort?: number;
     throttle?: number;
     poll?: number;
+    // MIDI options
+    channel?: number;
+    port?: string;
+    duration?: number;
+    // Debug/test options
+    dumpConfig?: boolean;
   }>();
 
   const configInput = options.tabletConfig ?? DEFAULT_CONFIG_DIR;
@@ -664,8 +1019,23 @@ Examples:
     ? MidiStrummerConfig.fromJsonFile(strummerConfigPath)
     : new MidiStrummerConfig();
 
+  // Handle --dump-config: print config as JSON and exit
+  if (options.dumpConfig) {
+    console.log(JSON.stringify(strummerConfig.toDict(), null, 2));
+    process.exit(0);
+  }
+
   // Resolve effective poll interval (CLI arg takes precedence over config)
   const effectivePoll = options.poll ?? strummerConfig.deviceFindingPollInterval ?? undefined;
+
+  // Parse MIDI port (could be int or string)
+  let midiPort: string | number | undefined = options.port;
+  if (midiPort !== undefined) {
+    const parsed = parseInt(midiPort, 10);
+    if (!isNaN(parsed)) {
+      midiPort = parsed;
+    }
+  }
 
   // Helper function to create and start the server with a given config path
   const createAndStartServer = async (tabletConfigPath: string): Promise<void> => {
@@ -674,7 +1044,12 @@ Examples:
       wsPort: options.wsPort,
       httpPort: options.httpPort,
       throttleMs: options.throttle,
+      // MIDI options
+      midiChannel: options.channel,
+      midiPort,
+      noteDuration: options.duration,
     });
+
     await server.start();
   };
 

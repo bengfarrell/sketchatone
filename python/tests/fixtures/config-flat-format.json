@@ -1,0 +1,76 @@
+{
+  "note_duration": {
+    "min": 0.2,
+    "max": 2.0,
+    "multiplier": 1.5,
+    "curve": 2.5,
+    "spread": "inverse",
+    "control": "tiltXY",
+    "default": 0.8
+  },
+  "pitch_bend": {
+    "min": -0.5,
+    "max": 0.5,
+    "multiplier": 0.8,
+    "curve": 3.0,
+    "spread": "central",
+    "control": "yaxis",
+    "default": 0.1
+  },
+  "note_velocity": {
+    "min": 10,
+    "max": 100,
+    "multiplier": 1.2,
+    "curve": 2.0,
+    "spread": "direct",
+    "control": "pressure",
+    "default": 80
+  },
+  "strumming": {
+    "pluck_velocity_scale": 3.5,
+    "pressure_threshold": 0.15,
+    "midi_channel": 2,
+    "initial_notes": ["D4", "F#4", "A4"],
+    "chord": "Dm",
+    "upper_note_spread": 4,
+    "lower_note_spread": 2
+  },
+  "note_repeater": {
+    "active": true,
+    "pressure_multiplier": 2.0,
+    "frequency_multiplier": 1.5
+  },
+  "transpose": {
+    "active": true,
+    "semitones": 7
+  },
+  "stylus_buttons": {
+    "active": false,
+    "primary_button_action": "toggle-repeater",
+    "secondary_button_action": "toggle-transpose"
+  },
+  "strum_release": {
+    "active": true,
+    "midi_note": 42,
+    "midi_channel": 3,
+    "max_duration": 0.5,
+    "velocity_multiplier": 0.8
+  },
+  "tablet_buttons": {
+    "preset": "jazz-standards",
+    "chords": ["Dm7", "G7", "Cmaj7", "Fmaj7"],
+    "current_index": 2
+  },
+  "midi": {
+    "output_port": "Test Port",
+    "input_port": null,
+    "channel": 5,
+    "use_virtual_ports": true
+  },
+  "server": {
+    "http_port": 3000,
+    "ws_port": 9000,
+    "ws_message_throttle": 200,
+    "device_finding_poll_interval": 3000
+  }
+}

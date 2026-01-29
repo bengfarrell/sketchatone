@@ -65,7 +65,7 @@ class TestStrummingConfig:
         assert config.lower_note_spread == 2
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (camelCase for webapp)."""
         config = StrummingConfig(
             pluck_velocity_scale=5.0,
             pressure_threshold=0.05,
@@ -76,13 +76,13 @@ class TestStrummingConfig:
             lower_note_spread=5
         )
         d = config.to_dict()
-        assert d['pluck_velocity_scale'] == 5.0
-        assert d['pressure_threshold'] == 0.05
-        assert d['midi_channel'] == 1
-        assert d['initial_notes'] == ['C3']
+        assert d['pluckVelocityScale'] == 5.0
+        assert d['pressureThreshold'] == 0.05
+        assert d['midiChannel'] == 1
+        assert d['initialNotes'] == ['C3']
         assert d['chord'] == 'C'
-        assert d['upper_note_spread'] == 5
-        assert d['lower_note_spread'] == 5
+        assert d['upperNoteSpread'] == 5
+        assert d['lowerNoteSpread'] == 5
 
 
 class TestStrummerConfigNewFormat:
@@ -145,17 +145,17 @@ class TestStrummerConfigNewFormat:
         assert config.transpose.semitones == 7
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (camelCase for webapp)."""
         config = StrummerConfig()
         d = config.to_dict()
-        assert 'note_duration' in d
-        assert 'pitch_bend' in d
-        assert 'note_velocity' in d
+        assert 'noteDuration' in d
+        assert 'pitchBend' in d
+        assert 'noteVelocity' in d
         assert 'strumming' in d
-        assert 'note_repeater' in d
+        assert 'noteRepeater' in d
         assert 'transpose' in d
-        assert 'stylus_buttons' in d
-        assert 'strum_release' in d
+        assert 'stylusButtons' in d
+        assert 'strumRelease' in d
 
 
 class TestStrummerConfigBackwardCompatibility:

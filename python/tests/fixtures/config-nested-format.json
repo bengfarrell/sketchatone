@@ -1,0 +1,78 @@
+{
+  "strummer": {
+    "noteDuration": {
+      "min": 0.3,
+      "max": 1.8,
+      "multiplier": 0.9,
+      "curve": 1.5,
+      "spread": "direct",
+      "control": "pressure",
+      "default": 0.6
+    },
+    "pitchBend": {
+      "min": -1.0,
+      "max": 1.0,
+      "multiplier": 1.0,
+      "curve": 4.0,
+      "spread": "central",
+      "control": "tiltX",
+      "default": 0.0
+    },
+    "noteVelocity": {
+      "min": 20,
+      "max": 110,
+      "multiplier": 0.7,
+      "curve": 3.5,
+      "spread": "inverse",
+      "control": "tiltY",
+      "default": 70
+    },
+    "strumming": {
+      "pluckVelocityScale": 5.0,
+      "pressureThreshold": 0.2,
+      "midiChannel": 4,
+      "initialNotes": ["E4", "G#4", "B4"],
+      "chord": "Em",
+      "upperNoteSpread": 5,
+      "lowerNoteSpread": 3
+    },
+    "noteRepeater": {
+      "active": false,
+      "pressureMultiplier": 3.0,
+      "frequencyMultiplier": 2.0
+    },
+    "transpose": {
+      "active": false,
+      "semitones": -5
+    },
+    "stylusButtons": {
+      "active": true,
+      "primaryButtonAction": "none",
+      "secondaryButtonAction": "toggle-repeater"
+    },
+    "strumRelease": {
+      "active": false,
+      "midiNote": 36,
+      "midiChannel": null,
+      "maxDuration": 0.3,
+      "velocityMultiplier": 1.2
+    },
+    "tabletButtons": {
+      "preset": "blues-shuffle",
+      "chords": ["A7", "D7", "E7"],
+      "currentIndex": 1
+    }
+  },
+  "midi": {
+    "outputPort": "Virtual MIDI",
+    "inputPort": "Input Port",
+    "channel": 8,
+    "useVirtualPorts": false
+  },
+  "server": {
+    "httpPort": 4000,
+    "wsPort": 9500,
+    "wsMessageThrottle": 100,
+    "deviceFindingPollInterval": 5000
+  }
+}

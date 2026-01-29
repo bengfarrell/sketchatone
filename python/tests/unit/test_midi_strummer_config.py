@@ -87,17 +87,20 @@ class TestMidiStrummerConfigNewFormat:
         assert config.midi.jack_client_name == 'my_strummer'
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (nested structure matching Node.js)."""
         config = MidiStrummerConfig()
         config.strummer.strumming.chord = 'G'
         config.midi.midi_output_backend = 'jack'
-        
+
         d = config.to_dict()
-        assert 'note_duration' in d
-        assert 'strumming' in d
+        # Should have nested structure: {strummer: {...}, midi: {...}, server: {...}}
+        assert 'strummer' in d
         assert 'midi' in d
-        assert d['strumming']['chord'] == 'G'
-        assert d['midi']['midi_output_backend'] == 'jack'
+        assert 'server' in d
+        assert 'noteDuration' in d['strummer']
+        assert 'strumming' in d['strummer']
+        assert d['strummer']['strumming']['chord'] == 'G'
+        assert d['midi']['midiOutputBackend'] == 'jack'
 
 
 class TestMidiStrummerConfigBackwardCompatibility:
@@ -161,7 +164,7 @@ class TestMidiStrummerConfigFileIO:
             os.unlink(temp_path)
     
     def test_to_json_file(self):
-        """Test saving to JSON file."""
+        """Test saving to JSON file (nested structure)."""
         config = MidiStrummerConfig()
         config.strummer.strumming.chord = 'D'
         config.midi.midi_output_backend = 'jack'
@@ -173,8 +176,8 @@ class TestMidiStrummerConfigFileIO:
             config.to_json_file(temp_path)
             with open(temp_path, 'r') as f:
                 data = json.load(f)
-            assert data['strumming']['chord'] == 'D'
-            assert data['midi']['midi_output_backend'] == 'jack'
+            assert data['strummer']['strumming']['chord'] == 'D'
+            assert data['midi']['midiOutputBackend'] == 'jack'
         finally:
             os.unlink(temp_path)
 
@@ -183,7 +186,7 @@ class TestMidiStrummerConfigRoundtrip:
     """Test roundtrip serialization."""
     
     def test_roundtrip_new_format(self):
-        """Test dict -> config -> dict roundtrip (new format)."""
+        """Test dict -> config -> dict roundtrip (input snake_case, output camelCase)."""
         original = {
             'note_duration': {
                 'min': 0.15,
@@ -251,11 +254,12 @@ class TestMidiStrummerConfigRoundtrip:
                 'note_duration': 1.5
             }
         }
-        
+
         config = MidiStrummerConfig.from_dict(original)
         result = config.to_dict()
-        
-        # Check key sections match
-        assert result['strumming']['chord'] == original['strumming']['chord']
-        assert result['note_duration']['control'] == original['note_duration']['control']
-        assert result['midi']['midi_output_backend'] == original['midi']['midi_output_backend']
+
+        # Output has nested structure: {strummer: {...}, midi: {...}, server: {...}}
+        # Check key sections match (using camelCase keys in output)
+        assert result['strummer']['strumming']['chord'] == original['strumming']['chord']
+        assert result['strummer']['noteDuration']['control'] == original['note_duration']['control']
+        assert result['midi']['midiOutputBackend'] == original['midi']['midi_output_backend']

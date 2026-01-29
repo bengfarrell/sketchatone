@@ -22,23 +22,23 @@ from ..models.note import Note, NoteObject
 class JackMidiBackend(MidiBackendProtocol):
     """
     MIDI backend using JACK Audio Connection Kit.
-    
+
     Ideal for Linux systems with JACK, especially Zynthian.
     MIDI events are queued and sent from the JACK process callback
     for real-time performance.
-    
+
     Example:
         backend = JackMidiBackend(channel=1, client_name="sketchatone")
         backend.connect()
         backend.send_note(note, velocity=100, duration=1.0)
         backend.disconnect()
     """
-    
+
     def __init__(self, channel: Optional[int] = None, client_name: str = "sketchatone",
                  auto_connect: str = "chain0"):
         """
         Initialize the JACK MIDI backend.
-        
+
         Args:
             channel: Default MIDI channel (1-16), or None for all channels
             client_name: JACK client name
@@ -49,18 +49,18 @@ class JackMidiBackend(MidiBackendProtocol):
                 "JACK-Client library not installed. "
                 "Install with: pip install JACK-Client"
             )
-        
+
         self._channel = channel
         self._client_name = client_name
         self._auto_connect = auto_connect
-        
+
         self._jack_client: Optional[jack.Client] = None
         self._midi_out_port: Optional[jack.MidiPort] = None
         self._connected = False
-        
+
         # MIDI event queue for real-time processing
         self._midi_queue: queue.Queue = queue.Queue(maxsize=1000)
-        
+
         # Note timing management
         self._active_note_timers: Dict[Tuple[int, Tuple[int, ...]], threading.Timer] = {}
         self._timer_lock = threading.Lock()
@@ -204,7 +204,21 @@ class JackMidiBackend(MidiBackendProtocol):
             for timer in self._active_note_timers.values():
                 timer.cancel()
             self._active_note_timers.clear()
-        
+
+        if self._jack_client and self._midi_out_port:
+            # Send "All Notes Off" and "Reset All Controllers" on all channels
+            # to clean up any stuck notes or pitch bend
+            try:
+                for ch in range(16):
+                    # All Notes Off (CC 123)
+                    self._queue_message([0xB0 + ch, 123, 0])
+                    # Reset All Controllers (CC 121)
+                    self._queue_message([0xB0 + ch, 121, 0])
+                    # Reset pitch bend to center
+                    self._queue_message([0xE0 + ch, 0x00, 0x40])
+            except Exception as e:
+                print(f"[JackMidi] Error sending cleanup messages: {e}")
+
         if self._jack_client:
             try:
                 self._jack_client.deactivate()
@@ -212,7 +226,7 @@ class JackMidiBackend(MidiBackendProtocol):
                 print("[JackMidi] Client closed")
             except Exception:
                 pass
-        
+
         self._jack_client = None
         self._midi_out_port = None
         self._connected = False
@@ -263,22 +277,22 @@ class JackMidiBackend(MidiBackendProtocol):
         """Send note with automatic note-off after duration."""
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
         note_key = (midi_note, tuple(channels))
-        
+
         # Cancel existing timer for this note
         with self._timer_lock:
             if note_key in self._active_note_timers:
                 self._active_note_timers[note_key].cancel()
                 del self._active_note_timers[note_key]
-        
+
         # Send note-on
         for ch in channels:
             message = bytes([0x90 + ch, midi_note, velocity])
             self._queue_midi_event(message)
-        
+
         # Schedule note-off
         def send_off():
             if self.is_connected:
@@ -287,7 +301,7 @@ class JackMidiBackend(MidiBackendProtocol):
                     self._queue_midi_event(message)
             with self._timer_lock:
                 self._active_note_timers.pop(note_key, None)
-        
+
         timer = threading.Timer(duration, send_off)
         timer.daemon = True
         with self._timer_lock:
@@ -298,19 +312,19 @@ class JackMidiBackend(MidiBackendProtocol):
         """Immediately release specific notes."""
         if not self.is_connected or not notes:
             return
-        
+
         channels = self._get_channels()
-        
+
         for note in notes:
             midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
             note_key = (midi_note, tuple(channels))
-            
+
             # Cancel timer
             with self._timer_lock:
                 if note_key in self._active_note_timers:
                     self._active_note_timers[note_key].cancel()
                     del self._active_note_timers[note_key]
-            
+
             # Send note-off
             for ch in channels:
                 message = bytes([0x80 + ch, midi_note, 0x40])

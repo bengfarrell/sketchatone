@@ -50,14 +50,14 @@ class MidiConfig:
         return cls.from_dict(data)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
-            'midi_output_backend': self.midi_output_backend,
-            'midi_output_id': self.midi_output_id,
-            'midi_input_id': self.midi_input_id,
-            'jack_client_name': self.jack_client_name,
-            'jack_auto_connect': self.jack_auto_connect,
-            'note_duration': self.note_duration
+            'midiOutputBackend': self.midi_output_backend,
+            'midiOutputId': self.midi_output_id,
+            'midiInputId': self.midi_input_id,
+            'jackClientName': self.jack_client_name,
+            'jackAutoConnect': self.jack_auto_connect,
+            'noteDuration': self.note_duration
         }
     
     def to_json_file(self, path: str) -> None:

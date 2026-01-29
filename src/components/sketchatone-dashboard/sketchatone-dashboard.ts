@@ -26,6 +26,9 @@ import '../strum-visualizers/strum-visualizer.js';
 import '../strum-visualizers/strum-events-display.js';
 // import '../strum-visualizers/piano-keys.js'; // TODO: Add back later
 
+// Tablet buttons config component
+import '../tablet-buttons-config/tablet-buttons-config.js';
+
 // Blankslate utilities
 import {
   normalizeTabletData,
@@ -38,7 +41,10 @@ import { StrummerWebSocketClient } from '../../utils/strummer-websocket-client.j
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
-import { getChordProgressionPresetNames, CHORD_PROGRESSION_PRESETS } from '../../models/strummer-features.js';
+import { TabletButtonsConfig } from '../../models/strummer-features.js';
+
+// Shared tablet interaction controller for curve visualizers
+import { sharedTabletInteraction } from '../../controllers/index.js';
 
 /**
  * Sketchatone Dashboard - WebSocket mode tablet viewer
@@ -139,6 +145,19 @@ export class SketchatoneDashboard extends LitElement {
     // Extract pressed buttons from individual button fields
     // The server sends button1, button2, etc. as booleans
     this.pressedButtons = this.extractButtonsFromData(data);
+
+    // Update the shared tablet interaction controller so curve visualizers react
+    const isPressed = this.tabletData.pressure > 0;
+    sharedTabletInteraction.setTabletPosition(this.tabletData.x, this.tabletData.y, isPressed);
+    sharedTabletInteraction.setTiltPosition(
+      this.tabletData.tiltX,
+      this.tabletData.tiltY,
+      this.tabletData.pressure,
+      isPressed,
+      this.tabletData.tiltXY
+    );
+    sharedTabletInteraction.setPrimaryButton(this.tabletData.primaryButtonPressed);
+    sharedTabletInteraction.setSecondaryButton(this.tabletData.secondaryButtonPressed);
 
     // Create event for display
     const event: StrumTabletEvent = {
@@ -278,9 +297,42 @@ export class SketchatoneDashboard extends LitElement {
     this.tabletVisualizersExpanded = !this.tabletVisualizersExpanded;
   }
 
-  private getTabletButtonChords(): string[] {
-    const preset = this.fullConfig?.strummer?.tabletButtons?.preset || 'c-major-pop';
-    return CHORD_PROGRESSION_PRESETS[preset] || CHORD_PROGRESSION_PRESETS['c-major-pop'];
+  /**
+   * Handle config changes from the tablet-buttons-config component
+   */
+  private handleTabletButtonsConfigChange(e: CustomEvent) {
+    const detail = e.detail as Record<string, unknown>;
+    // The component emits multiple path-value pairs in the detail
+    for (const [path, value] of Object.entries(detail)) {
+      this.updateConfig(`strummer.${path}`, value);
+    }
+  }
+
+  /**
+   * Handle config changes from curve-visualizer components
+   */
+  private handleCurveConfigChange(e: CustomEvent) {
+    const detail = e.detail as Record<string, unknown>;
+    // The component emits path-value pairs like { 'noteDuration.multiplier': 2 }
+    for (const [path, value] of Object.entries(detail)) {
+      this.updateConfig(`strummer.${path}`, value);
+    }
+  }
+
+  /**
+   * Handle control changes from curve-visualizer components
+   */
+  private handleCurveControlChange(e: CustomEvent) {
+    const { parameterKey, control } = e.detail as { parameterKey: string; control: string };
+    this.updateConfig(`strummer.${parameterKey}.control`, control);
+  }
+
+  /**
+   * Get the TabletButtonsConfig instance from the full config
+   */
+  private getTabletButtonsConfig(): TabletButtonsConfig | undefined {
+    if (!this.fullConfig?.strummer?.tabletButtons) return undefined;
+    return TabletButtonsConfig.fromDict(this.fullConfig.strummer.tabletButtons);
   }
 
   render() {
@@ -448,7 +500,9 @@ export class SketchatoneDashboard extends LitElement {
                     control="${this.fullConfig?.strummer?.noteVelocity?.control ?? 'pressure'}"
                     outputLabel="Velocity"
                     color="#51cf66"
-                    .config=${this.fullConfig?.strummer?.noteVelocity ?? { min: 0, max: 127, curve: 4, spread: 'direct', multiplier: 1 }}>
+                    .config=${this.fullConfig?.strummer?.noteVelocity ?? { min: 0, max: 127, curve: 4, spread: 'direct', multiplier: 1 }}
+                    @config-change=${this.handleCurveConfigChange}
+                    @control-change=${this.handleCurveControlChange}>
                   </curve-visualizer>
                 </dashboard-panel>
 
@@ -459,7 +513,9 @@ export class SketchatoneDashboard extends LitElement {
                     control="${this.fullConfig?.strummer?.noteDuration?.control ?? 'tiltXY'}"
                     outputLabel="Duration"
                     color="#f59f00"
-                    .config=${this.fullConfig?.strummer?.noteDuration ?? { min: 0.15, max: 1.5, curve: 1, spread: 'inverse', multiplier: 1 }}>
+                    .config=${this.fullConfig?.strummer?.noteDuration ?? { min: 0.15, max: 1.5, curve: 1, spread: 'inverse', multiplier: 1 }}
+                    @config-change=${this.handleCurveConfigChange}
+                    @control-change=${this.handleCurveControlChange}>
                   </curve-visualizer>
                 </dashboard-panel>
 
@@ -470,7 +526,9 @@ export class SketchatoneDashboard extends LitElement {
                     control="${this.fullConfig?.strummer?.pitchBend?.control ?? 'yaxis'}"
                     outputLabel="Bend"
                     color="#339af0"
-                    .config=${this.fullConfig?.strummer?.pitchBend ?? { min: -1, max: 1, curve: 4, spread: 'central', multiplier: 1 }}>
+                    .config=${this.fullConfig?.strummer?.pitchBend ?? { min: -1, max: 1, curve: 4, spread: 'central', multiplier: 1 }}
+                    @config-change=${this.handleCurveConfigChange}
+                    @control-change=${this.handleCurveControlChange}>
                   </curve-visualizer>
                 </dashboard-panel>
 
@@ -611,30 +669,12 @@ export class SketchatoneDashboard extends LitElement {
           ${this.tabletButtonsExpanded ? html`
             <div class="section-content">
               <div class="tablet-buttons-grid">
-                <dashboard-panel title="Chord Progression" size="wide" .draggable=${false} .minimizable=${false}>
-                  <div class="chord-progression">
-                    <div class="preset-row">
-                      <span class="setting-label">Preset</span>
-                      <sp-picker
-                        data-spectrum-pattern="picker-s"
-                        label="Preset"
-                        value=${this.fullConfig?.strummer?.tabletButtons?.preset || 'c-major-pop'}
-                        @change=${(e: Event) => this.updateConfig('strummer.tabletButtons.preset', (e.target as HTMLSelectElement).value)}
-                      >
-                        ${getChordProgressionPresetNames().map(name => html`
-                          <sp-menu-item data-spectrum-pattern="menu-item" value=${name}>${name}</sp-menu-item>
-                        `)}
-                      </sp-picker>
-                    </div>
-                    <div class="chord-buttons">
-                      ${this.getTabletButtonChords().map((chord, index) => html`
-                        <div class="chord-button ${index === (this.fullConfig?.strummer?.tabletButtons?.currentIndex || 0) ? 'active' : ''}">
-                          <span class="button-number">${index + 1}</span>
-                          <span class="chord-name">${chord}</span>
-                        </div>
-                      `)}
-                    </div>
-                  </div>
+                <dashboard-panel title="Tablet Buttons Configuration" size="wide" .draggable=${false} .minimizable=${false}>
+                  <tablet-buttons-config
+                    .config=${this.getTabletButtonsConfig()}
+                    .pressedButtons=${this.pressedButtons}
+                    @config-change=${this.handleTabletButtonsConfigChange}
+                  ></tablet-buttons-config>
                 </dashboard-panel>
               </div>
             </div>

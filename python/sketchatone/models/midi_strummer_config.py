@@ -109,13 +109,28 @@ class MidiStrummerConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'MidiStrummerConfig':
         """
         Create a MidiStrummerConfig from a dictionary.
+
+        Supports both nested format (with 'strummer' key) and flat format (for backward compatibility).
+        - Nested format: { strummer: {...}, midi: {...}, server: {...} }
+        - Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
         """
-        # Extract MIDI and server sections if present
-        midi_data = data.get('midi', {})
-        server_data = data.get('server', {})
+        # Check if this is nested format (has 'strummer' key) or flat format
+        has_strummer_key = 'strummer' in data and isinstance(data.get('strummer'), dict)
+
+        if has_strummer_key:
+            # Nested format: { strummer: {...}, midi: {...}, server: {...} }
+            strummer_data = data.get('strummer', {})
+            midi_data = data.get('midi', {})
+            server_data = data.get('server', {})
+        else:
+            # Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
+            # Extract midi and server, pass everything else to StrummerConfig
+            midi_data = data.get('midi', {})
+            server_data = data.get('server', {})
+            strummer_data = {k: v for k, v in data.items() if k not in ('midi', 'server')}
 
         # Load strummer config
-        strummer = StrummerConfig.from_dict(data)
+        strummer = StrummerConfig.from_dict(strummer_data) if strummer_data else StrummerConfig()
 
         # Load MIDI config
         midi = MidiConfig.from_dict(midi_data) if midi_data else MidiConfig()
@@ -159,11 +174,12 @@ class MidiStrummerConfig:
         return self.server
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
-        result = self.strummer.to_dict()
-        result['midi'] = self.midi.to_dict()
-        result['server'] = self.server.to_dict()
-        return result
+        """Convert to dictionary for JSON serialization (matching Node.js structure)"""
+        return {
+            'strummer': self.strummer.to_dict(),
+            'midi': self.midi.to_dict(),
+            'server': self.server.to_dict()
+        }
 
     def to_json_file(self, path: str) -> None:
         """Save the config to a JSON file"""

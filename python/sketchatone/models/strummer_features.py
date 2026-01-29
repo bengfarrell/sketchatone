@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Literal, List
 
 
-# Stylus button actions
-ButtonAction = Literal[
+# Stylus button actions (string-only for type hints)
+StylusButtonAction = Literal[
     "toggle-transpose",
     "toggle-repeater",
     "momentary-transpose",
@@ -19,6 +19,11 @@ ButtonAction = Literal[
     "octave-down",
     "none"
 ]
+
+# General button action - can be a string, list with params, or None
+# Examples: "toggle-repeater", ["transpose", 12], ["set-strum-chord", "C", 4]
+from typing import Union
+ButtonAction = Union[str, List[Any], None]
 
 
 @dataclass
@@ -47,11 +52,11 @@ class NoteRepeaterConfig:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
             'active': self.active,
-            'pressure_multiplier': self.pressure_multiplier,
-            'frequency_multiplier': self.frequency_multiplier
+            'pressureMultiplier': self.pressure_multiplier,
+            'frequencyMultiplier': self.frequency_multiplier
         }
 
 
@@ -111,11 +116,11 @@ class StylusButtonsConfig:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
             'active': self.active,
-            'primary_button_action': self.primary_button_action,
-            'secondary_button_action': self.secondary_button_action
+            'primaryButtonAction': self.primary_button_action,
+            'secondaryButtonAction': self.secondary_button_action
         }
 
 
@@ -151,13 +156,13 @@ class StrumReleaseConfig:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
             'active': self.active,
-            'midi_note': self.midi_note,
-            'midi_channel': self.midi_channel,
-            'max_duration': self.max_duration,
-            'velocity_multiplier': self.velocity_multiplier
+            'midiNote': self.midi_note,
+            'midiChannel': self.midi_channel,
+            'maxDuration': self.max_duration,
+            'velocityMultiplier': self.velocity_multiplier
         }
 
 
@@ -184,14 +189,28 @@ def get_chord_progression_preset_names() -> List[str]:
 
 @dataclass
 class TabletButtonsConfig:
-    """Configuration for tablet button chord progression"""
+    """
+    Configuration for tablet buttons.
+    Supports two modes:
+    1. Chord progression mode - buttons map to chords in a progression
+    2. Individual button mode - each button has its own action
+    """
+    mode: Literal['progression', 'individual'] = 'progression'
     preset: str = 'c-major-pop'
     chords: List[str] = field(default_factory=lambda: ['C', 'G', 'Am', 'F'])
     current_index: int = 0
+    octave: int = 4
+    button_actions: Dict[str, ButtonAction] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Any) -> 'TabletButtonsConfig':
-        """Create from dictionary or string preset name"""
+        """
+        Create from dictionary, preset string, or individual button actions.
+        Supports multiple formats:
+        - String: "c-major-pop" (preset name for progression mode)
+        - Object with preset/chords: { preset: "c-major-pop", chords: [...] }
+        - Object with button actions: { "1": "toggle-repeater", "2": ["transpose", 12] }
+        """
         if data is None:
             return cls()
 
@@ -199,27 +218,66 @@ class TabletButtonsConfig:
         if isinstance(data, str):
             preset = data
             chords = CHORD_PROGRESSION_PRESETS.get(preset, ['C', 'G', 'Am', 'F'])
-            return cls(preset=preset, chords=list(chords), current_index=0)
+            return cls(mode='progression', preset=preset, chords=list(chords), current_index=0)
 
-        # Full object format
+        # Check if this is individual button actions format (has keys "1" through "8")
+        button_keys = ['1', '2', '3', '4', '5', '6', '7', '8']
+        has_button_keys = any(key in data for key in button_keys)
+        has_preset_or_chords = 'preset' in data or 'chords' in data or 'mode' in data
+
+        if has_button_keys and not has_preset_or_chords:
+            # Individual button actions format
+            button_actions = {}
+            for key in button_keys:
+                if key in data:
+                    button_actions[key] = data[key]
+            return cls(mode='individual', button_actions=button_actions)
+
+        # Full object format with preset/chords
+        mode = data.get('mode', 'progression')
         preset = data.get('preset', 'c-major-pop')
         chords = data.get('chords')
         if chords is None:
             chords = CHORD_PROGRESSION_PRESETS.get(preset, ['C', 'G', 'Am', 'F'])
 
         return cls(
+            mode=mode,
             preset=preset,
             chords=list(chords),
-            current_index=data.get('current_index', data.get('currentIndex', 0))
+            current_index=data.get('current_index', data.get('currentIndex', 0)),
+            octave=data.get('octave', 4),
+            button_actions=data.get('button_actions', data.get('buttonActions', {}))
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
+            'mode': self.mode,
             'preset': self.preset,
             'chords': self.chords,
-            'current_index': self.current_index
+            'currentIndex': self.current_index,
+            'octave': self.octave,
+            'buttonActions': self.button_actions
         }
+
+    def get_button_action(self, button_number: int) -> ButtonAction:
+        """
+        Get the action for a specific button (1-8).
+        In progression mode, returns set-strum-chord action for the corresponding chord.
+        In individual mode, returns the configured action.
+        """
+        if button_number < 1 or button_number > 8:
+            return None
+
+        if self.mode == 'individual':
+            return self.button_actions.get(str(button_number))
+
+        # Progression mode - map button to chord
+        chord_index = (button_number - 1) % len(self.chords) if self.chords else 0
+        if self.chords and chord_index < len(self.chords):
+            chord = self.chords[chord_index]
+            return ['set-strum-chord', chord, self.octave]
+        return None
 
     def get_current_chord(self) -> str:
         """Get the current chord in the progression"""

@@ -26,6 +26,7 @@ from typing import Optional, Dict, Any, List, Union
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from sketchatone.strummer.strummer import Strummer
+from sketchatone.strummer.actions import Actions
 from sketchatone.models.strummer_config import StrummerConfig
 from sketchatone.models.midi_config import MidiConfig
 from sketchatone.models.midi_strummer_config import MidiStrummerConfig
@@ -185,6 +186,35 @@ class MidiStrummer(TabletReaderBase):
         self.backend: Optional[MidiBackendProtocol] = None
         self.bridge: Optional[MidiStrummerBridge] = None
 
+        # Create Actions handler for stylus buttons
+        # Pass a dict with properly nested config references since MidiStrummerConfig
+        # has note_repeater/transpose at strummer.note_repeater, not directly
+        self.actions = Actions(
+            config={
+                'note_repeater': self.config.strummer.note_repeater,
+                'transpose': self.config.strummer.transpose,
+                'lower_spread': self.config.lower_spread,
+                'upper_spread': self.config.upper_spread,
+            },
+            strummer=self.strummer
+        )
+
+        # State tracking for stylus buttons
+        self.button_state = {
+            'primaryButtonPressed': False,
+            'secondaryButtonPressed': False
+        }
+
+        # State tracking for tablet hardware buttons (1-8)
+        self.tablet_button_state = {f'button{i}': False for i in range(1, 9)}
+
+        # State tracking for note repeater
+        self.repeater_state = {
+            'notes': [],
+            'last_repeat_time': 0.0,
+            'is_holding': False
+        }
+
     def _setup_notes(self):
         """Set up the strummer notes from config"""
         notes: List[NoteObject] = []
@@ -201,6 +231,40 @@ class MidiStrummer(TabletReaderBase):
                 notes.append(Note.parse_notation(note_str))
 
         self.strummer.notes = notes
+
+    def _get_control_value(self, control: str, events: Dict[str, Any]) -> Optional[float]:
+        """
+        Get the control input value based on the control type.
+
+        Args:
+            control: Control source type ("pressure", "tiltX", "tiltY", "tiltXY", "xaxis", "yaxis", "velocity", "none")
+            events: Dictionary of event values from the tablet
+
+        Returns:
+            Normalized control value (0.0 to 1.0), or None if control is "none"
+        """
+        if control == "none":
+            return None
+        elif control == "pressure":
+            return float(events.get('pressure', 0))
+        elif control == "tiltX":
+            # tiltX from blankslate is -1 to 1, normalize to 0-1
+            return (float(events.get('tiltX', 0)) + 1.0) / 2.0
+        elif control == "tiltY":
+            # tiltY from blankslate is -1 to 1, normalize to 0-1
+            return (float(events.get('tiltY', 0)) + 1.0) / 2.0
+        elif control == "tiltXY":
+            # tiltXY from blankslate is -1 to 1, normalize to 0-1
+            return (float(events.get('tiltXY', 0)) + 1.0) / 2.0
+        elif control == "xaxis":
+            return float(events.get('x', 0.5))
+        elif control == "yaxis":
+            return float(events.get('y', 0.5))
+        elif control == "velocity":
+            # Use pressure velocity if available
+            return float(events.get('pressureVelocity', events.get('pressure', 0)))
+        else:
+            return None
 
     def _setup_midi(self) -> bool:
         """Initialize MIDI backend and bridge"""
@@ -333,27 +397,121 @@ class MidiStrummer(TabletReaderBase):
             pressure = float(events.get('pressure', 0))
             state = str(events.get('state', 'unknown'))
 
+            # Handle stylus button presses
+            primary_pressed = bool(events.get('primaryButtonPressed', False))
+            secondary_pressed = bool(events.get('secondaryButtonPressed', False))
+
+            # Get stylus button configuration
+            stylus_buttons_cfg = self.config.strummer.stylus_buttons
+
+            # Detect button down events (transition from not pressed to pressed)
+            if stylus_buttons_cfg and stylus_buttons_cfg.active:
+                if primary_pressed and not self.button_state['primaryButtonPressed']:
+                    # Primary button just pressed
+                    action = stylus_buttons_cfg.primary_button_action
+                    self.actions.execute(action, context={'button': 'Primary'})
+
+                if secondary_pressed and not self.button_state['secondaryButtonPressed']:
+                    # Secondary button just pressed
+                    action = stylus_buttons_cfg.secondary_button_action
+                    self.actions.execute(action, context={'button': 'Secondary'})
+
+            # Update stylus button states
+            self.button_state['primaryButtonPressed'] = primary_pressed
+            self.button_state['secondaryButtonPressed'] = secondary_pressed
+
+            # Handle tablet hardware button presses (buttons 1-8)
+            tablet_buttons_cfg = self.config.strummer.tablet_buttons
+            for i in range(1, 9):
+                button_key = f'button{i}'
+                button_pressed = bool(events.get(button_key, False))
+
+                # Detect button down event (transition from not pressed to pressed)
+                if button_pressed and not self.tablet_button_state[button_key]:
+                    # Button just pressed - execute configured action
+                    action = tablet_buttons_cfg.get_button_action(i) if tablet_buttons_cfg else None
+                    if action:
+                        self.actions.execute(action, context={'button': f'Tablet{i}'})
+
+                # Update tablet button state
+                self.tablet_button_state[button_key] = button_pressed
+
+            # Apply pitch bend based on configuration
+            pitch_bend_cfg = self.config.strummer.pitch_bend
+            if pitch_bend_cfg and self.backend:
+                # Get the control input value based on the control setting
+                control_value = self._get_control_value(pitch_bend_cfg.control, events)
+                if control_value is not None:
+                    # Map the control value to pitch bend range
+                    bend_value = pitch_bend_cfg.map_value(control_value)
+                    self.backend.send_pitch_bend(bend_value)
+
+            # Calculate dynamic note duration based on configuration
+            note_duration_cfg = self.config.strummer.note_duration
+            if note_duration_cfg:
+                control_value = self._get_control_value(note_duration_cfg.control, events)
+                if control_value is not None:
+                    current_note_duration = note_duration_cfg.map_value(control_value)
+                else:
+                    current_note_duration = note_duration_cfg.default
+            else:
+                current_note_duration = self.config.note_duration
+
+            # Get note velocity configuration for applying curve
+            note_velocity_cfg = self.config.strummer.note_velocity
+
             # Update strummer bounds
             self.strummer.update_bounds(1.0, 1.0)
 
             # Process strum
             event = self.strummer.strum(x, pressure)
 
+            # Get note repeater configuration
+            note_repeater_cfg = self.config.strummer.note_repeater
+            note_repeater_enabled = note_repeater_cfg.active if note_repeater_cfg else False
+            pressure_multiplier = note_repeater_cfg.pressure_multiplier if note_repeater_cfg else 1.0
+            frequency_multiplier = note_repeater_cfg.frequency_multiplier if note_repeater_cfg else 1.0
+
+            # Get transpose state from actions
+            transpose_enabled = self.actions.is_transpose_active()
+            transpose_semitones = self.actions.get_transpose_semitones()
+
             if event:
                 self.last_event = event
                 event_type = event.get('type')
 
                 if event_type == 'strum':
+                    # Store notes for repeater and mark as holding
+                    self.repeater_state['notes'] = event.get('notes', [])
+                    self.repeater_state['is_holding'] = True
+                    self.repeater_state['last_repeat_time'] = time.time()
+
                     # Send MIDI notes
                     notes_data = event.get('notes', [])
                     for note_data in notes_data:
                         note = note_data.get('note')
-                        velocity = note_data.get('velocity', 100)
-                        if note and self.backend:
+                        raw_velocity = note_data.get('velocity', 100)
+
+                        # Apply velocity curve from note_velocity config
+                        if note_velocity_cfg and raw_velocity > 0:
+                            # Normalize velocity to 0-1 range
+                            normalized_vel = raw_velocity / 127.0
+                            # Apply the parameter mapping (includes curve)
+                            velocity = int(note_velocity_cfg.map_value(normalized_vel))
+                            # Clamp to MIDI range
+                            velocity = max(1, min(127, velocity))
+                        else:
+                            velocity = raw_velocity
+
+                        if note and self.backend and velocity > 0:
+                            # Apply transpose if enabled
+                            note_to_play = note
+                            if transpose_enabled:
+                                note_to_play = note.transpose(transpose_semitones)
                             self.backend.send_note(
-                                note=note,
+                                note=note_to_play,
                                 velocity=velocity,
-                                duration=self.config.note_duration
+                                duration=current_note_duration
                             )
                             self.notes_played += 1
 
@@ -361,8 +519,50 @@ class MidiStrummer(TabletReaderBase):
                         self._print_strum_event(event, x, y, pressure)
 
                 elif event_type == 'release':
+                    # Stop holding - no more repeats
+                    self.repeater_state['is_holding'] = False
+                    self.repeater_state['notes'] = []
+
                     if not self.live_mode:
                         self._print_release_event(event, x, y, pressure)
+
+            # Handle note repeater - fire repeatedly while holding
+            if note_repeater_enabled and self.repeater_state['is_holding'] and self.repeater_state['notes']:
+                current_time = time.time()
+                time_since_last_repeat = current_time - self.repeater_state['last_repeat_time']
+
+                # Apply frequency multiplier to duration (higher = faster repeats)
+                repeat_interval = current_note_duration / frequency_multiplier if frequency_multiplier > 0 else current_note_duration
+
+                # Check if it's time for another repeat
+                if time_since_last_repeat >= repeat_interval:
+                    for note_data in self.repeater_state['notes']:
+                        note = note_data.get('note')
+                        # Use the original note's velocity with pressure multiplier applied
+                        original_velocity = note_data.get('velocity', 100)
+                        raw_repeat_velocity = int(original_velocity * pressure_multiplier)
+                        raw_repeat_velocity = max(1, min(127, raw_repeat_velocity))
+
+                        # Apply velocity curve from note_velocity config
+                        if note_velocity_cfg and raw_repeat_velocity > 0:
+                            normalized_vel = raw_repeat_velocity / 127.0
+                            repeat_velocity = int(note_velocity_cfg.map_value(normalized_vel))
+                            repeat_velocity = max(1, min(127, repeat_velocity))
+                        else:
+                            repeat_velocity = raw_repeat_velocity
+
+                        if note and self.backend and repeat_velocity > 0:
+                            # Apply transpose if enabled
+                            note_to_play = note
+                            if transpose_enabled:
+                                note_to_play = note.transpose(transpose_semitones)
+                            self.backend.send_note(
+                                note=note_to_play,
+                                velocity=repeat_velocity,
+                                duration=current_note_duration
+                            )
+
+                    self.repeater_state['last_repeat_time'] = current_time
 
             # Update live display
             if self.live_mode:

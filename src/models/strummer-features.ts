@@ -285,67 +285,138 @@ export function getChordProgressionPresetNames(): string[] {
 }
 
 /**
- * Tablet buttons configuration data
+ * Action definition for a tablet button - can be a string or array with parameters
+ * Examples: "toggle-repeater", ["transpose", 12], ["set-strum-chord", "C", 4]
+ */
+export type TabletButtonAction = string | [string, ...unknown[]] | null;
+
+/**
+ * Individual button actions configuration (keys "1" through "8")
+ */
+export interface IndividualButtonActions {
+  '1'?: TabletButtonAction;
+  '2'?: TabletButtonAction;
+  '3'?: TabletButtonAction;
+  '4'?: TabletButtonAction;
+  '5'?: TabletButtonAction;
+  '6'?: TabletButtonAction;
+  '7'?: TabletButtonAction;
+  '8'?: TabletButtonAction;
+}
+
+/**
+ * Tablet buttons configuration data - supports two modes:
+ * 1. Chord progression mode: uses preset/chords/currentIndex
+ * 2. Individual button mode: uses buttonActions with per-button action definitions
  */
 export interface TabletButtonsConfigData {
-  /** Preset name (e.g., 'c-major-pop') or 'custom' for custom chords */
+  /** Mode: 'progression' for chord progression, 'individual' for per-button actions */
+  mode: 'progression' | 'individual';
+  /** Preset name (e.g., 'c-major-pop') - used in progression mode */
   preset: string;
-  /** Chord names for each button (derived from preset or custom) */
+  /** Chord names for each button (derived from preset or custom) - used in progression mode */
   chords: string[];
-  /** Currently active chord index (0-based) */
+  /** Currently active chord index (0-based) - used in progression mode */
   currentIndex: number;
+  /** Default octave for chord actions */
+  octave: number;
+  /** Individual button actions - used in individual mode */
+  buttonActions: IndividualButtonActions;
 }
 
 /**
  * Default tablet buttons configuration
  */
 export const DEFAULT_TABLET_BUTTONS_CONFIG: TabletButtonsConfigData = {
+  mode: 'progression',
   preset: 'c-major-pop',
   chords: ['C', 'G', 'Am', 'F'],
   currentIndex: 0,
+  octave: 4,
+  buttonActions: {},
 };
 
 /**
- * Configuration for tablet button chord progression.
- * Maps tablet buttons to chords in a progression.
+ * Configuration for tablet buttons.
+ * Supports two modes:
+ * 1. Chord progression mode - buttons map to chords in a progression
+ * 2. Individual button mode - each button has its own action
  */
 export class TabletButtonsConfig implements TabletButtonsConfigData {
+  mode: 'progression' | 'individual';
   preset: string;
   chords: string[];
   currentIndex: number;
+  octave: number;
+  buttonActions: IndividualButtonActions;
 
   constructor(data: Partial<TabletButtonsConfigData> = {}) {
+    this.mode = data.mode ?? DEFAULT_TABLET_BUTTONS_CONFIG.mode;
     this.preset = data.preset ?? DEFAULT_TABLET_BUTTONS_CONFIG.preset;
+    this.octave = data.octave ?? DEFAULT_TABLET_BUTTONS_CONFIG.octave;
+    this.currentIndex = data.currentIndex ?? DEFAULT_TABLET_BUTTONS_CONFIG.currentIndex;
+    this.buttonActions = data.buttonActions ?? {};
+
     // If preset is provided and valid, use its chords; otherwise use provided chords or default
     if (this.preset !== 'custom' && CHORD_PROGRESSION_PRESETS[this.preset]) {
       this.chords = CHORD_PROGRESSION_PRESETS[this.preset];
     } else {
       this.chords = data.chords ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
     }
-    this.currentIndex = data.currentIndex ?? DEFAULT_TABLET_BUTTONS_CONFIG.currentIndex;
   }
 
   /**
-   * Create from dictionary or preset string
-   * Supports both object format and simple string preset format
+   * Create from dictionary, preset string, or individual button actions
+   * Supports multiple formats:
+   * - String: "c-major-pop" (preset name for progression mode)
+   * - Object with preset/chords: { preset: "c-major-pop", chords: [...] }
+   * - Object with button actions: { "1": "toggle-repeater", "2": ["transpose", 12] }
    */
-  static fromDict(data: Record<string, unknown> | string): TabletButtonsConfig {
+  static fromDict(data: Record<string, unknown> | string | null | undefined): TabletButtonsConfig {
+    if (data === null || data === undefined) {
+      return new TabletButtonsConfig();
+    }
+
     // Handle simple string preset format (e.g., "c-major-pop")
     if (typeof data === 'string') {
       const preset = data;
       const chords = CHORD_PROGRESSION_PRESETS[preset] ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
       return new TabletButtonsConfig({
+        mode: 'progression',
         preset,
         chords,
         currentIndex: 0,
       });
     }
 
-    // Handle object format
+    // Check if this is individual button actions format (has keys "1" through "8")
+    const hasButtonKeys = ['1', '2', '3', '4', '5', '6', '7', '8'].some(key => key in data);
+    const hasPresetOrChords = 'preset' in data || 'chords' in data || 'mode' in data;
+
+    if (hasButtonKeys && !hasPresetOrChords) {
+      // Individual button actions format
+      const buttonActions: IndividualButtonActions = {};
+      for (let i = 1; i <= 8; i++) {
+        const key = String(i) as keyof IndividualButtonActions;
+        if (key in data) {
+          buttonActions[key] = data[key] as ButtonAction;
+        }
+      }
+      return new TabletButtonsConfig({
+        mode: 'individual',
+        buttonActions,
+      });
+    }
+
+    // Handle object format with preset/chords
+    const mode = (data.mode as 'progression' | 'individual') ?? 'progression';
     return new TabletButtonsConfig({
+      mode,
       preset: data.preset as string | undefined,
       chords: data.chords as string[] | undefined,
       currentIndex: (data.current_index ?? data.currentIndex) as number | undefined,
+      octave: data.octave as number | undefined,
+      buttonActions: data.buttonActions as IndividualButtonActions | undefined,
     });
   }
 
@@ -354,10 +425,37 @@ export class TabletButtonsConfig implements TabletButtonsConfigData {
    */
   toDict(): TabletButtonsConfigData {
     return {
+      mode: this.mode,
       preset: this.preset,
       chords: this.chords,
       currentIndex: this.currentIndex,
+      octave: this.octave,
+      buttonActions: this.buttonActions,
     };
+  }
+
+  /**
+   * Get the action for a specific button (1-8)
+   * In progression mode, returns set-strum-chord action for the corresponding chord
+   * In individual mode, returns the configured action
+   */
+  getButtonAction(buttonNumber: number): TabletButtonAction {
+    if (buttonNumber < 1 || buttonNumber > 8) {
+      return null;
+    }
+
+    if (this.mode === 'individual') {
+      const key = String(buttonNumber) as keyof IndividualButtonActions;
+      return this.buttonActions[key] ?? null;
+    }
+
+    // Progression mode - map button to chord
+    const chordIndex = (buttonNumber - 1) % this.chords.length;
+    const chord = this.chords[chordIndex];
+    if (chord) {
+      return ['set-strum-chord', chord, this.octave] as [string, ...unknown[]];
+    }
+    return null;
   }
 
   /**

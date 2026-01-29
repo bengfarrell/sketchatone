@@ -24,6 +24,7 @@ import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resol
 // Default config directory
 const DEFAULT_CONFIG_DIR = './public/configs';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
+import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig } from '../models/midi-strummer-config.js';
 import { Note, type NoteObject } from '../models/note.js';
 import { RtMidiBackend } from '../midi/rtmidi-backend.js';
@@ -69,6 +70,32 @@ class MidiStrummer extends TabletReaderBase {
   private strummer: Strummer;
   private backend: MidiBackendProtocol | null = null;
   private bridge: MidiStrummerBridge | null = null;
+  private actions: Actions;
+
+  // State tracking for stylus buttons
+  private buttonState = {
+    primaryButtonPressed: false,
+    secondaryButtonPressed: false,
+  };
+
+  // State tracking for tablet hardware buttons (1-8)
+  private tabletButtonState: Record<string, boolean> = {
+    button1: false,
+    button2: false,
+    button3: false,
+    button4: false,
+    button5: false,
+    button6: false,
+    button7: false,
+    button8: false,
+  };
+
+  // State tracking for note repeater
+  private repeaterState = {
+    notes: [] as StrumNoteData[],
+    lastRepeatTime: 0,
+    isHolding: false,
+  };
 
   constructor(
     tabletConfigPath: string,
@@ -105,6 +132,17 @@ class MidiStrummer extends TabletReaderBase {
 
     // Set up notes
     this.setupNotes();
+
+    // Create Actions handler for stylus buttons
+    this.actions = new Actions(
+      {
+        noteRepeater: this.config.noteRepeater,
+        transpose: this.config.transpose,
+        lowerSpread: this.config.strummer.lowerSpread,
+        upperSpread: this.config.strummer.upperSpread,
+      },
+      this.strummer
+    );
   }
 
   private setupNotes(): void {
@@ -126,6 +164,50 @@ class MidiStrummer extends TabletReaderBase {
     );
 
     this.strummer.notes = notes;
+  }
+
+  /**
+   * Get the control input value based on the control type.
+   *
+   * @param control - Control source type
+   * @param inputs - Object containing input values
+   * @returns Normalized control value (0.0 to 1.0), or null if control is "none"
+   */
+  private getControlValue(
+    control: string,
+    inputs: {
+      x?: number;
+      y?: number;
+      pressure?: number;
+      tiltX?: number;
+      tiltY?: number;
+      tiltXY?: number;
+      pressureVelocity?: number;
+    }
+  ): number | null {
+    switch (control) {
+      case 'none':
+        return null;
+      case 'pressure':
+        return inputs.pressure ?? 0;
+      case 'tiltX':
+        // tiltX from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltX ?? 0) + 1.0) / 2.0;
+      case 'tiltY':
+        // tiltY from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltY ?? 0) + 1.0) / 2.0;
+      case 'tiltXY':
+        // tiltXY from blankslate is -1 to 1, normalize to 0-1
+        return ((inputs.tiltXY ?? 0) + 1.0) / 2.0;
+      case 'xaxis':
+        return inputs.x ?? 0.5;
+      case 'yaxis':
+        return inputs.y ?? 0.5;
+      case 'velocity':
+        return inputs.pressureVelocity ?? inputs.pressure ?? 0;
+      default:
+        return null;
+    }
   }
 
   private async setupMidi(): Promise<boolean> {
@@ -185,6 +267,85 @@ class MidiStrummer extends TabletReaderBase {
       const normalized = normalizeTabletEvent(events);
       const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
 
+      // Handle stylus button presses
+      const stylusButtonsCfg = this.config.stylusButtons;
+
+      // Detect button down events (transition from not pressed to pressed)
+      if (stylusButtonsCfg?.active) {
+        if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
+          // Primary button just pressed
+          const action = stylusButtonsCfg.primaryButtonAction;
+          this.actions.execute(action, { button: 'Primary' });
+        }
+
+        if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
+          // Secondary button just pressed
+          const action = stylusButtonsCfg.secondaryButtonAction;
+          this.actions.execute(action, { button: 'Secondary' });
+        }
+      }
+
+      // Update stylus button states
+      this.buttonState.primaryButtonPressed = primaryButtonPressed;
+      this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
+
+      // Handle tablet hardware button presses (buttons 1-8)
+      const tabletButtonsCfg = this.config.tabletButtons;
+      for (let i = 1; i <= 8; i++) {
+        const buttonKey = `button${i}` as keyof typeof normalized;
+        const buttonPressed = Boolean(normalized[buttonKey]);
+        const stateKey = `button${i}`;
+
+        // Detect button down event (transition from not pressed to pressed)
+        if (buttonPressed && !this.tabletButtonState[stateKey]) {
+          // Button just pressed - execute configured action
+          const action = tabletButtonsCfg?.getButtonAction(i);
+          if (action) {
+            this.actions.execute(action, { button: `Tablet${i}` });
+          }
+        }
+
+        // Update tablet button state
+        this.tabletButtonState[stateKey] = buttonPressed;
+      }
+
+      // Apply pitch bend based on configuration
+      const pitchBendCfg = this.config.pitchBend;
+      if (pitchBendCfg && this.backend) {
+        const controlValue = this.getControlValue(pitchBendCfg.control, {
+          x,
+          y,
+          pressure,
+          tiltX,
+          tiltY,
+          tiltXY,
+        });
+        if (controlValue !== null) {
+          const bendValue = pitchBendCfg.mapValue(controlValue);
+          this.backend.sendPitchBend?.(bendValue);
+        }
+      }
+
+      // Calculate dynamic note duration based on configuration
+      const noteDurationCfg = this.config.noteDuration;
+      let currentNoteDuration = noteDurationCfg.default;
+      if (noteDurationCfg) {
+        const controlValue = this.getControlValue(noteDurationCfg.control, {
+          x,
+          y,
+          pressure,
+          tiltX,
+          tiltY,
+          tiltXY,
+        });
+        if (controlValue !== null) {
+          currentNoteDuration = noteDurationCfg.mapValue(controlValue);
+        }
+      }
+
+      // Get note velocity configuration for applying curve
+      const noteVelocityCfg = this.config.noteVelocity;
+
       // Emit tablet event to global event bus (throttled)
       const tabletEventData: TabletEventData = {
         x,
@@ -206,17 +367,49 @@ class MidiStrummer extends TabletReaderBase {
       // Process strum
       const event = this.strummer.strum(x, pressure);
 
+      // Get note repeater configuration
+      const noteRepeaterCfg = this.config.noteRepeater;
+      const noteRepeaterEnabled = noteRepeaterCfg?.active ?? false;
+      const pressureMultiplier = noteRepeaterCfg?.pressureMultiplier ?? 1.0;
+      const frequencyMultiplier = noteRepeaterCfg?.frequencyMultiplier ?? 1.0;
+
+      // Get transpose state from actions
+      const transposeEnabled = this.actions.isTransposeActive();
+      const transposeSemitones = this.actions.getTransposeSemitones();
+
       if (event) {
         this.lastEvent = event;
 
         if (event.type === 'strum') {
+          // Store notes for repeater and mark as holding
+          this.repeaterState.notes = event.notes;
+          this.repeaterState.isHolding = true;
+          this.repeaterState.lastRepeatTime = Date.now() / 1000;
+
           // Send MIDI notes
           for (const noteData of event.notes) {
-            if (this.backend) {
+            const rawVelocity = noteData.velocity;
+
+            // Apply velocity curve from note_velocity config
+            let velocity = rawVelocity;
+            if (noteVelocityCfg && rawVelocity > 0) {
+              // Normalize velocity to 0-1 range
+              const normalizedVel = rawVelocity / 127;
+              // Apply the parameter mapping (includes curve)
+              velocity = Math.floor(noteVelocityCfg.mapValue(normalizedVel));
+              // Clamp to MIDI range
+              velocity = Math.max(1, Math.min(127, velocity));
+            }
+
+            if (this.backend && velocity > 0) {
+              // Apply transpose if enabled
+              const noteToPlay = transposeEnabled
+                ? Note.transpose(noteData.note, transposeSemitones)
+                : noteData.note;
               this.backend.sendNote(
-                noteData.note,
-                noteData.velocity,
-                this.config.noteDuration.default
+                noteToPlay,
+                velocity,
+                currentNoteDuration
               );
               this.notesPlayed++;
             }
@@ -242,6 +435,10 @@ class MidiStrummer extends TabletReaderBase {
             this.printStrumEvent(event, x, y, pressure);
           }
         } else if (event.type === 'release') {
+          // Stop holding - no more repeats
+          this.repeaterState.isHolding = false;
+          this.repeaterState.notes = [];
+
           // Emit release event to global event bus (throttled)
           const releaseEventData: StrumEventData = {
             type: 'release',
@@ -254,6 +451,49 @@ class MidiStrummer extends TabletReaderBase {
           if (!this.liveMode) {
             this.printReleaseEvent(event, x, y, pressure);
           }
+        }
+      }
+
+      // Handle note repeater - fire repeatedly while holding
+      if (noteRepeaterEnabled && this.repeaterState.isHolding && this.repeaterState.notes.length > 0) {
+        const currentTime = Date.now() / 1000;
+        const timeSinceLastRepeat = currentTime - this.repeaterState.lastRepeatTime;
+
+        // Apply frequency multiplier to duration (higher = faster repeats)
+        const repeatInterval = frequencyMultiplier > 0
+          ? currentNoteDuration / frequencyMultiplier
+          : currentNoteDuration;
+
+        // Check if it's time for another repeat
+        if (timeSinceLastRepeat >= repeatInterval) {
+          for (const noteData of this.repeaterState.notes) {
+            // Use the original note's velocity with pressure multiplier applied
+            const originalVelocity = noteData.velocity ?? 100;
+            let rawRepeatVelocity = Math.floor(originalVelocity * pressureMultiplier);
+            rawRepeatVelocity = Math.max(1, Math.min(127, rawRepeatVelocity));
+
+            // Apply velocity curve from note_velocity config
+            let repeatVelocity = rawRepeatVelocity;
+            if (noteVelocityCfg && rawRepeatVelocity > 0) {
+              const normalizedVel = rawRepeatVelocity / 127;
+              repeatVelocity = Math.floor(noteVelocityCfg.mapValue(normalizedVel));
+              repeatVelocity = Math.max(1, Math.min(127, repeatVelocity));
+            }
+
+            if (this.backend && repeatVelocity > 0) {
+              // Apply transpose if enabled
+              const noteToPlay = transposeEnabled
+                ? Note.transpose(noteData.note, transposeSemitones)
+                : noteData.note;
+              this.backend.sendNote(
+                noteToPlay,
+                repeatVelocity,
+                currentNoteDuration
+              );
+            }
+          }
+
+          this.repeaterState.lastRepeatTime = currentTime;
         }
       }
 

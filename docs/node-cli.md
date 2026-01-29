@@ -148,11 +148,19 @@ WebSocket and HTTP server for streaming tablet/strummer events to web clients an
 npm run server [-- options]
 ```
 
+Or with automatic rebuild (recommended during development):
+
+```bash
+npm run dev-server [-- options]
+```
+
 Or directly:
 
 ```bash
 node ./dist/cli/server.js [options]
 ```
+
+> **Note:** `npm run server` runs the pre-built CLI without rebuilding. Use `npm run dev-server` during development to ensure TypeScript changes are compiled before running.
 
 ### Optional Arguments
 
@@ -170,6 +178,12 @@ node ./dist/cli/server.js [options]
 ```bash
 # Start WebSocket server only (default port 8081)
 npm run server
+
+# Development mode (rebuild + run)
+npm run dev-server
+
+# With strummer config
+npm run dev-server -- -s public/configs/sample-config.json
 
 # Start both WebSocket and HTTP servers
 npm run server -- --ws-port 8081 --http-port 3000

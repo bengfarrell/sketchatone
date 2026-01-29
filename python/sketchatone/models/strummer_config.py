@@ -56,15 +56,15 @@ class StrummingConfig:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
-            'pluck_velocity_scale': self.pluck_velocity_scale,
-            'pressure_threshold': self.pressure_threshold,
-            'midi_channel': self.midi_channel,
-            'initial_notes': self.initial_notes,
+            'pluckVelocityScale': self.pluck_velocity_scale,
+            'pressureThreshold': self.pressure_threshold,
+            'midiChannel': self.midi_channel,
+            'initialNotes': self.initial_notes,
             'chord': self.chord,
-            'upper_note_spread': self.upper_note_spread,
-            'lower_note_spread': self.lower_note_spread
+            'upperNoteSpread': self.upper_note_spread,
+            'lowerNoteSpread': self.lower_note_spread
         }
 
 
@@ -162,17 +162,17 @@ class StrummerConfig:
         return cls.from_dict(data)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization (new format)"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp compatibility)"""
         return {
-            'note_duration': self.note_duration.to_dict(),
-            'pitch_bend': self.pitch_bend.to_dict(),
-            'note_velocity': self.note_velocity.to_dict(),
+            'noteDuration': self.note_duration.to_dict(),
+            'pitchBend': self.pitch_bend.to_dict(),
+            'noteVelocity': self.note_velocity.to_dict(),
             'strumming': self.strumming.to_dict(),
-            'note_repeater': self.note_repeater.to_dict(),
+            'noteRepeater': self.note_repeater.to_dict(),
             'transpose': self.transpose.to_dict(),
-            'stylus_buttons': self.stylus_buttons.to_dict(),
-            'strum_release': self.strum_release.to_dict(),
-            'tablet_buttons': self.tablet_buttons.to_dict()
+            'stylusButtons': self.stylus_buttons.to_dict(),
+            'strumRelease': self.strum_release.to_dict(),
+            'tabletButtons': self.tablet_buttons.to_dict()
         }
 
     def to_json_file(self, path: str) -> None:

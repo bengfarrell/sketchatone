@@ -22,6 +22,7 @@ import {
   TransposeConfig,
   StylusButtonsConfig,
   StrumReleaseConfig,
+  TabletButtonsConfig,
 } from './strummer-features.js';
 
 /**
@@ -223,6 +224,10 @@ export class MidiStrummerConfig {
     return this._strummer.strumRelease;
   }
 
+  get tabletButtons(): TabletButtonsConfig {
+    return this._strummer.tabletButtons;
+  }
+
   // MIDI config accessors
   get midi(): MidiConfig {
     return this._midi;
@@ -312,11 +317,32 @@ export class MidiStrummerConfig {
 
   /**
    * Create from dictionary.
+   * Supports both nested format (with 'strummer' key) and flat format (for backward compatibility).
    */
   static fromDict(data: Record<string, unknown>): MidiStrummerConfig {
-    const strummerData = (data.strummer ?? {}) as Record<string, unknown>;
-    const midiData = (data.midi ?? {}) as Record<string, unknown>;
-    const serverData = (data.server ?? {}) as Record<string, unknown>;
+    // Check if this is nested format (has 'strummer' key) or flat format
+    const hasStrummerKey = 'strummer' in data && typeof data.strummer === 'object' && data.strummer !== null;
+
+    let strummerData: Record<string, unknown>;
+    let midiData: Record<string, unknown>;
+    let serverData: Record<string, unknown>;
+
+    if (hasStrummerKey) {
+      // Nested format: { strummer: {...}, midi: {...}, server: {...} }
+      strummerData = (data.strummer ?? {}) as Record<string, unknown>;
+      midiData = (data.midi ?? {}) as Record<string, unknown>;
+      serverData = (data.server ?? {}) as Record<string, unknown>;
+    } else {
+      // Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
+      // Extract midi and server, pass the rest to strummer
+      midiData = (data.midi ?? {}) as Record<string, unknown>;
+      serverData = (data.server ?? {}) as Record<string, unknown>;
+
+      // Everything else goes to strummer (excluding midi and server)
+      strummerData = { ...data };
+      delete strummerData.midi;
+      delete strummerData.server;
+    }
 
     return new MidiStrummerConfig({
       strummer: Object.keys(strummerData).length > 0

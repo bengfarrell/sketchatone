@@ -46,7 +46,7 @@ class TestNoteRepeaterConfig:
         assert config.frequency_multiplier == 0.5
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (camelCase for webapp)."""
         config = NoteRepeaterConfig(
             active=True,
             pressure_multiplier=1.5,
@@ -54,11 +54,11 @@ class TestNoteRepeaterConfig:
         )
         d = config.to_dict()
         assert d['active'] is True
-        assert d['pressure_multiplier'] == 1.5
-        assert d['frequency_multiplier'] == 2.0
-    
+        assert d['pressureMultiplier'] == 1.5
+        assert d['frequencyMultiplier'] == 2.0
+
     def test_roundtrip(self):
-        """Test dict -> config -> dict roundtrip."""
+        """Test dict -> config -> dict roundtrip (input snake_case, output camelCase)."""
         original = {
             'active': True,
             'pressure_multiplier': 1.5,
@@ -66,7 +66,12 @@ class TestNoteRepeaterConfig:
         }
         config = NoteRepeaterConfig.from_dict(original)
         result = config.to_dict()
-        assert result == original
+        # Output is camelCase for webapp compatibility
+        assert result == {
+            'active': True,
+            'pressureMultiplier': 1.5,
+            'frequencyMultiplier': 2.0
+        }
 
 
 class TestTransposeConfig:
@@ -138,7 +143,7 @@ class TestStylusButtonsConfig:
         assert config.secondary_button_action == 'momentary-repeater'
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (camelCase for webapp)."""
         config = StylusButtonsConfig(
             active=True,
             primary_button_action='none',
@@ -146,11 +151,11 @@ class TestStylusButtonsConfig:
         )
         d = config.to_dict()
         assert d['active'] is True
-        assert d['primary_button_action'] == 'none'
-        assert d['secondary_button_action'] == 'toggle-transpose'
-    
+        assert d['primaryButtonAction'] == 'none'
+        assert d['secondaryButtonAction'] == 'toggle-transpose'
+
     def test_roundtrip(self):
-        """Test dict -> config -> dict roundtrip."""
+        """Test dict -> config -> dict roundtrip (input snake_case, output camelCase)."""
         original = {
             'active': False,
             'primary_button_action': 'octave-up',
@@ -158,7 +163,12 @@ class TestStylusButtonsConfig:
         }
         config = StylusButtonsConfig.from_dict(original)
         result = config.to_dict()
-        assert result == original
+        # Output is camelCase for webapp compatibility
+        assert result == {
+            'active': False,
+            'primaryButtonAction': 'octave-up',
+            'secondaryButtonAction': 'none'
+        }
 
 
 class TestStrumReleaseConfig:
@@ -206,7 +216,7 @@ class TestStrumReleaseConfig:
         assert config.velocity_multiplier == 1.2
     
     def test_to_dict(self):
-        """Test converting to dictionary."""
+        """Test converting to dictionary (camelCase for webapp)."""
         config = StrumReleaseConfig(
             active=True,
             midi_note=40,
@@ -216,13 +226,13 @@ class TestStrumReleaseConfig:
         )
         d = config.to_dict()
         assert d['active'] is True
-        assert d['midi_note'] == 40
-        assert d['midi_channel'] == 5
-        assert d['max_duration'] == 0.3
-        assert d['velocity_multiplier'] == 0.9
-    
+        assert d['midiNote'] == 40
+        assert d['midiChannel'] == 5
+        assert d['maxDuration'] == 0.3
+        assert d['velocityMultiplier'] == 0.9
+
     def test_roundtrip(self):
-        """Test dict -> config -> dict roundtrip."""
+        """Test dict -> config -> dict roundtrip (input snake_case, output camelCase)."""
         original = {
             'active': True,
             'midi_note': 38,
@@ -232,4 +242,11 @@ class TestStrumReleaseConfig:
         }
         config = StrumReleaseConfig.from_dict(original)
         result = config.to_dict()
-        assert result == original
+        # Output is camelCase for webapp compatibility
+        assert result == {
+            'active': True,
+            'midiNote': 38,
+            'midiChannel': None,
+            'maxDuration': 0.25,
+            'velocityMultiplier': 1.0
+        }

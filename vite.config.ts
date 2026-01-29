@@ -71,8 +71,9 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './test/setup.ts',
-    include: ['test/unit/**/*.test.ts'],
-    exclude: ['test/integration/**/*', 'node_modules', 'dist'],
+    include: ['test/**/*.test.ts'],
+    exclude: ['node_modules', 'dist'],
+    testTimeout: 30000, // Some tests (like CLI integration) may take longer
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

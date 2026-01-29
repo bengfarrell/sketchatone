@@ -20,20 +20,20 @@ from ..models.note import Note, NoteObject
 class RtMidiBackend(MidiBackendProtocol):
     """
     MIDI backend using python-rtmidi.
-    
+
     Works on macOS, Windows, and Linux with ALSA.
-    
+
     Example:
         backend = RtMidiBackend(channel=1)
         backend.connect()
         backend.send_note(note, velocity=100, duration=1.0)
         backend.disconnect()
     """
-    
+
     def __init__(self, channel: Optional[int] = None):
         """
         Initialize the rtmidi backend.
-        
+
         Args:
             channel: Default MIDI channel (1-16), or None for all channels
         """
@@ -42,11 +42,11 @@ class RtMidiBackend(MidiBackendProtocol):
                 "python-rtmidi not installed. "
                 "Install with: pip install python-rtmidi"
             )
-        
+
         self._channel = channel
         self._midi_out: Optional[rtmidi.MidiOut] = None
         self._connected = False
-        
+
         # Note timing management
         self._active_note_timers: Dict[Tuple[int, Tuple[int, ...]], threading.Timer] = {}
         self._timer_lock = threading.Lock()
@@ -143,11 +143,24 @@ class RtMidiBackend(MidiBackendProtocol):
             for timer in self._active_note_timers.values():
                 timer.cancel()
             self._active_note_timers.clear()
-        
+
         if self._midi_out:
+            # Send "All Notes Off" and "Reset All Controllers" on all channels
+            # to clean up any stuck notes or pitch bend
+            try:
+                for ch in range(16):
+                    # All Notes Off (CC 123)
+                    self._midi_out.send_message([0xB0 + ch, 123, 0])
+                    # Reset All Controllers (CC 121)
+                    self._midi_out.send_message([0xB0 + ch, 121, 0])
+                    # Reset pitch bend to center
+                    self._midi_out.send_message([0xE0 + ch, 0x00, 0x40])
+            except Exception as e:
+                print(f"[RtMidi] Error sending cleanup messages: {e}")
+
             self._midi_out.close_port()
             self._midi_out = None
-        
+
         self._connected = False
         print("[RtMidi] Disconnected")
     
@@ -166,7 +179,9 @@ class RtMidiBackend(MidiBackendProtocol):
         elif self._channel is not None:
             return [self._channel - 1]
         else:
-            return list(range(16))
+            # Default to channel 1 (0-indexed: 0) instead of all channels
+            # This matches Node.js behavior and avoids 16x MIDI traffic
+            return [0]
     
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
         """Send note-on message."""
@@ -197,31 +212,31 @@ class RtMidiBackend(MidiBackendProtocol):
         """Send note with automatic note-off after duration."""
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
         note_key = (midi_note, tuple(channels))
-        
+
         # Cancel existing timer for this note
         with self._timer_lock:
             if note_key in self._active_note_timers:
                 self._active_note_timers[note_key].cancel()
                 del self._active_note_timers[note_key]
-        
+
         # Send note-on
         for ch in channels:
             message = [0x90 + ch, midi_note, velocity]
             self._midi_out.send_message(message)
-        
+
         # Schedule note-off
         def send_off():
-            if self.is_connected:
+            if self.is_connected and self._midi_out:
                 for ch in channels:
                     message = [0x80 + ch, midi_note, 0x40]
                     self._midi_out.send_message(message)
             with self._timer_lock:
                 self._active_note_timers.pop(note_key, None)
-        
+
         timer = threading.Timer(duration, send_off)
         timer.daemon = True
         with self._timer_lock:
@@ -232,19 +247,19 @@ class RtMidiBackend(MidiBackendProtocol):
         """Immediately release specific notes."""
         if not self.is_connected or not notes:
             return
-        
+
         channels = self._get_channels()
-        
+
         for note in notes:
             midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
             note_key = (midi_note, tuple(channels))
-            
+
             # Cancel timer
             with self._timer_lock:
                 if note_key in self._active_note_timers:
                     self._active_note_timers[note_key].cancel()
                     del self._active_note_timers[note_key]
-            
+
             # Send note-off
             for ch in channels:
                 message = [0x80 + ch, midi_note, 0x40]

@@ -44,12 +44,12 @@ class ServerConfig:
         return cls.from_dict(data)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
-            'http_port': self.http_port,
-            'ws_port': self.ws_port,
-            'ws_message_throttle': self.ws_message_throttle,
-            'device_finding_poll_interval': self.device_finding_poll_interval
+            'httpPort': self.http_port,
+            'wsPort': self.ws_port,
+            'wsMessageThrottle': self.ws_message_throttle,
+            'deviceFindingPollInterval': self.device_finding_poll_interval
         }
 
     def to_json_file(self, path: str) -> None:
