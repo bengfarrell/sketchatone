@@ -124,7 +124,7 @@ export interface StatusMessage {
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config';
 
 /**
  * Set throttle client message
@@ -155,9 +155,17 @@ export interface SetModeMessage {
 }
 
 /**
+ * Save config client message
+ * Tells the server to save the current configuration to the config file
+ */
+export interface SaveConfigMessage {
+  type: 'save-config';
+}
+
+/**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage;
 
 /**
  * Tablet data for visualization components

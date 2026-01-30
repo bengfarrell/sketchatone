@@ -370,6 +370,9 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Create event bus
         self.event_bus = StrummerEventBus(throttle_ms)
 
+        # Store the config path for saving later
+        self.strummer_config_path = strummer_config_path
+
         # Load config
         if strummer_config_path:
             self.config = MidiStrummerConfig.from_json_file(strummer_config_path)
@@ -963,6 +966,10 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Broadcast updated config to all clients
                 self.broadcast_config()
 
+            elif msg_type == 'save-config':
+                # Save the current configuration to the config file
+                self._handle_save_config()
+
             else:
                 print(colored(f'Unknown message type: {msg_type}', Colors.YELLOW))
         
@@ -1024,6 +1031,22 @@ class StrummerWebSocketServer(TabletReaderBase):
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
             print(colored(f'Failed to update config: {path} - {e}', Colors.RED))
+
+    def _handle_save_config(self) -> None:
+        """
+        Save the current configuration to the config file.
+        """
+        if not self.strummer_config_path:
+            print(colored('[Save Config] No config file path - config was not loaded from a file', Colors.RED))
+            return
+
+        try:
+            config_dict = self.config.to_dict()
+            with open(self.strummer_config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2)
+            print(colored(f'[Save Config] Configuration saved to {self.strummer_config_path}', Colors.GREEN))
+        except Exception as e:
+            print(colored(f'[Save Config] Failed to save configuration: {e}', Colors.RED))
 
     def _set_config_value(self, path: str, value: Any) -> None:
         """
@@ -1709,7 +1732,11 @@ def main():
         server.is_running = False
         if server._tablet_initialized:
             server.stop_sync()
-        sys.exit(0)
+        # Cancel the main asyncio task to trigger clean shutdown
+        if server._main_loop and server._main_loop.is_running():
+            # Schedule cancellation of all tasks
+            for task in asyncio.all_tasks(server._main_loop):
+                server._main_loop.call_soon_threadsafe(task.cancel)
 
     # Register signal handlers
     signal.signal(signal.SIGINT, shutdown_handler)

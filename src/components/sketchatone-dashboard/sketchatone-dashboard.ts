@@ -242,7 +242,10 @@ export class SketchatoneDashboard extends LitElement {
     this.resetData();
   }
 
-  private handleSaveConfig(): void {
+  /**
+   * Export configuration as a downloadable JSON file
+   */
+  private handleExportConfig(): void {
     if (!this.fullConfig) return;
     const json = JSON.stringify(this.fullConfig, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -252,6 +255,13 @@ export class SketchatoneDashboard extends LitElement {
     a.download = 'strummer-config.json';
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Save configuration to the server's config file
+   */
+  private handleSaveConfig(): void {
+    this.wsClient.saveConfig();
   }
 
   /**
@@ -405,8 +415,11 @@ export class SketchatoneDashboard extends LitElement {
           </div>
           <div class="connection-row">
             <div class="save-button-group">
-              <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.fullConfig} @click=${this.handleSaveConfig}>
-                Save Config
+              <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.websocketConnected} @click=${this.handleSaveConfig}>
+                Save Configuration
+              </sp-button>
+              <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleExportConfig}>
+                Export Configuration
               </sp-button>
             </div>
             ${this.websocketConnected ? html`

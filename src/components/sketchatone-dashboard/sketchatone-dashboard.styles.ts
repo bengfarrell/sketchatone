@@ -62,6 +62,7 @@ export const styles = css`
   .save-button-group {
     display: flex;
     align-items: center;
+    gap: 8px;
   }
 
   .status-badge {

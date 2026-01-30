@@ -136,6 +136,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
   // State tracking for strum release feature
   private strumStartTime: number = 0;
 
+  // Path to the strummer config file (for saving)
+  private strummerConfigPath: string | undefined;
+
   constructor(
     tabletConfigPath: string,
     options: TabletReaderOptions & {
@@ -150,6 +153,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     } = {}
   ) {
     super(tabletConfigPath, options);
+
+    // Store the config path for saving later
+    this.strummerConfigPath = options.strummerConfigPath;
 
     // Load combined config from file or use defaults
     if (options.strummerConfigPath) {
@@ -651,6 +657,24 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Save the current configuration to the config file
+   */
+  private handleSaveConfig(): void {
+    if (!this.strummerConfigPath) {
+      console.log(chalk.red('[Save Config] No config file path - config was not loaded from a file'));
+      return;
+    }
+
+    try {
+      const configJson = JSON.stringify(this.config.toDict(), null, 2);
+      fs.writeFileSync(this.strummerConfigPath, configJson, 'utf-8');
+      console.log(chalk.green(`[Save Config] Configuration saved to ${this.strummerConfigPath}`));
+    } catch (e) {
+      console.error(chalk.red(`[Save Config] Failed to save configuration:`), e);
+    }
+  }
+
+  /**
    * Convert snake_case to camelCase
    */
   private snakeToCamel(str: string): string {
@@ -1062,6 +1086,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
             console.log(chalk.yellow(`Throttle changed to: ${parsed.throttleMs}ms`));
           } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
             this.handleConfigUpdate(parsed.path, parsed.value);
+          } else if (parsed.type === 'save-config') {
+            this.handleSaveConfig();
           }
         } catch (e) {
           // Ignore invalid messages

@@ -238,6 +238,14 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Save the current configuration to the server's config file
+   * This overwrites the original config file that was loaded
+   */
+  saveConfig(): void {
+    this.send({ type: 'save-config' });
+  }
+
+  /**
    * Subscribe to combined events (tablet + optional strum merged)
    */
   onCombinedEvent(callback: (data: CombinedEventData) => void): () => void {
