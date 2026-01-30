@@ -4,7 +4,6 @@ export const styles = css`
   :host {
     display: block;
     width: 100%;
-    min-height: 100vh;
   }
 
   .dashboard {
@@ -13,7 +12,6 @@ export const styles = css`
     gap: 16px;
     padding: 16px;
     background: var(--spectrum-gray-50);
-    min-height: 100vh;
   }
 
   /* Header */
