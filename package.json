@@ -72,7 +72,8 @@
     "dev-server": "npm run build:cli && node dist/cli/server.js",
     "docs": "npx @11ty/eleventy",
     "docs:serve": "npx @11ty/eleventy --serve",
-    "docs:watch": "npx @11ty/eleventy --watch"
+    "docs:watch": "npx @11ty/eleventy --watch",
+    "package:pi": "./package-for-pi.sh"
   },
   "dependencies": {
     "@julusian/midi": "^3.6.1",
