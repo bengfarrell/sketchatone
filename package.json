@@ -69,7 +69,10 @@
     "strum-events": "node dist/cli/strum-event-viewer.js",
     "midi-strummer": "node dist/cli/midi-strummer.js",
     "server": "node dist/cli/server.js",
-    "dev-server": "npm run build:cli && node dist/cli/server.js"
+    "dev-server": "npm run build:cli && node dist/cli/server.js",
+    "docs": "npx @11ty/eleventy",
+    "docs:serve": "npx @11ty/eleventy --serve",
+    "docs:watch": "npx @11ty/eleventy --watch"
   },
   "dependencies": {
     "@julusian/midi": "^3.6.1",
@@ -83,6 +86,8 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@11ty/eleventy": "^3.1.2",
+    "@11ty/eleventy-plugin-syntaxhighlight": "^5.0.2",
     "@playwright/test": "^1.45.0",
     "@testing-library/jest-dom": "^6.4.6",
     "@types/inquirer": "^9.0.7",

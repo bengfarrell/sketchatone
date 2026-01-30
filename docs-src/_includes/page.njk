@@ -1,0 +1,11 @@
+{% renderFile "docs-src/_includes/header.njk", { title: title, page: page.url, version: version } %}
+<div id="main-wrapper">
+  {% renderFile "docs-src/_includes/side-nav.njk", { title: title, page: page.url, version: version }%}
+  <main>
+      <div class="content">
+        <h2 id="page-title">{{ description }}</h2>
+        {{content | safe}}
+      </div>
+  </main>
+</div>
+{% renderFile "docs-src/_includes/footer.njk" %}

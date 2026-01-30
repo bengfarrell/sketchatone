@@ -1,0 +1,205 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/pitch-bend/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Pitch Bend">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/pitch-bend/">
+
+    <title>Sketchatone: Pitch Bend</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Lexend:wght@300;400;500;600&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <!-- Background with rounded corners -->
+            <rect width="100" height="100" fill="#1d1d1d" rx="10" ry="10"></rect>
+            
+            <!-- Stylus/pen drawing a wavy line (representing sound/music) -->
+            <!-- Stylus -->
+            <line x1="25" y1="75" x2="55" y2="35" stroke="#adb5bd" stroke-width="6" stroke-linecap="round"></line>
+            <circle cx="25" cy="75" r="4" fill="#ff6b6b"></circle>
+            
+            <!-- Sound waves emanating from stylus tip -->
+            <path d="M 60 50 Q 70 35, 80 50 Q 90 65, 80 50" stroke="#ffd93d" stroke-width="4" fill="none" stroke-linecap="round"></path>
+            <path d="M 55 60 Q 65 45, 75 60" stroke="#6bcf7f" stroke-width="3" fill="none" stroke-linecap="round"></path>
+            <path d="M 50 70 Q 58 58, 66 70" stroke="#4dabf7" stroke-width="2" fill="none" stroke-linecap="round"></path>
+        </svg>
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+
+    <h4>Running the Application</h4>
+    
+        <a href="../running-overview/">Overview</a>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-overview/">Overview</a>
+    
+        <a href="../configuration-settings/">Settings File</a>
+    
+
+    <h4>Features</h4>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href=".">Pitch Bend</a>
+    
+        <a href="../note-repeater/">Note Repeater</a>
+    
+        <a href="../transpose/">Transpose</a>
+    
+        <a href="../stylus-buttons/">Stylus Buttons</a>
+    
+        <a href="../tablet-buttons/">Tablet Buttons</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../actions-reference/">Actions Reference</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Control pitch bend with tablet input</h2>
+        <h1>Pitch Bend</h1>
+<p>Pitch bend allows you to smoothly bend the pitch of notes up or down using tablet input.</p>
+<h2>Configuration</h2>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"pitch_bend"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"control"</span><span class="token operator">:</span> <span class="token string">"yaxis"</span><span class="token punctuation">,</span>
+    <span class="token property">"min"</span><span class="token operator">:</span> <span class="token number">-1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"max"</span><span class="token operator">:</span> <span class="token number">1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"curve"</span><span class="token operator">:</span> <span class="token number">4.0</span><span class="token punctuation">,</span>
+    <span class="token property">"spread"</span><span class="token operator">:</span> <span class="token string">"central"</span><span class="token punctuation">,</span>
+    <span class="token property">"default"</span><span class="token operator">:</span> <span class="token number">0.0</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Common Setups</h2>
+<h3>Y-Axis Pitch Bend</h3>
+<p>Move up/down on the tablet to bend pitch:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"pitch_bend"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"control"</span><span class="token operator">:</span> <span class="token string">"yaxis"</span><span class="token punctuation">,</span>
+    <span class="token property">"min"</span><span class="token operator">:</span> <span class="token number">-1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"max"</span><span class="token operator">:</span> <span class="token number">1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"spread"</span><span class="token operator">:</span> <span class="token string">"central"</span><span class="token punctuation">,</span>
+    <span class="token property">"curve"</span><span class="token operator">:</span> <span class="token number">4.0</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>With <code>&quot;central&quot;</code> spread, the center of the tablet is neutral (no bend), moving up bends up, moving down bends down.</p>
+<h3>Tilt-Controlled Pitch Bend</h3>
+<p>Tilt your pen to bend pitch:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"pitch_bend"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"control"</span><span class="token operator">:</span> <span class="token string">"tiltX"</span><span class="token punctuation">,</span>
+    <span class="token property">"min"</span><span class="token operator">:</span> <span class="token number">-1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"max"</span><span class="token operator">:</span> <span class="token number">1.0</span><span class="token punctuation">,</span>
+    <span class="token property">"spread"</span><span class="token operator">:</span> <span class="token string">"central"</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>No Pitch Bend</h3>
+<p>Disable pitch bend:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"pitch_bend"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"control"</span><span class="token operator">:</span> <span class="token string">"none"</span><span class="token punctuation">,</span>
+    <span class="token property">"default"</span><span class="token operator">:</span> <span class="token number">0.0</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Spread Types for Pitch Bend</h2>
+<ul>
+<li><strong><code>&quot;central&quot;</code></strong> - Center position = no bend, edges = full bend (recommended)</li>
+<li><strong><code>&quot;direct&quot;</code></strong> - 0 = min bend, 1 = max bend</li>
+<li><strong><code>&quot;inverse&quot;</code></strong> - 0 = max bend, 1 = min bend</li>
+</ul>
+<h2>Response Curve</h2>
+<p>Higher <code>curve</code> values create a &quot;dead zone&quot; in the center, making it easier to stay in tune while still allowing dramatic bends at the extremes.</p>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/note-velocity/">Note Velocity</a></strong> - Control note loudness</li>
+<li><strong><a href="/sketchatone/about/note-duration/">Note Duration</a></strong> - Control note length</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

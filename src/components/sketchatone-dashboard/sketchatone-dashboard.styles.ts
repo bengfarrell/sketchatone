@@ -17,24 +17,52 @@ export const styles = css`
   /* Header */
   .dashboard-header {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    flex-direction: row;
+    gap: 16px;
     padding: 12px 16px;
     background: var(--spectrum-gray-100);
     border-radius: 8px;
+    align-items: center;
+  }
+
+  .header-logo-container {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .header-logo {
+    height: 100px;
+  }
+
+  /* Theme-adaptive logo colors */
+  .logo-bg {
+    fill: var(--spectrum-gray-200);
+  }
+
+  .logo-title {
+    fill: var(--spectrum-gray-800);
+  }
+
+  .logo-subtitle {
+    fill: var(--spectrum-gray-600);
+  }
+
+  .logo-line {
+    stroke: var(--spectrum-gray-500);
+  }
+
+  .header-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
   }
 
   .header-row {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
-  }
-
-  .header-info h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--spectrum-gray-900);
   }
 
   .header-controls {
