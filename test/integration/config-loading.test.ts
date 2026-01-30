@@ -16,7 +16,7 @@ const FIXTURES_PATH = path.resolve(__dirname, '../fixtures');
  * Run the CLI with --dump-config and return parsed JSON
  */
 function dumpConfig(configPath: string): Record<string, unknown> {
-  const output = execSync(`node ${CLI_PATH} -s ${configPath} --dump-config`, {
+  const output = execSync(`node ${CLI_PATH} -c ${configPath} --dump-config`, {
     encoding: 'utf-8',
     cwd: path.resolve(__dirname, '../..'),
   });

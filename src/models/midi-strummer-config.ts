@@ -29,6 +29,8 @@ import {
  * Server configuration data
  */
 export interface ServerConfigData {
+  /** Path to device config file or directory for auto-detection (null = use default 'devices' folder) */
+  device: string | null;
   /** HTTP server port for serving webapps (null = disabled) */
   httpPort: number | null;
   /** WebSocket server port (null = disabled) */
@@ -43,6 +45,7 @@ export interface ServerConfigData {
  * Default server configuration
  */
 export const DEFAULT_SERVER_CONFIG: ServerConfigData = {
+  device: null,
   httpPort: null,
   wsPort: null,
   wsMessageThrottle: 150,
@@ -53,12 +56,14 @@ export const DEFAULT_SERVER_CONFIG: ServerConfigData = {
  * Server configuration class
  */
 export class ServerConfig implements ServerConfigData {
+  device: string | null;
   httpPort: number | null;
   wsPort: number | null;
   wsMessageThrottle: number;
   deviceFindingPollInterval: number | null;
 
   constructor(data: Partial<ServerConfigData> = {}) {
+    this.device = data.device ?? DEFAULT_SERVER_CONFIG.device;
     this.httpPort = data.httpPort ?? DEFAULT_SERVER_CONFIG.httpPort;
     this.wsPort = data.wsPort ?? DEFAULT_SERVER_CONFIG.wsPort;
     this.wsMessageThrottle = data.wsMessageThrottle ?? DEFAULT_SERVER_CONFIG.wsMessageThrottle;
@@ -70,6 +75,7 @@ export class ServerConfig implements ServerConfigData {
    */
   static fromDict(data: Record<string, unknown>): ServerConfig {
     return new ServerConfig({
+      device: data.device as string | null | undefined,
       httpPort: (data.http_port ?? data.httpPort) as number | null | undefined,
       wsPort: (data.ws_port ?? data.wsPort) as number | null | undefined,
       wsMessageThrottle: (data.ws_message_throttle ?? data.wsMessageThrottle) as number | undefined,
@@ -82,6 +88,7 @@ export class ServerConfig implements ServerConfigData {
    */
   toDict(): ServerConfigData {
     return {
+      device: this.device,
       httpPort: this.httpPort,
       wsPort: this.wsPort,
       wsMessageThrottle: this.wsMessageThrottle,

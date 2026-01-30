@@ -132,24 +132,10 @@
       <div class="content">
         <h2 id="page-title">Understanding Sketchatone&#39;s configuration files</h2>
         <h1>Configuration Overview</h1>
-<p>Sketchatone uses two types of configuration files:</p>
-<h2>1. Tablet Configuration</h2>
-<p>Defines how to read HID data from your graphics tablet. These files are typically provided in <code>public/configs/</code> and matched automatically based on USB vendor/product IDs.</p>
-<p><strong>Example:</strong> <code>xp-pen-deco-640.json</code></p>
-<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
-  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"XP Pen Deco 640"</span><span class="token punctuation">,</span>
-  <span class="token property">"vendorId"</span><span class="token operator">:</span> <span class="token string">"0x28bd"</span><span class="token punctuation">,</span>
-  <span class="token property">"productId"</span><span class="token operator">:</span> <span class="token string">"0x2904"</span><span class="token punctuation">,</span>
-  <span class="token property">"capabilities"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
-    <span class="token property">"hasPressure"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
-    <span class="token property">"pressureLevels"</span><span class="token operator">:</span> <span class="token number">16384</span><span class="token punctuation">,</span>
-    <span class="token property">"hasTilt"</span><span class="token operator">:</span> <span class="token boolean">true</span>
-  <span class="token punctuation">}</span><span class="token punctuation">,</span>
-  <span class="token property">"byteCodeMappings"</span><span class="token operator">:</span> <span class="token punctuation">{</span> ... <span class="token punctuation">}</span>
-<span class="token punctuation">}</span></code></pre>
-<h2>2. Strummer Configuration</h2>
-<p>Defines musical settings, parameter mappings, and MIDI backend options.</p>
-<p><strong>Example:</strong> <code>strummer-config.json</code></p>
+<p>Sketchatone uses a single combined configuration file that includes strummer settings, MIDI options, and server configuration. The device (tablet) configuration is referenced via the <code>server.device</code> field.</p>
+<h2>Combined Configuration File</h2>
+<p>The main config file contains all strummer, MIDI, and server settings. Use the <code>-c</code> or <code>--config</code> flag to specify it.</p>
+<p><strong>Example:</strong> <code>sample-config.json</code></p>
 <pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
   <span class="token property">"strumming"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
     <span class="token property">"chord"</span><span class="token operator">:</span> <span class="token string">"Am"</span><span class="token punctuation">,</span>
@@ -163,7 +149,32 @@
   <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
     <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"rtmidi"</span><span class="token punctuation">,</span>
     <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token number">2</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"server"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"device"</span><span class="token operator">:</span> <span class="token string">"devices"</span><span class="token punctuation">,</span>
+    <span class="token property">"http_port"</span><span class="token operator">:</span> <span class="token number">3000</span><span class="token punctuation">,</span>
+    <span class="token property">"ws_port"</span><span class="token operator">:</span> <span class="token number">8081</span>
   <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Device Configuration</h2>
+<p>The <code>server.device</code> field specifies where to find tablet configuration files. It supports:</p>
+<ul>
+<li><strong>Relative paths</strong> - Resolved from the config file's directory (e.g., <code>"devices"</code>)</li>
+<li><strong>Absolute paths</strong> - Used as-is (e.g., <code>"/opt/sketchatone/configs/devices"</code>)</li>
+<li><strong>Direct file paths</strong> - Skip auto-detection (e.g., <code>"/path/to/xp-pen.json"</code>)</li>
+</ul>
+<p>Device config files define how to read HID data from your graphics tablet and are matched automatically based on USB vendor/product IDs.</p>
+<p><strong>Example:</strong> <code>devices/xp-pen-deco-640.json</code></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"XP Pen Deco 640"</span><span class="token punctuation">,</span>
+  <span class="token property">"vendorId"</span><span class="token operator">:</span> <span class="token string">"0x28bd"</span><span class="token punctuation">,</span>
+  <span class="token property">"productId"</span><span class="token operator">:</span> <span class="token string">"0x2904"</span><span class="token punctuation">,</span>
+  <span class="token property">"capabilities"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"hasPressure"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"pressureLevels"</span><span class="token operator">:</span> <span class="token number">16384</span><span class="token punctuation">,</span>
+    <span class="token property">"hasTilt"</span><span class="token operator">:</span> <span class="token boolean">true</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"byteCodeMappings"</span><span class="token operator">:</span> <span class="token punctuation">{</span> ... <span class="token punctuation">}</span>
 <span class="token punctuation">}</span></code></pre>
 <h2>Configuration Sections</h2>
 <table>

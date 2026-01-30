@@ -153,16 +153,10 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--tablet-config</code></td>
-<td><code>-t</code></td>
+<td><code>--config</code></td>
+<td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer/MIDI config JSON file</td>
+<td>Combined config file (strummer, MIDI, and server settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--jack</code></td>
@@ -212,8 +206,8 @@
 <pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Basic usage with defaults</span>
 python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer
 
-<span class="token comment"># With combined strummer+MIDI config file</span>
-python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer <span class="token parameter variable">-s</span> strummer.json
+<span class="token comment"># With combined config file</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer <span class="token parameter variable">-c</span> public/configs/sample-config.json
 
 <span class="token comment"># Use JACK MIDI backend</span>
 python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer <span class="token parameter variable">--jack</span>
@@ -243,13 +237,7 @@ python <span class="token parameter variable">-m</span> sketchatone.cli.midi_str
 <td><code>--config</code></td>
 <td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer config JSON file</td>
+<td>Combined config file (strummer settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--live</code></td>
@@ -276,16 +264,10 @@ python <span class="token parameter variable">-m</span> sketchatone.cli.midi_str
 </thead>
 <tbody>
 <tr>
-<td><code>--tablet-config</code></td>
-<td><code>-t</code></td>
+<td><code>--config</code></td>
+<td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file or directory</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer config JSON file</td>
+<td>Combined config file (strummer, MIDI, and server settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--ws-port</code></td>

@@ -6,14 +6,14 @@ A CLI tool that reads tablet events via HID and outputs MIDI notes.
 Combines the Strummer with MIDI backends (rtmidi or JACK).
 
 Usage:
-    # Using combined config file (strummer + MIDI settings)
-    python -m sketchatone.cli.midi_strummer --tablet-config tablet.json --strummer-config strummer.json
+    # Using combined config file (strummer, MIDI, and server settings)
+    python -m sketchatone.cli.midi_strummer -c config.json
 
-    # Using defaults with tablet config only
-    python -m sketchatone.cli.midi_strummer --tablet-config tablet.json
+    # Auto-detect device from default config directory
+    python -m sketchatone.cli.midi_strummer
 
     # Override specific settings via CLI
-    python -m sketchatone.cli.midi_strummer --tablet-config tablet.json --jack --channel 1
+    python -m sketchatone.cli.midi_strummer -c config.json --jack --channel 1
 """
 
 import argparse
@@ -47,13 +47,23 @@ except ImportError:
 DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs')
 
 
-def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFIG_DIR) -> str:
+def resolve_device_config_path(
+    device_path: str | None,
+    base_dir: str | None = None,
+    default_dir: str = DEFAULT_CONFIG_DIR
+) -> str:
     """
-    Resolve config path - if it's a directory or None, search for matching config.
+    Resolve device config path - if it's a directory or None, search for matching config.
+
+    Supports:
+    - Absolute paths (e.g., /opt/sketchatone/configs/devices)
+    - Relative paths resolved from base_dir (e.g., "devices" relative to config file location)
+    - Direct file paths (e.g., /opt/sketchatone/configs/devices/xp-pen.json)
 
     Args:
-        config_arg: Config path argument (file, directory, or None)
-        default_dir: Default directory to search if config_arg is None
+        device_path: Device config path (file, directory, or None)
+        base_dir: Base directory for resolving relative paths (e.g., config file's directory)
+        default_dir: Default directory to search if device_path is None and base_dir is None
 
     Returns:
         Resolved config file path
@@ -61,49 +71,51 @@ def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFI
     Raises:
         SystemExit: If no matching config is found
     """
-    # If no config provided, use default directory
-    if config_arg is None:
+    # Resolve the path
+    if device_path is None:
+        # No device path specified, use default directory
         search_dir = os.path.abspath(default_dir)
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            return found_config
+    elif os.path.isabs(device_path):
+        # Absolute path - use as-is
+        if device_path.endswith('.json'):
+            # Direct file path
+            if not os.path.exists(device_path):
+                print(colored(f'Error: Device config file not found: {device_path}', Colors.RED))
+                sys.exit(1)
+            return device_path
         else:
-            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
-            sys.exit(1)
-
-    # If it's a file with .json extension, use it directly
-    if config_arg.endswith('.json'):
-        if not os.path.exists(config_arg):
-            print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
-            sys.exit(1)
-        return config_arg
-
-    config_path = os.path.abspath(config_arg)
-
-    # If it's a directory, search for matching config
-    if os.path.isdir(config_path):
-        found_config = find_config_for_device(config_path)
-        if found_config:
-            return found_config
+            # Directory path
+            search_dir = device_path
+    else:
+        # Relative path - resolve from base_dir or current directory
+        if base_dir:
+            resolved_path = os.path.join(base_dir, device_path)
         else:
-            print(colored(f'Error: No matching tablet config found in: {config_path}', Colors.RED))
-            sys.exit(1)
+            resolved_path = device_path
+        resolved_path = os.path.abspath(resolved_path)
 
-    # If path doesn't exist and has no extension, try default directory
-    if not os.path.exists(config_path) and not os.path.splitext(config_arg)[1]:
-        search_dir = os.path.abspath(default_dir)
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            return found_config
+        if resolved_path.endswith('.json'):
+            # Direct file path
+            if not os.path.exists(resolved_path):
+                print(colored(f'Error: Device config file not found: {resolved_path}', Colors.RED))
+                sys.exit(1)
+            return resolved_path
         else:
-            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
-            sys.exit(1)
+            # Directory path
+            search_dir = resolved_path
 
-    # Otherwise treat as file path
-    if not os.path.exists(config_arg):
-        print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
+    # Validate directory exists
+    if not os.path.isdir(search_dir):
+        print(colored(f'Error: Device config directory not found: {search_dir}', Colors.RED))
         sys.exit(1)
-    return config_arg
+
+    # Search for matching device config
+    found_config = find_config_for_device(search_dir)
+    if found_config:
+        return found_config
+    else:
+        print(colored(f'Error: No matching device config found in: {search_dir}', Colors.RED))
+        sys.exit(1)
 
 
 def create_bar(value: float, max_val: float, width: int) -> str:
@@ -707,34 +719,25 @@ Examples:
     # Auto-detect tablet from default config directory
     python -m sketchatone.cli.midi_strummer
 
-    # Auto-detect tablet from specific directory
-    python -m sketchatone.cli.midi_strummer -t ./configs/
-
-    # Basic usage with specific config file
-    python -m sketchatone.cli.midi_strummer -t tablet.json
-
-    # With combined strummer+MIDI config file
-    python -m sketchatone.cli.midi_strummer -t tablet.json -s strummer.json
+    # With combined config file (strummer, MIDI, and server settings)
+    python -m sketchatone.cli.midi_strummer -c config.json
 
     # Override backend via CLI (use JACK instead of rtmidi)
-    python -m sketchatone.cli.midi_strummer -t tablet.json --jack
+    python -m sketchatone.cli.midi_strummer -c config.json --jack
 
     # Override MIDI channel
-    python -m sketchatone.cli.midi_strummer -t tablet.json --channel 1
+    python -m sketchatone.cli.midi_strummer -c config.json --channel 1
 
     # Live dashboard mode
-    python -m sketchatone.cli.midi_strummer -t tablet.json --live
+    python -m sketchatone.cli.midi_strummer -c config.json --live
 """
     )
 
     parser.add_argument(
-        '-t', '--tablet-config',
-        help='Path to tablet config JSON file or directory (auto-detects from ../public/configs if not provided)'
-    )
-
-    parser.add_argument(
-        '-s', '--strummer-config',
-        help='Path to strummer/MIDI config JSON file (can contain both strummer and MIDI settings)'
+        '-c', '--config',
+        dest='config',
+        metavar='PATH',
+        help='Combined config file path (strummer, MIDI, and server settings). Device path is specified in server.device field.'
     )
 
     # CLI overrides for MIDI settings
@@ -782,18 +785,39 @@ Examples:
 
     args = parser.parse_args()
 
-    # Resolve tablet config path (handles auto-detection from directory)
-    tablet_config_path = resolve_config_path(args.tablet_config)
+    # Load config early to get device path
+    config = None
+    config_path = None
+    config_dir = None
+    if args.config:
+        config_path = os.path.abspath(args.config)
+        config_dir = os.path.dirname(config_path)
+        if not os.path.exists(config_path):
+            print(colored(f'Error: Config file not found: {config_path}', Colors.RED))
+            sys.exit(1)
+        config = MidiStrummerConfig.from_json_file(config_path)
 
-    if args.strummer_config and not os.path.exists(args.strummer_config):
-        print(colored(f'Error: Strummer config file not found: {args.strummer_config}', Colors.RED))
-        sys.exit(1)
+    # Get device path from config (defaults to "devices" folder relative to config)
+    device_path = config.server.device if config else None
+
+    # Resolve device config path
+    # Use config file's directory as base for resolving relative device paths
+    device_config_path = resolve_device_config_path(
+        device_path,
+        base_dir=config_dir
+    )
+
+    print(colored('=== MIDI Strummer ===', Colors.CYAN))
+    if config_path:
+        print(colored(f'Config: {config_path}', Colors.GRAY))
+    print(colored(f'Device config: {device_config_path}', Colors.GRAY))
+    print()
 
     strummer = None
     try:
         strummer = MidiStrummer(
-            tablet_config_path=tablet_config_path,
-            strummer_config_path=args.strummer_config,
+            tablet_config_path=device_config_path,
+            strummer_config_path=config_path,
             live_mode=args.live,
             # CLI overrides
             use_jack=args.jack if args.jack else None,

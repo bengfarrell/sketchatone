@@ -274,13 +274,24 @@ def _exit_no_device(search_dir: str) -> None:
     sys.exit(1)
 
 
-def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFIG_DIR, poll_ms: int | None = None) -> tuple[str | None, str]:
+def resolve_device_config_path(
+    device_path: str | None,
+    base_dir: str | None = None,
+    default_dir: str = DEFAULT_CONFIG_DIR,
+    poll_ms: int | None = None
+) -> tuple[str | None, str]:
     """
-    Resolve config path - if it's a directory or None, search for matching config.
+    Resolve device config path - if it's a directory or None, search for matching config.
+
+    Supports:
+    - Absolute paths (e.g., /opt/sketchatone/configs/devices)
+    - Relative paths resolved from base_dir (e.g., "devices" relative to config file location)
+    - Direct file paths (e.g., /opt/sketchatone/configs/devices/xp-pen.json)
 
     Args:
-        config_arg: Config path argument (file, directory, or None)
-        default_dir: Default directory to search if config_arg is None
+        device_path: Device config path (file, directory, or None)
+        base_dir: Base directory for resolving relative paths (e.g., config file's directory)
+        default_dir: Default directory to search if device_path is None and base_dir is None
         poll_ms: If set, return None for config path to indicate polling should happen later
 
     Returns:
@@ -290,31 +301,45 @@ def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFI
     Raises:
         SystemExit: If no matching config is found and poll_ms is not set
     """
-    # If no config provided, use default directory
-    if config_arg is None:
+    # Resolve the path
+    if device_path is None:
+        # No device path specified, use default directory
         search_dir = os.path.abspath(default_dir)
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            return found_config, search_dir
-        elif poll_ms is not None:
-            # Return None to indicate polling should happen in background
-            return None, search_dir
+    elif os.path.isabs(device_path):
+        # Absolute path - use as-is
+        if device_path.endswith('.json'):
+            # Direct file path
+            if not os.path.exists(device_path):
+                print(colored(f'Error: Device config file not found: {device_path}', Colors.RED))
+                sys.exit(1)
+            return device_path, os.path.dirname(device_path)
         else:
-            _exit_no_device(search_dir)
+            # Directory path
+            search_dir = device_path
+    else:
+        # Relative path - resolve from base_dir or current directory
+        if base_dir:
+            resolved_path = os.path.join(base_dir, device_path)
+        else:
+            resolved_path = device_path
+        resolved_path = os.path.abspath(resolved_path)
 
-    # If it's a file with .json extension, use it directly
-    if config_arg.endswith('.json'):
-        if not os.path.exists(config_arg):
-            print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
-            sys.exit(1)
-        return config_arg, os.path.dirname(os.path.abspath(config_arg))
+        if resolved_path.endswith('.json'):
+            # Direct file path
+            if not os.path.exists(resolved_path):
+                print(colored(f'Error: Device config file not found: {resolved_path}', Colors.RED))
+                sys.exit(1)
+            return resolved_path, os.path.dirname(resolved_path)
+        else:
+            # Directory path
+            search_dir = resolved_path
 
-    # Otherwise treat as directory
-    search_dir = os.path.abspath(config_arg)
+    # Validate directory exists
     if not os.path.isdir(search_dir):
-        print(colored(f'Error: Path is not a file or directory: {config_arg}', Colors.RED))
+        print(colored(f'Error: Device config directory not found: {search_dir}', Colors.RED))
         sys.exit(1)
 
+    # Search for matching device config
     found_config = find_config_for_device(search_dir)
     if found_config:
         return found_config, search_dir
@@ -1550,16 +1575,9 @@ def main():
     
     parser.add_argument(
         '-c', '--config',
-        dest='tablet_config',
+        dest='config',
         metavar='PATH',
-        help='Tablet config file or directory (auto-detects device if directory or not specified)'
-    )
-    
-    parser.add_argument(
-        '-s', '--strummer-config',
-        dest='strummer_config',
-        metavar='PATH',
-        help='Strummer/MIDI config file path'
+        help='Combined config file path (strummer, MIDI, and server settings). Device path is specified in server.device field.'
     )
     
     parser.add_argument(
@@ -1643,43 +1661,55 @@ def main():
 
     args = parser.parse_args()
 
-    # Load strummer config early to get server settings (CLI args take precedence)
-    strummer_config = None
-    if args.strummer_config:
-        strummer_config = MidiStrummerConfig.from_json_file(args.strummer_config)
+    # Load config early to get server settings (CLI args take precedence)
+    config = None
+    config_path = None
+    config_dir = None
+    if args.config:
+        config_path = os.path.abspath(args.config)
+        config_dir = os.path.dirname(config_path)
+        config = MidiStrummerConfig.from_json_file(config_path)
 
     # Handle --dump-config: print config as JSON and exit
     if args.dump_config:
-        if strummer_config is None:
-            strummer_config = MidiStrummerConfig()
-        print(json.dumps(strummer_config.to_dict(), indent=2))
+        if config is None:
+            config = MidiStrummerConfig()
+        print(json.dumps(config.to_dict(), indent=2))
         sys.exit(0)
 
     # Resolve effective server settings (CLI args take precedence over config file)
     effective_ws_port = args.ws_port if args.ws_port != 8081 else (
-        strummer_config.ws_port if strummer_config and strummer_config.ws_port else 8081
+        config.ws_port if config and config.ws_port else 8081
     )
     effective_http_port = args.http_port or (
-        strummer_config.http_port if strummer_config else None
+        config.http_port if config else None
     )
     effective_throttle = args.throttle if args.throttle != 150 else (
-        strummer_config.ws_message_throttle if strummer_config else 150
+        config.ws_message_throttle if config else 150
     )
     effective_poll = args.poll or (
-        strummer_config.device_finding_poll_interval if strummer_config else None
+        config.device_finding_poll_interval if config else None
     )
 
-    # Resolve tablet config path (returns tuple: config_path or None, search_dir)
-    tablet_config_path, search_dir = resolve_config_path(args.tablet_config, poll_ms=effective_poll)
+    # Get device path from config (defaults to "devices" folder relative to config)
+    device_path = config.server.device if config else None
+
+    # Resolve device config path (returns tuple: config_path or None, search_dir)
+    # Use config file's directory as base for resolving relative device paths
+    device_config_path, search_dir = resolve_device_config_path(
+        device_path,
+        base_dir=config_dir,
+        poll_ms=effective_poll
+    )
 
     print(colored('=== Strummer WebSocket Server ===', Colors.CYAN))
-    if tablet_config_path:
-        print(colored(f'Tablet config: {tablet_config_path}', Colors.GRAY))
+    if config_path:
+        print(colored(f'Config: {config_path}', Colors.GRAY))
+    if device_config_path:
+        print(colored(f'Device config: {device_config_path}', Colors.GRAY))
     else:
-        print(colored(f'Tablet config: (waiting for device)', Colors.YELLOW))
+        print(colored(f'Device config: (waiting for device)', Colors.YELLOW))
         print(colored(f'Search directory: {search_dir}', Colors.GRAY))
-    if args.strummer_config:
-        print(colored(f'Strummer config: {args.strummer_config}', Colors.GRAY))
     print(colored(f'WebSocket port: {effective_ws_port}', Colors.GRAY))
     if effective_http_port:
         print(colored(f'HTTP port: {effective_http_port}', Colors.GRAY))
@@ -1698,8 +1728,8 @@ def main():
 
     # Create and run server
     server = StrummerWebSocketServer(
-        tablet_config_path=tablet_config_path,
-        strummer_config_path=args.strummer_config,
+        tablet_config_path=device_config_path,
+        strummer_config_path=config_path,
         ws_port=effective_ws_port,
         http_port=effective_http_port,
         throttle_ms=effective_throttle,

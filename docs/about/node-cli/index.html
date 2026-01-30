@@ -156,16 +156,10 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--tablet-config</code></td>
-<td><code>-t</code></td>
+<td><code>--config</code></td>
+<td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file or directory</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer/MIDI config JSON file</td>
+<td>Combined config file (strummer, MIDI, and server settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--channel</code></td>
@@ -197,8 +191,8 @@
 <pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Auto-detect tablet from default config directory</span>
 <span class="token function">npm</span> run midi-strummer
 
-<span class="token comment"># With combined strummer+MIDI config file</span>
-<span class="token function">npm</span> run midi-strummer -- <span class="token parameter variable">-t</span> tablet.json <span class="token parameter variable">-s</span> strummer.json
+<span class="token comment"># With combined config file</span>
+<span class="token function">npm</span> run midi-strummer -- <span class="token parameter variable">-c</span> public/configs/sample-config.json
 
 <span class="token comment"># Override MIDI channel</span>
 <span class="token function">npm</span> run midi-strummer -- <span class="token parameter variable">--channel</span> <span class="token number">1</span>
@@ -228,13 +222,7 @@
 <td><code>--config</code></td>
 <td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file or directory</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer config JSON file</td>
+<td>Combined config file (strummer settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--live</code></td>
@@ -262,16 +250,10 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--tablet-config</code></td>
-<td><code>-t</code></td>
+<td><code>--config</code></td>
+<td><code>-c</code></td>
 <td>path</td>
-<td>Path to tablet config JSON file or directory</td>
-</tr>
-<tr>
-<td><code>--strummer-config</code></td>
-<td><code>-s</code></td>
-<td>path</td>
-<td>Path to strummer config JSON file</td>
+<td>Combined config file (strummer, MIDI, and server settings). Device path is specified in <code>server.device</code> field.</td>
 </tr>
 <tr>
 <td><code>--ws-port</code></td>
@@ -302,6 +284,9 @@
 <h3>Examples</h3>
 <pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Start WebSocket server only</span>
 <span class="token function">npm</span> run server
+
+<span class="token comment"># Start with combined config file</span>
+<span class="token function">npm</span> run server -- <span class="token parameter variable">-c</span> public/configs/sample-config.json
 
 <span class="token comment"># Start both WebSocket and HTTP servers</span>
 <span class="token function">npm</span> run server -- --ws-port <span class="token number">8081</span> --http-port <span class="token number">3000</span>

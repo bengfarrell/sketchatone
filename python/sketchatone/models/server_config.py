@@ -15,11 +15,13 @@ class ServerConfig:
     Configuration for server settings.
 
     Attributes:
+        device: Path to device config file or directory for auto-detection (None = use default 'devices' folder)
         http_port: HTTP server port for serving webapps (None = disabled)
         ws_port: WebSocket server port (None = disabled)
         ws_message_throttle: WebSocket message throttle interval in milliseconds (default: 150)
         device_finding_poll_interval: Poll interval in milliseconds for waiting for device (None = quit if no device)
     """
+    device: Optional[str] = None
     http_port: Optional[int] = None
     ws_port: Optional[int] = None
     ws_message_throttle: int = 150
@@ -30,6 +32,7 @@ class ServerConfig:
         """Create a ServerConfig from a dictionary"""
         # Handle both snake_case and camelCase keys
         return cls(
+            device=data.get('device'),
             http_port=data.get('http_port', data.get('httpPort')),
             ws_port=data.get('ws_port', data.get('wsPort')),
             ws_message_throttle=data.get('ws_message_throttle', data.get('wsMessageThrottle', 150)),
@@ -46,6 +49,7 @@ class ServerConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (camelCase for webapp)"""
         return {
+            'device': self.device,
             'httpPort': self.http_port,
             'wsPort': self.ws_port,
             'wsMessageThrottle': self.ws_message_throttle,

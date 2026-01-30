@@ -70,6 +70,7 @@
     "note_duration": 1.5
   },
   "server": {
+    "device": "devices",
     "http_port": 8080,
     "ws_port": 8081,
     "ws_message_throttle": 150,

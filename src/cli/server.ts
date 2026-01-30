@@ -1176,8 +1176,7 @@ async function main(): Promise<void> {
   program
     .name('server')
     .description('Sketchatone Server - HTTP server for webapps and WebSocket server for tablet/strum events')
-    .option('-t, --tablet-config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
-    .option('-s, --strummer-config <path>', 'Path to strummer config JSON file')
+    .option('-c, --config <path>', 'Combined config file path (strummer, MIDI, and server settings). Device path is specified in server.device field.')
     .option('--ws-port <number>', 'WebSocket server port (default: 8081)', parseInt)
     .option('--http-port <number>', 'HTTP server port for serving webapps', parseInt)
     .option('--throttle <ms>', 'Throttle interval in milliseconds (default: 150)', parseInt)
@@ -1199,8 +1198,11 @@ Examples:
   # Start with WebSocket only (default port 8081)
   npm run server
 
+  # Start with combined config file
+  npm run server -- -c public/configs/sample-config.json
+
   # Start with both HTTP and WebSocket servers
-  npm run server -- --http-port 3000 --ws-port 8081
+  npm run server -- -c config.json --http-port 3000 --ws-port 8081
 
   # Wait indefinitely for device, polling every 2 seconds
   npm run server -- --poll 2000
@@ -1216,8 +1218,7 @@ Examples:
   program.parse();
 
   const options = program.opts<{
-    tabletConfig?: string;
-    strummerConfig?: string;
+    config?: string;
     wsPort?: number;
     httpPort?: number;
     throttle?: number;
@@ -1230,14 +1231,20 @@ Examples:
     dumpConfig?: boolean;
   }>();
 
-  const configInput = options.tabletConfig ?? DEFAULT_CONFIG_DIR;
-  const resolvedInput = path.resolve(configInput);
-
-  // Load strummer config early to get server settings (CLI args take precedence)
-  const strummerConfigPath = options.strummerConfig ? path.resolve(options.strummerConfig) : undefined;
-  const strummerConfig = strummerConfigPath
-    ? MidiStrummerConfig.fromJsonFile(strummerConfigPath)
+  // Load combined config early to get server settings (CLI args take precedence)
+  const configPath = options.config ? path.resolve(options.config) : undefined;
+  const strummerConfig = configPath
+    ? MidiStrummerConfig.fromJsonFile(configPath)
     : new MidiStrummerConfig();
+
+  // Get device path from config (defaults to DEFAULT_CONFIG_DIR if not specified)
+  const devicePath = strummerConfig.server.device ?? DEFAULT_CONFIG_DIR;
+  const configDir = configPath ? path.dirname(configPath) : process.cwd();
+
+  // Resolve device path (absolute or relative to config file directory)
+  const resolvedInput = path.isAbsolute(devicePath)
+    ? devicePath
+    : path.resolve(configDir, devicePath);
 
   // Handle --dump-config: print config as JSON and exit
   if (options.dumpConfig) {
@@ -1260,7 +1267,7 @@ Examples:
   // Helper function to create and start the server with a given config path
   const createAndStartServer = async (tabletConfigPath: string): Promise<void> => {
     const server = new StrummerWebSocketServer(tabletConfigPath, {
-      strummerConfigPath,
+      strummerConfigPath: configPath,
       wsPort: options.wsPort,
       httpPort: options.httpPort,
       throttleMs: options.throttle,

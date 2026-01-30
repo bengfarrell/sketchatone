@@ -68,6 +68,7 @@
     "use_virtual_ports": true
   },
   "server": {
+    "device": "devices",
     "http_port": 3000,
     "ws_port": 9000,
     "ws_message_throttle": 200,

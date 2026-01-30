@@ -21,7 +21,7 @@ PYTHON_DIR = TESTS_DIR.parent
 def dump_config(config_path: Path) -> dict:
     """Run the CLI with --dump-config and return parsed JSON"""
     result = subprocess.run(
-        [sys.executable, "-m", "sketchatone.cli.server", "-s", str(config_path), "--dump-config"],
+        [sys.executable, "-m", "sketchatone.cli.server", "-c", str(config_path), "--dump-config"],
         capture_output=True,
         text=True,
         cwd=str(PYTHON_DIR),
@@ -127,6 +127,7 @@ class TestFlatFormatConfig:
     
     def test_server_settings(self, config):
         server = config["server"]
+        assert server["device"] == "devices"
         assert server["httpPort"] == 3000
         assert server["wsPort"] == 9000
         assert server["wsMessageThrottle"] == 200
@@ -178,6 +179,7 @@ class TestNestedFormatConfig:
     
     def test_server_settings(self, config):
         server = config["server"]
+        assert server["device"] == "/opt/sketchatone/configs/devices"
         assert server["httpPort"] == 4000
         assert server["wsPort"] == 9500
         assert server["wsMessageThrottle"] == 100

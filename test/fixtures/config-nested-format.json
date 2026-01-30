@@ -70,6 +70,7 @@
     "useVirtualPorts": false
   },
   "server": {
+    "device": "/opt/sketchatone/configs/devices",
     "httpPort": 4000,
     "wsPort": 9500,
     "wsMessageThrottle": 100,
