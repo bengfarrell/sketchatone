@@ -211,11 +211,11 @@ class JackMidiBackend(MidiBackendProtocol):
             try:
                 for ch in range(16):
                     # All Notes Off (CC 123)
-                    self._queue_message([0xB0 + ch, 123, 0])
+                    self._queue_midi_event(bytes([0xB0 + ch, 123, 0]))
                     # Reset All Controllers (CC 121)
-                    self._queue_message([0xB0 + ch, 121, 0])
+                    self._queue_midi_event(bytes([0xB0 + ch, 121, 0]))
                     # Reset pitch bend to center
-                    self._queue_message([0xE0 + ch, 0x00, 0x40])
+                    self._queue_midi_event(bytes([0xE0 + ch, 0x00, 0x40]))
             except Exception as e:
                 print(f"[JackMidi] Error sending cleanup messages: {e}")
 
