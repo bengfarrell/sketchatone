@@ -136,10 +136,13 @@ class RtMidiInput:
             print(f"[RtMidiInput] Failed to get available ports: {e}")
             return []
 
-    def connect_all(self) -> bool:
+    def connect_all(self, exclude_ports: Optional[List[str]] = None) -> bool:
         """
         Connect to ALL available MIDI input ports.
         Useful for discovering which device the user is playing.
+
+        Args:
+            exclude_ports: List of port name substrings to exclude (e.g., to avoid feedback loops)
         """
         try:
             # Close existing connections
@@ -154,10 +157,25 @@ class RtMidiInput:
                 print("[RtMidiInput] No MIDI input ports available")
                 return False
 
+            exclude_ports = exclude_ports or []
+            connected_count = 0
+
             # Connect to each port
             for i in range(port_count):
                 midi_in = rtmidi.MidiIn()
                 port_name = midi_in.get_port_name(i)
+
+                # Check if this port should be excluded
+                should_exclude = False
+                for exclude_pattern in exclude_ports:
+                    if exclude_pattern and exclude_pattern.lower() in port_name.lower():
+                        print(f"[RtMidiInput] Skipping port {i}: {port_name} (matches exclude pattern '{exclude_pattern}')")
+                        should_exclude = True
+                        break
+
+                if should_exclude:
+                    del midi_in
+                    continue
 
                 # Set up callback with port info
                 midi_in.set_callback(self._create_callback(port_name))
@@ -165,11 +183,16 @@ class RtMidiInput:
                 midi_in.open_port(i)
                 self._midi_inputs[i] = midi_in
                 self._connected_ports.append({'id': i, 'name': port_name})
+                connected_count += 1
 
                 print(f"[RtMidiInput] Connected to port {i}: {port_name}")
 
+            if connected_count == 0:
+                print("[RtMidiInput] No MIDI input ports available after exclusions")
+                return False
+
             self._is_connected = True
-            self._current_input_name = f"All ports ({port_count})"
+            self._current_input_name = f"All ports ({connected_count})"
             with self._lock:
                 self._notes = []
 

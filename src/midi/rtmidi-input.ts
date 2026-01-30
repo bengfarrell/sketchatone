@@ -125,51 +125,72 @@ export class RtMidiInput extends EventEmitter {
   /**
    * Connect to ALL available MIDI input ports
    * Useful for discovering which device the user is playing
+   *
+   * @param excludePorts - List of port name substrings to exclude (e.g., to avoid feedback loops)
    */
-  async connectAll(): Promise<boolean> {
+  async connectAll(excludePorts: string[] = []): Promise<boolean> {
     try {
       const midiModule = await loadMidi();
-      
+
       // Close existing connections
       this.disconnect();
-      
+
       // Get available ports
       const tempInput = new midiModule.Input();
       const portCount = tempInput.getPortCount();
       tempInput.closePort();
-      
+
       if (portCount === 0) {
         console.log('[RtMidiInput] No MIDI input ports available');
         return false;
       }
 
+      let connectedCount = 0;
+
       // Connect to each port
       for (let i = 0; i < portCount; i++) {
         const input = new midiModule.Input();
         const portName = input.getPortName(i);
-        
+
+        // Check if this port should be excluded
+        const shouldExclude = excludePorts.some(
+          (pattern) => pattern && portName.toLowerCase().includes(pattern.toLowerCase())
+        );
+
+        if (shouldExclude) {
+          console.log(`[RtMidiInput] Skipping port ${i}: ${portName} (matches exclude pattern)`);
+          input.closePort();
+          continue;
+        }
+
         // Set up message callback with port info
         input.on('message', (_deltaTime: number, message: number[]) => {
           this.handleMidiMessage(message, portName);
         });
-        
+
         input.openPort(i);
         this._midiInputs.set(i, input);
         this._connectedPorts.push({ id: i, name: portName });
-        
+        connectedCount++;
+
         console.log(`[RtMidiInput] Connected to port ${i}: ${portName}`);
       }
-      
+
+      if (connectedCount === 0) {
+        console.log('[RtMidiInput] No MIDI input ports available after exclusions');
+        return false;
+      }
+
       this._isConnected = true;
-      this._currentInputName = `All ports (${portCount})`;
+      this._currentInputName = `All ports (${connectedCount})`;
       this._notes = [];
-      
+
       // Emit connection event
       this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
         connected: true,
         inputPort: this._currentInputName,
       });
-      
+
       return true;
     } catch (error) {
       console.error('[RtMidiInput] Failed to connect to all ports:', error);

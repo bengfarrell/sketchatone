@@ -18,6 +18,7 @@ import signal
 import sys
 import os
 import time
+import threading
 import mimetypes
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
@@ -434,6 +435,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             'is_holding': False,
         }
 
+        # State tracking for strum release feature
+        self.strum_start_time: float = 0.0
+
         # Register event bus listener
         self.event_bus.on_combined_event(self._broadcast_combined_event)
     
@@ -550,15 +554,23 @@ class StrummerWebSocketServer(TabletReaderBase):
         Initialize MIDI input for external keyboard.
         If midi_input_id is None, listens to ALL available MIDI inputs (discovery mode).
         If midi_input_id is specified, connects only to that port.
+
+        Excludes the MIDI output port to prevent feedback loops.
         """
         try:
             self.midi_input = RtMidiInput()
             input_port = self.config.midi.midi_input_id
 
+            # Build list of ports to exclude (to prevent feedback from our own output)
+            exclude_ports: List[str] = []
+            if self.backend and hasattr(self.backend, 'current_output_name') and self.backend.current_output_name:
+                exclude_ports.append(self.backend.current_output_name)
+                print(colored(f'[MIDI Input] Excluding output port from input: {self.backend.current_output_name}', Colors.GRAY))
+
             connected = False
             if input_port is None:
-                # Discovery mode: listen to all ports
-                connected = self.midi_input.connect_all()
+                # Discovery mode: listen to all ports (except our output)
+                connected = self.midi_input.connect_all(exclude_ports=exclude_ports)
             else:
                 # Specific port mode
                 connected = self.midi_input.connect(input_port)
@@ -1204,6 +1216,11 @@ class StrummerWebSocketServer(TabletReaderBase):
                 event_notes = event.get('notes', [])
 
                 if event_type == 'strum' and event_notes:
+                    # Track strum start time for strum release feature
+                    # Only set on FIRST strum event (not subsequent strums across strings)
+                    if self.strum_start_time == 0.0:
+                        self.strum_start_time = time.time()
+
                     # Store notes for repeater and mark as holding
                     self.repeater_state['notes'] = event_notes
                     self.repeater_state['is_holding'] = True
@@ -1249,6 +1266,40 @@ class StrummerWebSocketServer(TabletReaderBase):
                     # Stop holding - no more repeats
                     self.repeater_state['is_holding'] = False
                     self.repeater_state['notes'] = []
+
+                    # Handle strum release - send configured MIDI note on quick releases
+                    strum_release_cfg = self.config.strummer.strum_release
+                    if strum_release_cfg and strum_release_cfg.active and self.backend and self.strum_start_time > 0:
+                        strum_duration = time.time() - self.strum_start_time
+                        max_duration = strum_release_cfg.max_duration if strum_release_cfg.max_duration else 0.25
+
+                        # Only trigger release note if duration is within the max duration threshold
+                        if strum_duration <= max_duration:
+                            release_note = strum_release_cfg.midi_note
+                            # Default to channel 9 (0-based, MIDI channel 10/drums) if not specified
+                            release_channel = strum_release_cfg.midi_channel if strum_release_cfg.midi_channel is not None else 9
+                            velocity_multiplier = strum_release_cfg.velocity_multiplier if strum_release_cfg.velocity_multiplier else 1.0
+
+                            # Use the velocity from the strum and apply multiplier
+                            base_velocity = event.get('velocity', 64)
+                            release_velocity = int(base_velocity * velocity_multiplier)
+                            # Clamp to MIDI range 1-127
+                            release_velocity = max(1, min(127, release_velocity))
+
+                            # Display channel as 1-based for user-friendliness
+                            print(colored(f'[Strum Release] note={release_note} vel={release_velocity} ch={release_channel + 1} dur={strum_duration:.3f}s', Colors.CYAN))
+
+                            # Send the raw MIDI note using the backend's send_raw_note method
+                            if hasattr(self.backend, 'send_raw_note'):
+                                self.backend.send_raw_note(
+                                    midi_note=release_note,
+                                    velocity=release_velocity,
+                                    duration=strum_duration,
+                                    channel=release_channel
+                                )
+
+                    # Reset strum start time
+                    self.strum_start_time = 0.0
 
                 strum_data = StrumEventData(
                     type=event.get('type', 'strum'),

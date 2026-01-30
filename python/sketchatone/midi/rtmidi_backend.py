@@ -46,14 +46,20 @@ class RtMidiBackend(MidiBackendProtocol):
         self._channel = channel
         self._midi_out: Optional[rtmidi.MidiOut] = None
         self._connected = False
+        self._current_output_name: Optional[str] = None
 
         # Note timing management
         self._active_note_timers: Dict[Tuple[int, Tuple[int, ...]], threading.Timer] = {}
         self._timer_lock = threading.Lock()
-    
+
     @property
     def is_connected(self) -> bool:
         return self._connected and self._midi_out is not None
+
+    @property
+    def current_output_name(self) -> Optional[str]:
+        """Get the name of the currently connected output port."""
+        return self._current_output_name
     
     def get_available_ports(self) -> List[str]:
         """Get list of available MIDI output ports."""
@@ -78,27 +84,30 @@ class RtMidiBackend(MidiBackendProtocol):
         try:
             self._midi_out = rtmidi.MidiOut()
             available_ports = self._midi_out.get_ports()
-            
+
             if not available_ports:
                 print("[RtMidi] Warning: No MIDI output ports available")
                 # Create virtual port as fallback
                 self._midi_out.open_virtual_port("Sketchatone")
                 print("[RtMidi] Created virtual port: Sketchatone")
+                self._current_output_name = "Sketchatone"
                 self._connected = True
                 return True
-            
+
             # Resolve port
             port_index = 0
             if output_port is not None:
                 port_index = self._resolve_port(output_port, available_ports)
-            
+
             self._midi_out.open_port(port_index)
-            print(f"[RtMidi] Connected to: {available_ports[port_index]}")
+            self._current_output_name = available_ports[port_index]
+            print(f"[RtMidi] Connected to: {self._current_output_name}")
             self._connected = True
             return True
-            
+
         except Exception as e:
             print(f"[RtMidi] Connection failed: {e}")
+            self._current_output_name = None
             self._connected = False
             return False
     
@@ -165,22 +174,32 @@ class RtMidiBackend(MidiBackendProtocol):
         print("[RtMidi] Disconnected")
     
     def set_channel(self, channel: Optional[int]) -> None:
-        """Set default MIDI channel (1-16) or None for all."""
+        """Set default MIDI channel (0-15, 0-based) or None for default (channel 0)."""
         self._channel = channel
         if channel is not None:
-            print(f"[RtMidi] Channel set to: {channel}")
+            # Display as 1-based for user-friendliness
+            print(f"[RtMidi] Channel set to: {channel + 1}")
         else:
-            print("[RtMidi] Channel set to: ALL (omni)")
+            print("[RtMidi] Channel set to: default (1)")
     
     def _get_channels(self, channel: Optional[int] = None) -> List[int]:
-        """Get list of 0-based channel indices to send on."""
+        """
+        Get list of 0-based channel indices to send on.
+
+        Args:
+            channel: 0-based MIDI channel (0-15), or None to use default
+
+        Returns:
+            List of 0-based channel indices
+        """
         if channel is not None:
-            return [channel - 1]
+            # Channel is already 0-based (0-15)
+            return [channel]
         elif self._channel is not None:
-            return [self._channel - 1]
+            # Default channel is also 0-based
+            return [self._channel]
         else:
-            # Default to channel 1 (0-indexed: 0) instead of all channels
-            # This matches Node.js behavior and avoids 16x MIDI traffic
+            # Default to channel 0 (MIDI channel 1)
             return [0]
     
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
@@ -242,7 +261,53 @@ class RtMidiBackend(MidiBackendProtocol):
         with self._timer_lock:
             self._active_note_timers[note_key] = timer
         timer.start()
-    
+
+    def send_raw_note(self, midi_note: int, velocity: int, duration: float = 1.5,
+                      channel: Optional[int] = None) -> None:
+        """
+        Send a raw MIDI note number with automatic note-off after duration.
+
+        Used for features like strum release where we need to send a specific
+        MIDI note number rather than a NoteObject.
+
+        Args:
+            midi_note: MIDI note number (0-127)
+            velocity: MIDI velocity (0-127)
+            duration: Duration in seconds before note-off
+            channel: MIDI channel (1-16), or None to use default
+        """
+        if not self.is_connected:
+            return
+
+        channels = self._get_channels(channel)
+        note_key = (midi_note, tuple(channels))
+
+        # Cancel existing timer for this note
+        with self._timer_lock:
+            if note_key in self._active_note_timers:
+                self._active_note_timers[note_key].cancel()
+                del self._active_note_timers[note_key]
+
+        # Send note-on
+        for ch in channels:
+            message = [0x90 + ch, midi_note, velocity]
+            self._midi_out.send_message(message)
+
+        # Schedule note-off
+        def send_off():
+            if self.is_connected and self._midi_out:
+                for ch in channels:
+                    message = [0x80 + ch, midi_note, 0x40]
+                    self._midi_out.send_message(message)
+            with self._timer_lock:
+                self._active_note_timers.pop(note_key, None)
+
+        timer = threading.Timer(duration, send_off)
+        timer.daemon = True
+        with self._timer_lock:
+            self._active_note_timers[note_key] = timer
+        timer.start()
+
     def release_notes(self, notes: List[NoteObject]) -> None:
         """Immediately release specific notes."""
         if not self.is_connected or not notes:

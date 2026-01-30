@@ -46,6 +46,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
   private _isConnected = false;
   private _useVirtualPorts: boolean;
   private _virtualPortName: string;
+  private _currentOutputName: string | null = null;
 
   // Track active note timers for cleanup
   private _activeNoteTimers: Map<string, NoteTimer> = new Map();
@@ -62,6 +63,11 @@ export class RtMidiBackend implements MidiBackendProtocol {
 
   get channel(): number {
     return this._channel;
+  }
+
+  /** Get the name of the currently connected output port */
+  get currentOutputName(): string | null {
+    return this._currentOutputName;
   }
 
   /**
@@ -94,6 +100,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
         // Create a virtual port
         this._midiOut.openVirtualPort(this._virtualPortName);
         console.log(`[RtMidi] Opened virtual port: ${this._virtualPortName}`);
+        this._currentOutputName = this._virtualPortName;
         this._isConnected = true;
         return true;
       }
@@ -140,10 +147,12 @@ export class RtMidiBackend implements MidiBackendProtocol {
       const portName = this._midiOut.getPortName(portIndex);
       this._midiOut.openPort(portIndex);
       console.log(`[RtMidi] Connected to port ${portIndex}: ${portName}`);
+      this._currentOutputName = portName;
       this._isConnected = true;
       return true;
     } catch (error) {
       console.error('[RtMidi] Failed to connect:', error);
+      this._currentOutputName = null;
       return false;
     }
   }
@@ -233,6 +242,49 @@ export class RtMidiBackend implements MidiBackendProtocol {
     }
 
     const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
+    const channels = this._getChannels(channel);
+    const noteKey = this._getNoteKey(midiNote, channels);
+
+    // Cancel existing timer for this note
+    const existingTimer = this._activeNoteTimers.get(noteKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer.timer);
+      this._activeNoteTimers.delete(noteKey);
+    }
+
+    // Send note-on
+    for (const ch of channels) {
+      this._midiOut.sendMessage([0x90 + ch, midiNote, velocity]);
+    }
+
+    // Schedule note-off
+    const timer = setTimeout(() => {
+      if (this._isConnected && this._midiOut) {
+        for (const ch of channels) {
+          this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+        }
+      }
+      this._activeNoteTimers.delete(noteKey);
+    }, duration * 1000);
+
+    this._activeNoteTimers.set(noteKey, { timer, channels });
+  }
+
+  /**
+   * Send a raw MIDI note number with automatic note-off after duration.
+   * Used for features like strum release where we need to send a specific
+   * MIDI note number rather than a NoteObject.
+   *
+   * @param midiNote - MIDI note number (0-127)
+   * @param velocity - MIDI velocity (0-127)
+   * @param duration - Duration in seconds before note-off
+   * @param channel - MIDI channel (0-15), or undefined to use default
+   */
+  sendRawNote(midiNote: number, velocity: number, duration = 1.5, channel?: number): void {
+    if (!this._isConnected || !this._midiOut) {
+      return;
+    }
+
     const channels = this._getChannels(channel);
     const noteKey = this._getNoteKey(midiNote, channels);
 

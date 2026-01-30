@@ -133,6 +133,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     isHolding: false,
   };
 
+  // State tracking for strum release feature
+  private strumStartTime: number = 0;
+
   constructor(
     tabletConfigPath: string,
     options: TabletReaderOptions & {
@@ -341,16 +344,25 @@ class StrummerWebSocketServer extends TabletReaderBase {
    * Initialize MIDI input for external keyboard
    * If inputPort is null, listens to ALL available MIDI inputs (discovery mode)
    * If inputPort is specified, connects only to that port
+   *
+   * Excludes the MIDI output port to prevent feedback loops.
    */
   private async setupMidiInput(): Promise<boolean> {
     try {
       this.midiInput = new RtMidiInput();
       const inputPort = this.config.inputPort;
 
+      // Build list of ports to exclude (to prevent feedback from our own output)
+      const excludePorts: string[] = [];
+      if (this.backend && 'currentOutputName' in this.backend && this.backend.currentOutputName) {
+        excludePorts.push(this.backend.currentOutputName as string);
+        console.log(chalk.gray(`[MIDI Input] Excluding output port from input: ${this.backend.currentOutputName}`));
+      }
+
       let connected = false;
       if (inputPort === null || inputPort === undefined) {
-        // Discovery mode: listen to all ports
-        connected = await this.midiInput.connectAll();
+        // Discovery mode: listen to all ports (except our output)
+        connected = await this.midiInput.connectAll(excludePorts);
       } else {
         // Specific port mode
         connected = await this.midiInput.connect(inputPort);
@@ -827,6 +839,12 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       if (event) {
         if (event.type === 'strum') {
+          // Track strum start time for strum release feature
+          // Only set on FIRST strum event (not subsequent strums across strings)
+          if (this.strumStartTime === 0) {
+            this.strumStartTime = Date.now() / 1000;
+          }
+
           // Store notes for repeater and mark as holding
           this.repeaterState.notes = event.notes;
           this.repeaterState.isHolding = true;
@@ -880,6 +898,39 @@ class StrummerWebSocketServer extends TabletReaderBase {
           // Stop holding - no more repeats
           this.repeaterState.isHolding = false;
           this.repeaterState.notes = [];
+
+          // Handle strum release - send configured MIDI note on quick releases
+          const strumReleaseCfg = this.config.strumRelease;
+          if (strumReleaseCfg?.active && this.backend && this.strumStartTime > 0) {
+            const strumDuration = (Date.now() / 1000) - this.strumStartTime;
+            const maxDuration = strumReleaseCfg.maxDuration ?? 0.25;
+
+            // Only trigger release note if duration is within the max duration threshold
+            if (strumDuration <= maxDuration) {
+              const releaseNote = strumReleaseCfg.midiNote;
+              // Default to channel 9 (0-based, MIDI channel 10/drums) if not specified
+              const releaseChannel = strumReleaseCfg.midiChannel ?? 9;
+              const velocityMultiplier = strumReleaseCfg.velocityMultiplier ?? 1.0;
+
+              // Use the velocity from the strum and apply multiplier
+              const baseVelocity = event.velocity ?? 64;
+              let releaseVelocity = Math.floor(baseVelocity * velocityMultiplier);
+              // Clamp to MIDI range 1-127
+              releaseVelocity = Math.max(1, Math.min(127, releaseVelocity));
+
+              // Display channel as 1-based for user-friendliness
+              console.log(chalk.cyan(`[Strum Release] note=${releaseNote} vel=${releaseVelocity} ch=${releaseChannel + 1} dur=${strumDuration.toFixed(3)}s`));
+
+              // Send the raw MIDI note using the backend's sendRawNote method
+              // Cast to RtMidiBackend to access sendRawNote (not part of protocol interface)
+              const rtBackend = this.backend as RtMidiBackend;
+              if (rtBackend.sendRawNote) {
+                rtBackend.sendRawNote(releaseNote, releaseVelocity, strumDuration, releaseChannel);
+              }
+            }
+          }
+          // Reset strum start time
+          this.strumStartTime = 0;
 
           // Emit release event to event bus (throttled)
           const releaseEventData: StrumEventData = {
