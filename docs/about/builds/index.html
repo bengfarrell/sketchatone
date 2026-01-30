@@ -13,7 +13,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-    <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Lexend:wght@300;400;500;600&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="../../docs.css">
     <link rel="stylesheet" href="../../prism-okaidia.css">
@@ -31,20 +31,7 @@
     </button>
   
     <div class="logo-container">
-        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <!-- Background with rounded corners -->
-            <rect width="100" height="100" fill="#1d1d1d" rx="10" ry="10"></rect>
-            
-            <!-- Stylus/pen drawing a wavy line (representing sound/music) -->
-            <!-- Stylus -->
-            <line x1="25" y1="75" x2="55" y2="35" stroke="#adb5bd" stroke-width="6" stroke-linecap="round"></line>
-            <circle cx="25" cy="75" r="4" fill="#ff6b6b"></circle>
-            
-            <!-- Sound waves emanating from stylus tip -->
-            <path d="M 60 50 Q 70 35, 80 50 Q 90 65, 80 50" stroke="#ffd93d" stroke-width="4" fill="none" stroke-linecap="round"></path>
-            <path d="M 55 60 Q 65 45, 75 60" stroke="#6bcf7f" stroke-width="3" fill="none" stroke-linecap="round"></path>
-            <path d="M 50 70 Q 58 58, 66 70" stroke="#4dabf7" stroke-width="2" fill="none" stroke-linecap="round"></path>
-        </svg>
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
     </div>
 
     <div class="title">
@@ -137,27 +124,170 @@
 <p><em>Coming soon</em> - Standalone application bundle</p>
 <h2>Windows</h2>
 <p><em>Coming soon</em> - Windows installer</p>
-<h2>Linux / Zynthian</h2>
-<p>For Linux systems, especially Zynthian, we recommend running from source with the Python implementation:</p>
+<h2>Linux / Raspberry Pi / Zynthian</h2>
+<p>Sketchatone provides a <code>.deb</code> package installer for Linux systems, with special support for Zynthian and Raspberry Pi.</p>
+<h3>Quick Install (from pre-built package)</h3>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Download the .deb package (adjust version as needed)</span>
+<span class="token function">sudo</span> <span class="token function">apt</span> <span class="token function">install</span> ./sketchatone-1.0.0-linux-armhf.deb
+
+<span class="token comment"># Configure auto-start mode</span>
+<span class="token function">sudo</span> sketchatone-setup <span class="token parameter variable">--mode</span> usb-trigger</code></pre>
+<h3>Building from Source</h3>
+<p>If you need to build the installer yourself:</p>
+<h4>On your development machine (Mac/Linux):</h4>
 <pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Clone the repository</span>
 <span class="token function">git</span> clone https://github.com/bengfarrell/sketchatone.git
-<span class="token builtin class-name">cd</span> sketchatone/python
+<span class="token builtin class-name">cd</span> sketchatone
 
-<span class="token comment"># Create virtual environment</span>
-python <span class="token parameter variable">-m</span> venv venv
+<span class="token comment"># Install dependencies and build webapp</span>
+<span class="token function">npm</span> <span class="token function">install</span>
+<span class="token function">npm</span> run build
+
+<span class="token comment"># Create the Pi build package</span>
+./package-for-pi.sh</code></pre>
+<p>This creates <code>dist/sketchatone-X.X.X-pi-build.tar.gz</code> containing everything needed.</p>
+<h4>On the Raspberry Pi / Zynthian:</h4>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Copy the package to the Pi</span>
+<span class="token function">scp</span> dist/sketchatone-*-pi-build.tar.gz pi@<span class="token operator">&lt;</span>pi-hostname<span class="token operator">></span>:~/
+
+<span class="token comment"># SSH into the Pi</span>
+<span class="token function">ssh</span> pi@<span class="token operator">&lt;</span>pi-hostname<span class="token operator">></span>
+
+<span class="token comment"># Extract and enter directory</span>
+<span class="token function">tar</span> xzf sketchatone-*-pi-build.tar.gz
+<span class="token builtin class-name">cd</span> sketchatone-*-pi-build
+
+<span class="token comment"># Set up Python environment</span>
+<span class="token builtin class-name">cd</span> python
+python3 <span class="token parameter variable">-m</span> venv venv
 <span class="token builtin class-name">source</span> venv/bin/activate
-
-<span class="token comment"># Install the package</span>
 pip <span class="token function">install</span> <span class="token parameter variable">-e</span> <span class="token builtin class-name">.</span>
 
-<span class="token comment"># For JACK MIDI support</span>
-pip <span class="token function">install</span> JACK-Client</code></pre>
-<h3>Zynthian Setup</h3>
-<p>Zynthian users should use the JACK MIDI backend for best integration:</p>
-<pre class="language-bash" tabindex="0"><code class="language-bash">python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer <span class="token parameter variable">--jack</span></code></pre>
+<span class="token comment"># Install blankslate (tablet HID library)</span>
+<span class="token comment"># Clone it first if you haven't: git clone https://github.com/bengfarrell/blankslate.git</span>
+pip <span class="token function">install</span> <span class="token parameter variable">-e</span> /path/to/blankslate/python
+<span class="token builtin class-name">cd</span> <span class="token punctuation">..</span>
+
+<span class="token comment"># Build the standalone application</span>
+./build-linux.sh
+
+<span class="token comment"># Create the .deb package</span>
+./create-deb.sh
+
+<span class="token comment"># Install</span>
+<span class="token function">sudo</span> <span class="token function">apt</span> <span class="token function">install</span> ./dist/sketchatone-*.deb</code></pre>
+<h3>Auto-Start Modes</h3>
+<p>After installation, configure how Sketchatone starts using the setup script:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> sketchatone-setup <span class="token parameter variable">--mode</span> <span class="token operator">&lt;</span>mode<span class="token operator">></span></code></pre>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>usb-trigger</code></td>
+<td><strong>Recommended.</strong> Starts automatically when tablet is plugged in, stops when unplugged. Zero resource usage when tablet is disconnected.</td>
+</tr>
+<tr>
+<td><code>always-on</code></td>
+<td>Traditional service that starts on boot and runs continuously.</td>
+</tr>
+<tr>
+<td><code>manual</code></td>
+<td>No auto-start. Run manually with <code>sketchatone</code> command.</td>
+</tr>
+</tbody>
+</table>
+<h4>USB-Triggered Mode (Recommended for Zynthian)</h4>
+<p>This mode uses Linux udev rules to detect when your tablet is plugged in:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> sketchatone-setup <span class="token parameter variable">--mode</span> usb-trigger</code></pre>
+<p><strong>How it works:</strong></p>
+<ul>
+<li>When you plug in a supported tablet, the service starts automatically</li>
+<li>When you unplug the tablet, the service stops</li>
+<li>Zero CPU/memory usage when the tablet isn't connected</li>
+<li>Perfect for Zynthian where resources matter</li>
+</ul>
+<h4>Checking Status</h4>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># View current configuration</span>
+<span class="token function">sudo</span> sketchatone-setup <span class="token parameter variable">--status</span>
+
+<span class="token comment"># List detected device configs</span>
+<span class="token function">sudo</span> sketchatone-setup --list-devices
+
+<span class="token comment"># Check if service is running</span>
+systemctl status sketchatone</code></pre>
+<h3>Understanding udev Rules</h3>
+<p>The setup script automatically generates udev rules from your device config files. These rules are stored at <code>/etc/udev/rules.d/99-sketchatone.rules</code>.</p>
+<h4>What the rules do:</h4>
+<ol>
+<li>
+<p><strong>HID Permissions</strong> - Allow non-root access to the tablet:</p>
+<pre><code>SUBSYSTEM==&quot;hidraw&quot;, ATTRS{idVendor}==&quot;28bd&quot;, ATTRS{idProduct}==&quot;2904&quot;, MODE=&quot;0666&quot;
+</code></pre>
+</li>
+<li>
+<p><strong>USB Plug Detection</strong> - Start service when tablet is connected:</p>
+<pre><code>ACTION==&quot;add&quot;, SUBSYSTEM==&quot;usb&quot;, ATTR{idVendor}==&quot;28bd&quot;, ATTR{idProduct}==&quot;2904&quot;, TAG+=&quot;systemd&quot;, ENV{SYSTEMD_WANTS}=&quot;sketchatone.service&quot;
+</code></pre>
+</li>
+<li>
+<p><strong>USB Unplug Detection</strong> - Stop service when tablet is disconnected:</p>
+<pre><code>ACTION==&quot;remove&quot;, SUBSYSTEM==&quot;usb&quot;, ENV{ID_VENDOR_ID}==&quot;28bd&quot;, ENV{ID_MODEL_ID}==&quot;2904&quot;, RUN+=&quot;/bin/systemctl stop sketchatone.service&quot;
+</code></pre>
+</li>
+</ol>
+<h4>Adding a new device:</h4>
+<ol>
+<li>Create a device config JSON in <code>/opt/sketchatone/configs/devices/</code> with <code>vendorId</code> and <code>productId</code> fields</li>
+<li>Re-run the setup script to regenerate udev rules:<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> sketchatone-setup <span class="token parameter variable">--mode</span> usb-trigger</code></pre>
+</li>
+</ol>
+<h4>Manual udev rule editing:</h4>
+<p>If you need to customize the rules:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Edit the rules file</span>
+<span class="token function">sudo</span> <span class="token function">nano</span> /etc/udev/rules.d/99-sketchatone.rules
+
+<span class="token comment"># Reload rules after editing</span>
+<span class="token function">sudo</span> udevadm control --reload-rules
+<span class="token function">sudo</span> udevadm trigger</code></pre>
+<h3>Updating Sketchatone</h3>
+<p>To update to a new version:</p>
+<ol>
+<li><strong>On your dev machine:</strong> Bump version in <code>python/pyproject.toml</code> and run <code>./package-for-pi.sh</code></li>
+<li><strong>Copy to Pi</strong> and build as above</li>
+<li><strong>Install the update:</strong><pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">apt</span> <span class="token function">install</span> ./dist/sketchatone-X.X.X-linux-armhf.deb</code></pre>
+</li>
+</ol>
+<p>The package manager handles the upgrade seamlessly. Your config file at <code>/opt/sketchatone/configs/config.json</code> is preserved.</p>
+<h3>Zynthian-Specific Setup</h3>
+<p>For Zynthian, use the JACK MIDI backend for best integration:</p>
+<ol>
+<li>
+<p>Edit <code>/opt/sketchatone/configs/config.json</code>:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"jack"</span><span class="token punctuation">,</span>
+    <span class="token property">"jack_client_name"</span><span class="token operator">:</span> <span class="token string">"sketchatone"</span><span class="token punctuation">,</span>
+    <span class="token property">"jack_auto_connect"</span><span class="token operator">:</span> <span class="token string">"chain0"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"server"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"device"</span><span class="token operator">:</span> <span class="token string">"devices"</span><span class="token punctuation">,</span>
+    <span class="token property">"http_port"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"ws_port"</span><span class="token operator">:</span> <span class="token null keyword">null</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+</li>
+<li>
+<p>Setting <code>http_port</code> and <code>ws_port</code> to <code>null</code> disables the web servers for minimal resource usage.</p>
+</li>
+</ol>
 <p>See <strong><a href="/sketchatone/about/jack-midi/">JACK MIDI</a></strong> for detailed Zynthian configuration.</p>
-<h2>Running from Source</h2>
-<p>Both implementations can be run directly from source:</p>
+<h2>Running from Source (Development)</h2>
+<p>For development or platforms without installers:</p>
 <h3>Node.js</h3>
 <pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">git</span> clone https://github.com/bengfarrell/sketchatone.git
 <span class="token builtin class-name">cd</span> sketchatone

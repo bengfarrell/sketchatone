@@ -13,7 +13,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Lexend:wght@300;400;500;600&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="{{ page.url | resolvePath('/docs.css') }}" />
     <link rel="stylesheet" href="{{ page.url | resolvePath('/prism-okaidia.css') }}" />
@@ -31,20 +31,7 @@
     </button>
   
     <div class="logo-container">
-        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <!-- Background with rounded corners -->
-            <rect width="100" height="100" fill="#1d1d1d" rx="10" ry="10"/>
-            
-            <!-- Stylus/pen drawing a wavy line (representing sound/music) -->
-            <!-- Stylus -->
-            <line x1="25" y1="75" x2="55" y2="35" stroke="#adb5bd" stroke-width="6" stroke-linecap="round"/>
-            <circle cx="25" cy="75" r="4" fill="#ff6b6b"/>
-            
-            <!-- Sound waves emanating from stylus tip -->
-            <path d="M 60 50 Q 70 35, 80 50 Q 90 65, 80 50" stroke="#ffd93d" stroke-width="4" fill="none" stroke-linecap="round"/>
-            <path d="M 55 60 Q 65 45, 75 60" stroke="#6bcf7f" stroke-width="3" fill="none" stroke-linecap="round"/>
-            <path d="M 50 70 Q 58 58, 66 70" stroke="#4dabf7" stroke-width="2" fill="none" stroke-linecap="round"/>
-        </svg>
+        <img src="{{ page.url | resolvePath('/img/sketchatone-logo.svg') }}" alt="Sketchatone" />
     </div>
 
     <div class="title">

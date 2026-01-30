@@ -58,8 +58,6 @@ body:hover::-webkit-scrollbar-thumb {
   --warm-white: #fff8f0;
   --charcoal: #333333;
   --grille-brown: #4a3728;
-  --leather-red: #6b2c2c;
-  --leather-dark: #4a1f1f;
 }
 
 body {
@@ -97,13 +95,12 @@ main {
 }
 
 main .content {
+  /* Cream control panel */
   background: var(--cream-panel);
-  border: 3px solid var(--chrome);
+  border: 3px solid var(--chrome-dark);
   border-radius: 8px;
   box-shadow:
-    0 2px 0 var(--chrome-light),
-    0 4px 0 var(--chrome-dark),
-    0 8px 20px rgba(0, 0, 0, 0.4),
+    0 4px 20px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   font-size: 18px;
   line-height: 1.7em;
@@ -113,20 +110,14 @@ main .content {
   overflow: hidden;
 }
 
-/* Chrome trim at top of content panel */
 main .content::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
-  background: linear-gradient(
-    180deg,
-    var(--chrome-light) 0%,
-    var(--chrome) 50%,
-    var(--chrome-dark) 100%
-  );
+  height: 3px;
+  background: linear-gradient(90deg, var(--chrome-dark), var(--chrome-light), var(--chrome-dark));
 }
 
 header {
@@ -137,22 +128,27 @@ header {
   justify-content: center;
   height: 140px;
   margin: 0;
-  /* Chrome badge panel look */
-  background: linear-gradient(
-    180deg,
-    var(--tolex-mid) 0%,
-    var(--tolex-dark) 100%
-  );
+  /* Dark tolex background with subtle texture */
+  background: var(--tolex-dark);
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.02) 3px,
+      rgba(255, 255, 255, 0.02) 6px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.02) 3px,
+      rgba(255, 255, 255, 0.02) 6px
+    );
   color: var(--chrome-light);
+  /* Chrome bottom border */
   border-bottom: 4px solid;
-  border-image: linear-gradient(
-    90deg,
-    var(--chrome-dark) 0%,
-    var(--chrome) 30%,
-    var(--chrome-light) 50%,
-    var(--chrome) 70%,
-    var(--chrome-dark) 100%
-  ) 1;
+  border-image: linear-gradient(90deg, var(--chrome-dark), var(--chrome-light), var(--chrome-dark)) 1;
   position: fixed;
   top: 0;
   left: 0;
@@ -161,19 +157,15 @@ header {
   overflow: hidden;
 }
 
-/* Subtle speaker grille texture overlay */
 header::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background-image:
-    radial-gradient(circle at center, transparent 1px, rgba(0,0,0,0.15) 1px);
-  background-size: 4px 4px;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at 50% 100%, rgba(100, 100, 100, 0.1) 0%, transparent 60%);
   pointer-events: none;
-  opacity: 0.5;
 }
 
 header > .logo-container {
@@ -185,13 +177,10 @@ header > .logo-container {
 
 header > .logo-container img {
   height: 105px;
-  /* Chrome embossed effect */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 
 header > .logo-container.github {
-  position: absolute;
-  right: 0;
+  margin-left: auto;
   padding: 0 30px;
 }
 
@@ -203,8 +192,8 @@ header > .logo-container.github a {
 header > .logo-container.github img {
   width: 40px;
   height: 40px;
-  filter: brightness(0) invert(1);
-  opacity: 0.7;
+  filter: brightness(0) invert(0.7);
+  opacity: 0.8;
   transition: opacity 0.2s;
 }
 
@@ -212,14 +201,14 @@ header > .logo-container.github img:hover {
   opacity: 1;
 }
 
+header > .title {
+  display: none;
+}
+
 footer {
   width: 100%;
-  min-height: 100px;
-  background: linear-gradient(
-    180deg,
-    var(--tolex-mid) 0%,
-    var(--tolex-dark) 100%
-  );
+  min-height: 80px;
+  background: var(--tolex-mid);
   color: var(--chrome);
   display: flex;
   flex-direction: column;
@@ -236,10 +225,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 2.2em;
   color: var(--charcoal);
-  text-shadow: none;
   margin-top: 40px;
   margin-bottom: 20px;
 }
@@ -266,7 +254,7 @@ h3 {
 }
 
 h4 {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--charcoal);
 }
 
@@ -385,10 +373,9 @@ section.demo {
   width: calc(100% - 50px);
   margin: 20px 0;
   padding: 25px;
-  background: var(--ivory);
+  background: rgba(0, 0, 0, 0.03);
   border: 2px solid var(--chrome);
   border-radius: 8px;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 section.demo h2 {
@@ -400,10 +387,9 @@ section.demo h2 {
 
 .table-wrapper {
   overflow-x: auto;
-  border: 2px solid var(--chrome);
+  border: 2px solid var(--chrome-dark);
   border-radius: 6px;
   background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 table {
@@ -446,15 +432,14 @@ table tr:last-child td {
 
 .mobile-menu-button:hover {
   background-color: rgba(255, 255, 255, 0.1);
-  transform: scale(1.05);
 }
 
 .mobile-menu-button:active {
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 .mobile-menu-button svg {
-  filter: brightness(0) invert(1);
+  filter: brightness(0) invert(0.7);
 }
 
 #page-title {
@@ -466,18 +451,14 @@ table tr:last-child td {
   font-style: italic;
   font-weight: 400;
   color: var(--chrome-dark);
-  font-size: 1.2em;
+  font-size: 1.1em;
   border-bottom: 1px solid var(--chrome);
 }
 
 #version {
-  background: linear-gradient(
-    180deg,
-    var(--chrome) 0%,
-    var(--chrome-dark) 100%
-  );
-  padding: 6px 14px;
-  color: var(--cream-panel);
+  background-color: var(--tolex-mid);
+  padding: 8px 15px;
+  color: var(--chrome-light);
   border-radius: 4px;
   margin-top: 15px;
   display: inline-block;
@@ -489,20 +470,19 @@ table tr:last-child td {
 
 #open-issues {
   border-radius: 4px;
-  border: 2px solid var(--chrome);
+  border: 2px solid var(--gold-accent);
   font-size: 16px;
-  background: var(--cream-panel);
-  color: var(--charcoal);
+  background-color: var(--gold-accent);
+  color: var(--tolex-dark);
   padding: 10px 18px;
   font-weight: 600;
   margin-top: 15px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 pre[class*="language-"] {
   border: 2px solid var(--chrome-dark) !important;
   border-radius: 6px !important;
-  background: #1a1a1a !important;
+  background: var(--tolex-dark) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 
@@ -520,7 +500,7 @@ a:hover {
 
 strong {
   color: var(--charcoal);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 @media only screen and (max-device-width: 490px) {
@@ -530,7 +510,6 @@ strong {
 
   header {
     height: 70px;
-    justify-content: flex-start;
   }
 
   header .mobile-menu-button {
@@ -539,14 +518,20 @@ strong {
   }
 
   header .logo-container {
-    padding: 0 15px;
+    display: none;
   }
 
-  header .logo-container img {
-    height: 45px;
+  header .title {
+    display: flex;
+    margin-top: 15px;
   }
 
-  header .logo-container.github {
+  header > .title h1 {
+    font-size: 1.5em;
+    color: var(--chrome-light);
+  }
+
+  header .title h4 {
     display: none;
   }
 
