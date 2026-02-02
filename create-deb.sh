@@ -1,5 +1,6 @@
 #!/bin/bash
 # Create a Debian package installer for Sketchatone on Linux/Raspberry Pi
+# This creates a Python-based installer (no PyInstaller needed)
 
 set -e
 
@@ -8,18 +9,22 @@ echo "Sketchatone - Debian Package Creator"
 echo "=========================================="
 echo ""
 
-# Check if app exists
-if [ ! -d "dist/sketchatone" ]; then
-    echo "❌ Error: Sketchatone application not found"
-    echo "Please run ./build-linux.sh first"
+# Check if we have the required source files
+if [ ! -d "python/sketchatone" ]; then
+    echo "❌ Error: Python source not found at python/sketchatone"
     exit 1
 fi
 
-# Get version from pyproject.toml or use default
-VERSION=$(grep -oP 'version = "\K[^"]+' python/pyproject.toml 2>/dev/null || echo "1.0.0")
+if [ ! -d "blankslate/blankslate" ]; then
+    echo "❌ Error: Blankslate source not found at blankslate/blankslate"
+    exit 1
+fi
 
-# Detect architecture
-ARCH=$(dpkg --print-architecture 2>/dev/null || echo "armhf")
+# Get version from pyproject.toml or use default (compatible with both GNU and BSD grep)
+VERSION=$(grep '^version = ' python/pyproject.toml 2>/dev/null | head -1 | sed 's/version = "\(.*\)"/\1/' || echo "1.0.0")
+
+# Detect architecture (all for Python-based package)
+ARCH="all"
 
 # Create package directory structure
 PKG_NAME="sketchatone_${VERSION}_${ARCH}"
@@ -27,20 +32,46 @@ PKG_DIR="dist/$PKG_NAME"
 
 echo "📦 Package: sketchatone"
 echo "📦 Version: $VERSION"
-echo "📦 Architecture: $ARCH"
+echo "📦 Architecture: $ARCH (Python-based)"
 echo ""
 
 echo "🗂️  Creating Debian package structure..."
 rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR/DEBIAN"
-mkdir -p "$PKG_DIR/opt/sketchatone"
+mkdir -p "$PKG_DIR/opt/sketchatone/python"
 mkdir -p "$PKG_DIR/opt/sketchatone/configs"
+mkdir -p "$PKG_DIR/opt/sketchatone/dist/public"
 mkdir -p "$PKG_DIR/usr/bin"
 mkdir -p "$PKG_DIR/etc/systemd/system"
 
-# Copy application files
-echo "📦 Copying application files..."
-cp -R dist/sketchatone/* "$PKG_DIR/opt/sketchatone/"
+# Copy Python source files
+echo "📦 Copying Python source files..."
+echo "  → sketchatone package"
+cp -R python/sketchatone "$PKG_DIR/opt/sketchatone/python/"
+cp python/pyproject.toml "$PKG_DIR/opt/sketchatone/python/"
+
+echo "  → blankslate package"
+cp -R blankslate/blankslate "$PKG_DIR/opt/sketchatone/python/"
+cp blankslate/pyproject.toml "$PKG_DIR/opt/sketchatone/python/blankslate-pyproject.toml"
+
+# Remove __pycache__ directories
+find "$PKG_DIR/opt/sketchatone/python" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# Copy config files
+echo "📦 Copying config files..."
+if [ -d "public/configs" ]; then
+    cp -R public/configs/* "$PKG_DIR/opt/sketchatone/configs/"
+    echo "  → Config files included:"
+    ls -la "$PKG_DIR/opt/sketchatone/configs/" 2>/dev/null || echo "    (none)"
+fi
+
+# Copy built webapp if it exists
+# Server expects files at dist/public relative to the python directory
+if [ -d "dist/public" ]; then
+    echo "📦 Copying webapp..."
+    mkdir -p "$PKG_DIR/opt/sketchatone/dist/public"
+    cp -R dist/public/* "$PKG_DIR/opt/sketchatone/dist/public/"
+fi
 
 # Copy setup script
 if [ -f "sketchatone-setup" ]; then
@@ -51,32 +82,37 @@ else
     echo "⚠️  Warning: sketchatone-setup not found"
 fi
 
-# Create symlink script in /usr/bin for easy command-line access
+# Create launcher script in /usr/bin
 cat > "$PKG_DIR/usr/bin/sketchatone" << 'BINEOF'
 #!/bin/bash
-# Sketchatone launcher
-exec /opt/sketchatone/sketchatone.sh "$@"
+# Sketchatone launcher - runs Python module directly
+export PYTHONPATH="/opt/sketchatone/python:$PYTHONPATH"
+exec python3 -m sketchatone.cli.server "$@"
 BINEOF
 chmod +x "$PKG_DIR/usr/bin/sketchatone"
 
-# Create systemd service file (BindsTo will be added by setup script for USB mode)
+# Create systemd service file
 cat > "$PKG_DIR/etc/systemd/system/sketchatone.service" << 'SERVICEEOF'
 [Unit]
 Description=Sketchatone MIDI Strummer
-After=network.target sound.target
+After=network.target sound.target jack2.service a2jmidid.service
+# Require JACK to be running
+Wants=jack2.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/sketchatone
-ExecStart=/opt/sketchatone/sketchatone -c /opt/sketchatone/configs/config.json
+# Include Zynthian venv for JACK-Client package
+Environment="PYTHONPATH=/opt/sketchatone/python:/zynthian/venv/lib/python3.11/site-packages"
+Environment="DISPLAY=:0"
+# Delay startup to ensure JACK is fully ready (helps when triggered by udev during boot)
+ExecStartPre=/bin/sleep 3
+ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-
-# Environment variables
-Environment="DISPLAY=:0"
 
 [Install]
 WantedBy=multi-user.target
@@ -89,7 +125,7 @@ Version: $VERSION
 Section: sound
 Priority: optional
 Architecture: $ARCH
-Depends: libhidapi-hidraw0, libhidapi-dev, libasound2, libjack0 | libjack-jackd2-0
+Depends: python3 (>= 3.8), python3-pip, libhidapi-hidraw0, libhidapi-dev, libasound2, libjack0 | libjack-jackd2-0
 Maintainer: Sketchatone Project
 Description: MIDI Strummer for Drawing Tablets
  Sketchatone converts drawing tablet input into expressive MIDI output,
@@ -105,25 +141,28 @@ Description: MIDI Strummer for Drawing Tablets
   - Zynthian compatible
 CONTROLEOF
 
-# Create conffiles to preserve user config on upgrade
-cat > "$PKG_DIR/DEBIAN/conffiles" << 'CONFEOF'
-/opt/sketchatone/configs/config.json
-CONFEOF
-
 # Create postinst script (runs after installation)
 cat > "$PKG_DIR/DEBIAN/postinst" << 'POSTINSTEOF'
 #!/bin/bash
 set -e
 
 echo ""
-echo "=========================================="
-echo "Sketchatone installed successfully!"
-echo "=========================================="
-echo ""
+echo "📦 Installing Python dependencies..."
+
+# Install Python dependencies to system Python
+pip3 install --break-system-packages \
+    "websockets>=11.0.0" \
+    "hidapi>=0.14.0" \
+    "inquirer>=3.1.0" \
+    "colorama>=0.4.6" \
+    2>/dev/null || \
+pip3 install \
+    "websockets>=11.0.0" \
+    "hidapi>=0.14.0" \
+    "inquirer>=3.1.0" \
+    "colorama>=0.4.6"
 
 # Set correct permissions
-chmod +x /opt/sketchatone/sketchatone
-chmod +x /opt/sketchatone/sketchatone.sh
 chmod +x /usr/bin/sketchatone
 
 # Create default config if it doesn't exist
@@ -138,6 +177,10 @@ fi
 systemctl daemon-reload
 
 echo ""
+echo "=========================================="
+echo "✅ Sketchatone installed successfully!"
+echo "=========================================="
+echo ""
 echo "To configure Sketchatone, run:"
 echo "  sudo sketchatone-setup --help"
 echo ""
@@ -148,8 +191,6 @@ echo "  sudo sketchatone-setup --mode manual        # Manual start only"
 echo ""
 echo "To run manually:"
 echo "  sketchatone -c /opt/sketchatone/configs/config.json"
-echo ""
-echo "Configuration: /opt/sketchatone/configs/config.json"
 echo ""
 
 exit 0
@@ -192,39 +233,92 @@ set -e
 systemctl daemon-reload
 
 echo "Sketchatone has been uninstalled."
+echo "Note: Python dependencies were not removed."
 
 exit 0
 POSTRMEOF
 chmod +x "$PKG_DIR/DEBIAN/postrm"
 
 # Build the package
+echo ""
 echo "💿 Building Debian package..."
-dpkg-deb --build "$PKG_DIR"
 
-# Move to dist directory with a cleaner name
-mv "${PKG_DIR}.deb" "dist/sketchatone-${VERSION}-linux-${ARCH}.deb"
+# Check if dpkg-deb is available (Linux) or not (macOS)
+if command -v dpkg-deb &> /dev/null; then
+    # Build directly on Linux
+    dpkg-deb --build "$PKG_DIR"
+    mv "${PKG_DIR}.deb" "dist/sketchatone-${VERSION}.deb"
+
+    # Clean up
+    echo "🧹 Cleaning up..."
+    rm -rf "$PKG_DIR"
+
+    echo ""
+    echo "=========================================="
+    echo "✅ Debian package created successfully!"
+    echo "=========================================="
+    echo ""
+    echo "Package: dist/sketchatone-${VERSION}.deb"
+    echo ""
+    echo "To install:"
+    echo "  sudo apt install ./dist/sketchatone-${VERSION}.deb"
+    echo ""
+else
+    # On macOS, create a tarball of the package structure
+    echo "  (dpkg-deb not available - creating package structure tarball)"
+
+    # Create tarball of the package directory
+    TARBALL="dist/sketchatone-${VERSION}-deb-pkg.tar.gz"
+    cd dist
+    tar czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME"
+    cd ..
+
+    # Clean up
+    echo "🧹 Cleaning up..."
+    rm -rf "$PKG_DIR"
+
+    # Create a helper script to build the deb on the Pi
+    cat > "dist/install-sketchatone.sh" << INSTALLEOF
+#!/bin/bash
+# Install Sketchatone on Raspberry Pi
+set -e
+
+echo "Installing Sketchatone ${VERSION}..."
+
+# Extract package structure
+tar xzf sketchatone-${VERSION}-deb-pkg.tar.gz
+
+# Build the .deb
+dpkg-deb --build sketchatone_${VERSION}_all
+
+# Install it
+apt install -y ./sketchatone_${VERSION}_all.deb
 
 # Clean up
-echo "🧹 Cleaning up..."
-rm -rf "$PKG_DIR"
+rm -rf sketchatone_${VERSION}_all sketchatone-${VERSION}-deb-pkg.tar.gz install-sketchatone.sh
 
 echo ""
-echo "=========================================="
-echo "✅ Debian package created successfully!"
-echo "=========================================="
+echo "✅ Sketchatone installed successfully!"
 echo ""
-echo "Package: dist/sketchatone-${VERSION}-linux-${ARCH}.deb"
-echo ""
-echo "To install on Raspberry Pi / Zynthian:"
-echo "  sudo apt update"
-echo "  sudo apt install ./sketchatone-${VERSION}-linux-${ARCH}.deb"
-echo ""
-echo "System dependencies (will be installed automatically):"
-echo "  - libhidapi-hidraw0 (HID device access)"
-echo "  - libhidapi-dev"
-echo "  - libasound2 (ALSA for MIDI)"
-echo "  - libjack0 or libjack-jackd2-0 (JACK audio)"
-echo ""
-echo "After installation, run setup:"
-echo "  sudo sketchatone-setup --mode usb-trigger"
-echo ""
+echo "Run: sketchatone -c /opt/sketchatone/configs/config.json"
+INSTALLEOF
+    chmod +x "dist/install-sketchatone.sh"
+
+    echo ""
+    echo "=========================================="
+    echo "✅ Package structure created successfully!"
+    echo "=========================================="
+    echo ""
+    echo "Files created:"
+    echo "  - $TARBALL"
+    echo "  - dist/install-sketchatone.sh"
+    echo ""
+    echo "To install on Raspberry Pi / Zynthian:"
+    echo ""
+    echo "  # Copy files to Pi"
+    echo "  scp dist/sketchatone-${VERSION}-deb-pkg.tar.gz dist/install-sketchatone.sh root@synth.local:~/"
+    echo ""
+    echo "  # On the Pi:"
+    echo "  ./install-sketchatone.sh"
+    echo ""
+fi

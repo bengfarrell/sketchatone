@@ -122,6 +122,20 @@ export const styles = css`
     background: var(--spectrum-green-600);
   }
 
+  /* Version Info */
+  .version-info {
+    display: flex;
+    gap: 16px;
+    justify-content: flex-end;
+    font-size: 0.7rem;
+    color: var(--spectrum-gray-500);
+    margin-top: 4px;
+  }
+
+  .version-label {
+    font-family: monospace;
+  }
+
   /* Disconnected Message */
   .disconnected-message {
     display: flex;
@@ -498,6 +512,8 @@ export const styles = css`
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: 150px;
+    overflow-y: auto;
   }
 
   .midi-port-item {
@@ -515,9 +531,21 @@ export const styles = css`
     background: var(--spectrum-gray-300);
   }
 
+  .midi-port-item.selected {
+    background: var(--spectrum-blue-200);
+    border-left: 3px solid var(--spectrum-blue-700);
+    color: var(--spectrum-blue-900);
+    font-weight: 600;
+  }
+
   .midi-port-item.active {
     background: var(--spectrum-green-200);
     border-left: 3px solid var(--spectrum-green-700);
     color: var(--spectrum-green-900);
+  }
+
+  .midi-port-item.selected.active {
+    background: var(--spectrum-green-200);
+    border-left: 3px solid var(--spectrum-blue-700);
   }
 `;

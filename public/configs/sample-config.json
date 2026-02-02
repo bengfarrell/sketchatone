@@ -65,6 +65,7 @@
     "midi_output_backend": "rtmidi",
     "midi_output_id": null,
     "midi_input_id": null,
+    "midi_input_exclude": ["sketchatone", "ZynMidiRouter", "zynseq", "zynsmf", "ttymidi", "Midi Through"],
     "jack_client_name": "sketchatone",
     "jack_auto_connect": "chain0",
     "note_duration": 1.5

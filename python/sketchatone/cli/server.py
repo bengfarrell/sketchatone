@@ -27,6 +27,7 @@ from urllib.parse import unquote
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from sketchatone import __version__ as SKETCHATONE_VERSION
 from sketchatone.strummer.strummer import Strummer
 from sketchatone.strummer.actions import Actions
 from sketchatone.models.midi_strummer_config import MidiStrummerConfig
@@ -34,6 +35,7 @@ from sketchatone.models.note import Note, NoteObject
 from sketchatone.midi.bridge import MidiStrummerBridge
 from sketchatone.midi.protocol import MidiBackendProtocol
 from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
+from sketchatone.midi.jack_input import JackMidiInput
 
 # Import blankslate's TabletReaderBase
 try:
@@ -431,8 +433,12 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.notes_played = 0
 
         # MIDI input (for external keyboards)
-        self.midi_input: Optional[RtMidiInput] = None
+        # Uses JackMidiInput when JACK backend is active, otherwise RtMidiInput
+        self.midi_input: Optional[Union[RtMidiInput, JackMidiInput]] = None
         self._midi_input_debounce_timer: Optional[threading.Timer] = None
+
+        # Running state - set to True when tablet reader starts
+        self.is_running = False
 
         # Create Actions handler for stylus buttons
         self.actions = Actions(
@@ -583,24 +589,34 @@ class StrummerWebSocketServer(TabletReaderBase):
         If midi_input_id is None, listens to ALL available MIDI inputs (discovery mode).
         If midi_input_id is specified, connects only to that port.
 
+        Uses JackMidiInput when JACK backend is active, otherwise RtMidiInput.
         Excludes the MIDI output port to prevent feedback loops.
         """
         try:
-            self.midi_input = RtMidiInput()
+            # Use JACK MIDI input when JACK backend is active
+            if self.config.midi_output_backend == "jack":
+                self.midi_input = JackMidiInput()
+                print(colored('[MIDI Input] Using JACK MIDI input', Colors.GRAY))
+            else:
+                self.midi_input = RtMidiInput()
+                print(colored('[MIDI Input] Using RtMidi (ALSA) input', Colors.GRAY))
             input_port = self.config.midi.midi_input_id
 
-            # Build list of ports to exclude (to prevent feedback from our own output)
-            exclude_ports: List[str] = []
-            if self.backend and hasattr(self.backend, 'current_output_name') and self.backend.current_output_name:
-                exclude_ports.append(self.backend.current_output_name)
-                print(colored(f'[MIDI Input] Excluding output port from input: {self.backend.current_output_name}', Colors.GRAY))
-
             connected = False
-            if input_port is None:
-                # Discovery mode: listen to all ports (except our output)
+            if input_port is None or input_port == '':
+                # Auto-connect to all MIDI sources, excluding ports that could cause feedback
+                # Use exclusion list from config (which has sensible defaults)
+                exclude_ports: List[str] = list(self.config.midi.midi_input_exclude)
+
+                # Also exclude any RtMidi output if available
+                if self.backend and hasattr(self.backend, 'current_output_name') and self.backend.current_output_name:
+                    exclude_ports.append(self.backend.current_output_name)
+
+                print(colored(f'[MIDI Input] Connecting to all ports, excluding: {", ".join(exclude_ports)}', Colors.GRAY))
                 connected = self.midi_input.connect_all(exclude_ports=exclude_ports)
             else:
-                # Specific port mode
+                # Specific port mode - restore from saved config
+                print(colored(f'[MIDI Input] Restoring saved port: {input_port}', Colors.CYAN))
                 connected = self.midi_input.connect(input_port)
 
             if not connected:
@@ -645,6 +661,14 @@ class StrummerWebSocketServer(TabletReaderBase):
         if not self.clients:
             return
 
+        # Get ALL available ports (not just connected ones) for user selection
+        available_ports = self.midi_input.get_available_ports() if self.midi_input else []
+
+        # Get currently connected port name
+        connected_port = None
+        if self.midi_input and self.midi_input.connected_ports:
+            connected_port = self.midi_input.connected_ports[0]['name']
+
         midi_input_message = {
             'type': 'midi-input',
             'notes': event.get('notes', []),
@@ -653,8 +677,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             'portName': event.get('port_name'),
             'availablePorts': [
                 {'id': p['id'], 'name': p['name']}
-                for p in (self.midi_input.connected_ports if self.midi_input else [])
+                for p in available_ports
             ],
+            'connectedPort': connected_port,
         }
 
         self._broadcast(json.dumps(midi_input_message))
@@ -664,13 +689,22 @@ class StrummerWebSocketServer(TabletReaderBase):
         if not self.midi_input:
             return
 
+        # Get ALL available ports (not just connected ones) for user selection
+        available_ports = self.midi_input.get_available_ports()
+
+        # Get currently connected port name
+        connected_port = None
+        if self.midi_input.connected_ports:
+            connected_port = self.midi_input.connected_ports[0]['name']
+
         midi_input_message = {
             'type': 'midi-input-status',
             'connected': self.midi_input.is_connected,
             'availablePorts': [
                 {'id': p['id'], 'name': p['name']}
-                for p in self.midi_input.connected_ports
+                for p in available_ports
             ],
+            'connectedPort': connected_port,
             'currentNotes': self.midi_input.notes,
         }
 
@@ -906,7 +940,8 @@ class StrummerWebSocketServer(TabletReaderBase):
                 {'notation': n.notation, 'octave': n.octave}
                 for n in self.strummer.notes
             ],
-            'config': self.config.to_dict()
+            'config': self.config.to_dict(),
+            'serverVersion': SKETCHATONE_VERSION
         }
 
     def broadcast_config(self) -> None:
@@ -1052,6 +1087,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Re-setup notes if chord or note spread changed
             if 'chord' in path.lower() or 'spread' in path.lower() or 'initialNotes' in path:
                 self._setup_notes()
+
+            # Update MIDI channel on the backend if it changed
+            # Frontend sends 1-16 (1-based), backend expects 1-16 (1-based)
+            if 'midiChannel' in path and self.backend is not None:
+                self.backend.set_channel(value)
 
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
@@ -1702,7 +1742,7 @@ def main():
         poll_ms=effective_poll
     )
 
-    print(colored('=== Strummer WebSocket Server ===', Colors.CYAN))
+    print(colored(f'=== Strummer WebSocket Server v{SKETCHATONE_VERSION} ===', Colors.CYAN))
     if config_path:
         print(colored(f'Config: {config_path}', Colors.GRAY))
     if device_config_path:

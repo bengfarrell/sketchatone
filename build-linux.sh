@@ -16,35 +16,40 @@ if [ ! -f "python/sketchatone-linux.spec" ]; then
     exit 1
 fi
 
-# Check if virtual environment exists
-if [ ! -d "python/venv" ]; then
-    echo "❌ Error: Virtual environment not found"
-    echo "Please create a virtual environment first:"
-    echo "  cd python"
-    echo "  python3 -m venv venv"
-    echo "  source venv/bin/activate"
-    echo "  pip install -e ."
-    echo "  pip install pyinstaller"
+# Check if blankslate source is available
+if [ ! -d "blankslate" ]; then
+    echo "❌ Error: blankslate source not found"
+    echo "   Expected to find: blankslate/"
     exit 1
+fi
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "python/venv" ]; then
+    echo "🔧 Creating virtual environment..."
+    cd python
+    python3 -m venv venv
+    cd ..
 fi
 
 # Activate virtual environment
 echo "🔧 Activating virtual environment..."
 source python/venv/bin/activate
 
-# Install PyInstaller if not already installed
-if ! pip show pyinstaller > /dev/null 2>&1; then
-    echo "📦 Installing PyInstaller..."
-    pip install pyinstaller
-fi
+# Install packages as REGULAR packages (not editable) for PyInstaller compatibility
+# PyInstaller has issues with editable installs
+echo "📦 Installing packages for PyInstaller..."
 
-# Check if blankslate is installed
-if ! pip show blankslate > /dev/null 2>&1; then
-    echo "❌ Error: blankslate package not found"
-    echo "Please install blankslate first:"
-    echo "  pip install -e ../blankslate/python"
-    exit 1
-fi
+# Install sketchatone as a regular package
+echo "  → Installing sketchatone..."
+pip install ./python --quiet
+
+# Install blankslate as a regular package
+echo "  → Installing blankslate..."
+pip install ./blankslate --quiet
+
+# Install PyInstaller
+echo "  → Installing PyInstaller..."
+pip install pyinstaller --quiet
 
 # Check if webapp is built
 if [ ! -d "dist/public" ]; then

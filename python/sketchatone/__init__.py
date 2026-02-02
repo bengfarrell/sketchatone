@@ -14,7 +14,7 @@ Example:
     from sketchatone.midi import MidiStrummerBridge, RtMidiBackend
 """
 
-__version__ = '1.0.0'
+__version__ = '0.1.0'
 
 # Export main classes and functions
 from .strummer.strummer import Strummer

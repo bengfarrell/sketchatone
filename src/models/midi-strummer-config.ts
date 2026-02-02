@@ -109,7 +109,18 @@ export interface MidiConfigData {
   channel: number;
   /** Whether to use virtual MIDI ports */
   useVirtualPorts: boolean;
+  /** List of port name patterns to exclude from MIDI input auto-connect */
+  inputExclude: string[];
 }
+
+/**
+ * Default MIDI input exclusion patterns
+ * These ports are excluded from auto-connect to prevent feedback loops
+ */
+export const DEFAULT_MIDI_INPUT_EXCLUDE: string[] = [
+  'sketchatone',      // Our own output port
+  'Midi Through',     // ALSA Midi Through (loopback)
+];
 
 /**
  * Default MIDI configuration
@@ -119,6 +130,7 @@ export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
   inputPort: null,
   channel: 0,
   useVirtualPorts: false,
+  inputExclude: DEFAULT_MIDI_INPUT_EXCLUDE,
 };
 
 /**
@@ -129,12 +141,14 @@ export class MidiConfig implements MidiConfigData {
   inputPort: string | number | null;
   channel: number;
   useVirtualPorts: boolean;
+  inputExclude: string[];
 
   constructor(data: Partial<MidiConfigData> = {}) {
     this.outputPort = data.outputPort ?? DEFAULT_MIDI_CONFIG.outputPort;
     this.inputPort = data.inputPort ?? DEFAULT_MIDI_CONFIG.inputPort;
     this.channel = data.channel ?? DEFAULT_MIDI_CONFIG.channel;
     this.useVirtualPorts = data.useVirtualPorts ?? DEFAULT_MIDI_CONFIG.useVirtualPorts;
+    this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
   }
 
   /**
@@ -146,6 +160,7 @@ export class MidiConfig implements MidiConfigData {
       inputPort: (data.input_port ?? data.inputPort) as string | number | null | undefined,
       channel: data.channel as number | undefined,
       useVirtualPorts: (data.use_virtual_ports ?? data.useVirtualPorts) as boolean | undefined,
+      inputExclude: (data.input_exclude ?? data.inputExclude) as string[] | undefined,
     });
   }
 
@@ -158,6 +173,7 @@ export class MidiConfig implements MidiConfigData {
       inputPort: this.inputPort,
       channel: this.channel,
       useVirtualPorts: this.useVirtualPorts,
+      inputExclude: this.inputExclude,
     };
   }
 }

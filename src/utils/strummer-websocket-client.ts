@@ -30,12 +30,14 @@ export interface ServerMidiInputEvent {
   removed?: string;
   portName?: string;
   availablePorts: ServerMidiInputPort[];
+  connectedPort?: string | null;
 }
 
 /** MIDI input status from server */
 export interface ServerMidiInputStatus {
   connected: boolean;
   availablePorts: ServerMidiInputPort[];
+  connectedPort?: string | null;
   currentNotes: string[];
 }
 
@@ -380,6 +382,7 @@ export class StrummerWebSocketClient extends EventEmitter {
             removed: message.removed,
             portName: message.portName,
             availablePorts: message.availablePorts ?? [],
+            connectedPort: message.connectedPort ?? null,
           });
           break;
         case 'midi-input-status':
@@ -387,6 +390,7 @@ export class StrummerWebSocketClient extends EventEmitter {
           this.emit<ServerMidiInputStatus>('midi-input-status', {
             connected: message.connected ?? false,
             availablePorts: message.availablePorts ?? [],
+            connectedPort: message.connectedPort ?? null,
             currentNotes: message.currentNotes ?? [],
           });
           break;

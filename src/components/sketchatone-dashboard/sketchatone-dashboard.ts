@@ -43,7 +43,6 @@ import {
   StrummerWebSocketClient,
   type ServerMidiInputEvent,
   type ServerMidiInputStatus,
-  type ServerMidiInputPort,
 } from '../../utils/strummer-websocket-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
@@ -72,7 +71,9 @@ export class SketchatoneDashboard extends LitElement {
   private websocketConnected = false;
 
   @state()
-  private websocketUrl = 'ws://localhost:8081';
+  private websocketUrl = typeof window !== 'undefined'
+    ? `ws://${window.location.hostname}:8081`
+    : 'ws://localhost:8081';
 
   @state()
   private websocketServerInfo = '';
@@ -116,13 +117,17 @@ export class SketchatoneDashboard extends LitElement {
   private serverMidiConnected = false;
 
   @state()
-  private serverMidiPorts: ServerMidiInputPort[] = [];
-
-  @state()
   private serverMidiNotes: NoteObject[] = [];
 
   @state()
   private lastMidiPortName: string | null = null;
+
+  // Version info
+  @state()
+  private serverVersion: string | null = null;
+
+  // UI version injected at build time
+  private readonly uiVersion = __UI_VERSION__;
 
   // WebSocket client instance
   private wsClient = new StrummerWebSocketClient();
@@ -143,12 +148,14 @@ export class SketchatoneDashboard extends LitElement {
       if (state === 'disconnected') {
         this.websocketServerInfo = '';
         this.strummerConfig = null;
+        this.serverVersion = null;
       }
     });
 
     this.wsClient.onConfig((config: ServerConfigData) => {
       this.websocketServerInfo = `${config.notes?.length ?? 0} strings`;
       this.strummerConfig = config;
+      this.serverVersion = config.serverVersion ?? null;
     });
 
     this.wsClient.onCombinedEvent((data: CombinedEventData) => {
@@ -158,7 +165,6 @@ export class SketchatoneDashboard extends LitElement {
     // Listen for server MIDI input status (sent on connect)
     this.wsClient.onMidiInputStatus((status: ServerMidiInputStatus) => {
       this.serverMidiConnected = status.connected;
-      this.serverMidiPorts = status.availablePorts;
       this.serverMidiNotes = status.currentNotes.map((n) => Note.parseNotation(n));
     });
 
@@ -166,17 +172,7 @@ export class SketchatoneDashboard extends LitElement {
     this.wsClient.onMidiInput((event: ServerMidiInputEvent) => {
       this.serverMidiNotes = event.notes.map((n) => Note.parseNotation(n));
       this.lastMidiPortName = event.portName ?? null;
-      this.serverMidiPorts = event.availablePorts;
       this.serverMidiConnected = true;
-    });
-  }
-
-  /**
-   * Copy port name to clipboard
-   */
-  private copyPortName(portName: string) {
-    navigator.clipboard.writeText(portName).then(() => {
-      console.log(`Copied "${portName}" to clipboard`);
     });
   }
 
@@ -387,6 +383,7 @@ export class SketchatoneDashboard extends LitElement {
    */
   private getTabletButtonsConfig(): TabletButtonsConfig | undefined {
     if (!this.fullConfig?.strummer?.tabletButtons) return undefined;
+    // @ts-ignore
     return TabletButtonsConfig.fromDict(this.fullConfig.strummer.tabletButtons);
   }
 
@@ -493,6 +490,10 @@ export class SketchatoneDashboard extends LitElement {
                 </div>
               `}
             </div>
+            <div class="version-info">
+              <span class="version-label">UI: v${this.uiVersion}</span>
+              ${this.serverVersion ? html`<span class="version-label">Server: v${this.serverVersion}</span>` : ''}
+            </div>
           </div>
         </div>
 
@@ -579,7 +580,7 @@ export class SketchatoneDashboard extends LitElement {
                     <span class="midi-panel-title">MIDI Input</span>
                     <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
                       <span class="status-dot"></span>
-                      ${this.serverMidiPorts.length} ports
+                      ${this.serverMidiConnected ? 'connected' : 'disconnected'}
                     </div>
                   </div>
                   <div class="midi-notes compact">
@@ -590,20 +591,6 @@ export class SketchatoneDashboard extends LitElement {
                   </div>
                   ${this.lastMidiPortName ? html`
                     <div class="midi-source">from: ${this.lastMidiPortName}</div>
-                  ` : ''}
-                  ${this.serverMidiPorts.length > 0 ? html`
-                    <div class="midi-ports-list">
-                      <span class="midi-ports-label">Ports (click to copy):</span>
-                      <ul class="midi-ports">
-                        ${this.serverMidiPorts.map((port) => html`
-                          <li class="midi-port-item ${port.name === this.lastMidiPortName ? 'active' : ''}"
-                              @click=${() => this.copyPortName(port.name)}
-                              title="Click to copy for config">
-                            ${port.name}
-                          </li>
-                        `)}
-                      </ul>
-                    </div>
                   ` : ''}
                 </div>
 
@@ -685,8 +672,8 @@ export class SketchatoneDashboard extends LitElement {
                     </div>
                     <div class="setting-row">
                       <label>MIDI Channel</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${(this.fullConfig?.strummer?.strumming?.midiChannel ?? 0) + 1}" step="1" min="1" max="16"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value) - 1)}></sp-number-field>
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.midiChannel ?? 1}" step="1" min="1" max="16"
+                        @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Upper Note Spread</label>
@@ -778,8 +765,8 @@ export class SketchatoneDashboard extends LitElement {
                     </div>
                     <div class="setting-row">
                       <label>MIDI Channel</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${(this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 9) + 1}" step="1" min="1" max="16"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value) - 1)}></sp-number-field>
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 10}" step="1" min="1" max="16"
+                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                     </div>
                     <div class="setting-row">
                       <label>Max Duration</label>

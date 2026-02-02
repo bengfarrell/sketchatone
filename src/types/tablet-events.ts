@@ -84,6 +84,8 @@ export interface ServerConfigData {
   chord?: string;
   /** Full strummer configuration */
   config?: Record<string, unknown>;
+  /** Server version (Python/Node.js service version) */
+  serverVersion?: string;
 }
 
 /**

@@ -1,8 +1,17 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
+
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
+const uiVersion = packageJson.version;
 
 export default defineConfig({
   root: '.',
+  define: {
+    __UI_VERSION__: JSON.stringify(uiVersion),
+    __UI_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     preserveSymlinks: false,
     dedupe: [

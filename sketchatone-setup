@@ -130,19 +130,25 @@ generate_udev_rules() {
     rules+="\n"
     
     # Add HID permission rules and systemd trigger rules for each device
+    # Strip 0x prefix for PRODUCT env var matching
     while IFS=: read -r vendor product name; do
         if [ -n "$vendor" ]; then
+            # Strip 0x prefix for PRODUCT matching
+            vendor_stripped="${vendor#0x}"
+            product_stripped="${product#0x}"
+
             # HID permission rule (allow non-root access)
             rules+="# $name\n"
             rules+="SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"$vendor\", ATTRS{idProduct}==\"$product\", MODE=\"0666\"\n"
-            
+
             # USB add rule - trigger systemd service
             rules+="ACTION==\"add\", SUBSYSTEM==\"usb\", ATTR{idVendor}==\"$vendor\", ATTR{idProduct}==\"$product\", TAG+=\"systemd\", ENV{SYSTEMD_WANTS}=\"sketchatone.service\"\n"
-            
+
             # USB remove rule - stop service
-            rules+="ACTION==\"remove\", SUBSYSTEM==\"usb\", ENV{ID_VENDOR_ID}==\"$vendor\", ENV{ID_MODEL_ID}==\"$product\", RUN+=\"/bin/systemctl stop sketchatone.service\"\n"
+            # On remove, ATTR is not available, so we match on PRODUCT env var (format: vendor/product/bcdDevice)
+            rules+="ACTION==\"remove\", SUBSYSTEM==\"usb\", ENV{PRODUCT}==\"$vendor_stripped/$product_stripped/*\", RUN+=\"/bin/systemctl stop sketchatone.service\"\n"
             rules+="\n"
-            
+
             count=$((count + 1))
         fi
     done < <(get_device_ids "$DEVICES_DIR")

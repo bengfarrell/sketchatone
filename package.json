@@ -1,6 +1,6 @@
 {
   "name": "sketchatone",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Sketchatone - Node.js, Python, and Web implementation",
   "main": "dist/index.js",
   "type": "module",
@@ -73,7 +73,7 @@
     "docs": "npx @11ty/eleventy",
     "docs:serve": "npx @11ty/eleventy --serve",
     "docs:watch": "npx @11ty/eleventy --watch",
-    "package:pi": "./package-for-pi.sh"
+    "package:pi": "npm run build && ./package-for-pi.sh"
   },
   "dependencies": {
     "@julusian/midi": "^3.6.1",

@@ -68,7 +68,14 @@ class JackMidiBackend(MidiBackendProtocol):
     @property
     def is_connected(self) -> bool:
         return self._connected and self._jack_client is not None
-    
+
+    @property
+    def current_output_name(self) -> Optional[str]:
+        """Get the name of the current MIDI output port."""
+        if self._midi_out_port:
+            return self._midi_out_port.name
+        return None
+
     def get_available_ports(self) -> List[str]:
         """Get list of available JACK MIDI input ports (destinations)."""
         if not self.is_connected:
@@ -93,9 +100,11 @@ class JackMidiBackend(MidiBackendProtocol):
             # Create JACK client
             self._jack_client = jack.Client(self._client_name)
             
-            # Register MIDI output port
+            # Register MIDI output port with is_physical=True and is_terminal=True
+            # These flags are required for the port to appear in Zynthian's MIDI device list
+            # Use a descriptive name (not 'midi_out') as Zynthian uses this for the device list
             self._midi_out_port = self._jack_client.midi_outports.register(
-                'midi_out', is_physical=True
+                'Sketchatone', is_physical=True, is_terminal=True
             )
             
             # Set up process callback

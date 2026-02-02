@@ -105,6 +105,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private bridge: MidiStrummerBridge | null = null;
   private midiInput: RtMidiInput | null = null;
   private midiInputDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private midiInputAvailablePorts: { id: number; name: string }[] = [];
   public notesPlayed: number = 0;
   private actions: Actions;
 
@@ -358,19 +359,28 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.midiInput = new RtMidiInput();
       const inputPort = this.config.inputPort;
 
-      // Build list of ports to exclude (to prevent feedback from our own output)
-      const excludePorts: string[] = [];
+      // Get available ports (filtered to useful ones) for UI display
+      this.midiInputAvailablePorts = await this.midiInput.getAvailablePorts(true);
+      console.log(chalk.gray(`[MIDI Input] Available ports: ${this.midiInputAvailablePorts.map(p => p.name).join(', ') || 'none'}`));
+
+      // Build list of ports to exclude (to prevent feedback loops)
+      // Start with the configured exclusion list
+      const excludePorts: string[] = [...this.config.midi.inputExclude];
+
+      // Also exclude our own output port if available
       if (this.backend && 'currentOutputName' in this.backend && this.backend.currentOutputName) {
         excludePorts.push(this.backend.currentOutputName as string);
-        console.log(chalk.gray(`[MIDI Input] Excluding output port from input: ${this.backend.currentOutputName}`));
       }
+
+      console.log(chalk.gray(`[MIDI Input] Excluding ports matching: ${excludePorts.join(', ')}`));
 
       let connected = false;
       if (inputPort === null || inputPort === undefined) {
-        // Discovery mode: listen to all ports (except our output)
+        // Discovery mode: listen to all ports (except excluded ones)
         connected = await this.midiInput.connectAll(excludePorts);
       } else {
-        // Specific port mode
+        // Specific port mode - restore saved port
+        console.log(chalk.cyan(`[MIDI Input] Restoring saved port: ${inputPort}`));
         connected = await this.midiInput.connect(inputPort);
       }
 
@@ -421,13 +431,17 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private broadcastMidiInput(event: MidiInputNoteEvent): void {
     if (!this.wss) return;
 
+    // Get currently connected port name
+    const connectedPort = this.midiInput?.connectedPorts[0]?.name ?? null;
+
     const midiInputMessage = {
       type: 'midi-input',
       notes: event.notes,
       added: event.added,
       removed: event.removed,
       portName: event.portName,
-      availablePorts: this.midiInput?.connectedPorts ?? [],
+      availablePorts: this.midiInputAvailablePorts,
+      connectedPort,
     };
 
     const data = JSON.stringify(midiInputMessage);
@@ -444,10 +458,14 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private sendMidiInputStatus(client: WebSocket): void {
     if (!this.midiInput) return;
 
+    // Get currently connected port name
+    const connectedPort = this.midiInput.connectedPorts[0]?.name ?? null;
+
     const midiInputMessage = {
       type: 'midi-input-status',
       connected: this.midiInput.isConnected,
-      availablePorts: this.midiInput.connectedPorts,
+      availablePorts: this.midiInputAvailablePorts,
+      connectedPort,
       currentNotes: this.midiInput.notes,
     };
 
