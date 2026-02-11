@@ -51,8 +51,9 @@ cp -R python/sketchatone "$PKG_DIR/opt/sketchatone/python/"
 cp python/pyproject.toml "$PKG_DIR/opt/sketchatone/python/"
 
 echo "  → blankslate package"
-cp -R blankslate/blankslate "$PKG_DIR/opt/sketchatone/python/"
-cp blankslate/pyproject.toml "$PKG_DIR/opt/sketchatone/python/blankslate-pyproject.toml"
+# Use -RL to follow symlinks (blankslate/blankslate is a symlink to ../blankslate/python/blankslate)
+cp -RL blankslate/blankslate "$PKG_DIR/opt/sketchatone/python/"
+cp -L blankslate/pyproject.toml "$PKG_DIR/opt/sketchatone/python/blankslate-pyproject.toml"
 
 # Remove __pycache__ directories
 find "$PKG_DIR/opt/sketchatone/python" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -176,18 +177,26 @@ fi
 # Reload systemd daemon to recognize new service
 systemctl daemon-reload
 
+# Automatically generate udev rules with usb-trigger mode (default)
+# This is needed for HID device permissions (especially keyboard HID buttons)
+echo ""
+echo "🔧 Setting up udev rules and auto-start..."
+if [ -x /usr/bin/sketchatone-setup ]; then
+    /usr/bin/sketchatone-setup --mode usb-trigger
+else
+    echo "⚠️  Warning: sketchatone-setup not found, skipping udev configuration"
+fi
+
 echo ""
 echo "=========================================="
 echo "✅ Sketchatone installed successfully!"
 echo "=========================================="
 echo ""
-echo "To configure Sketchatone, run:"
-echo "  sudo sketchatone-setup --help"
+echo "Sketchatone is configured to auto-start when your tablet is plugged in."
 echo ""
-echo "Quick setup options:"
-echo "  sudo sketchatone-setup --mode usb-trigger   # Start when tablet plugged in"
-echo "  sudo sketchatone-setup --mode always-on     # Start on boot"
-echo "  sudo sketchatone-setup --mode manual        # Manual start only"
+echo "To change this behavior:"
+echo "  sudo sketchatone-setup --mode manual        # Disable auto-start (keep permissions)"
+echo "  sudo sketchatone-setup --mode always-on     # Start on boot instead"
 echo ""
 echo "To run manually:"
 echo "  sketchatone -c /opt/sketchatone/configs/config.json"

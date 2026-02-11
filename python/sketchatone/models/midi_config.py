@@ -18,6 +18,8 @@ DEFAULT_MIDI_INPUT_EXCLUDE: List[str] = [
     'zynsmf',           # Zynthian SMF player
     'ttymidi',          # Serial MIDI (often internal)
     'Midi Through',     # ALSA Midi Through (loopback)
+    # Synth plugin MIDI outputs can cause feedback loops (e.g., TAL_U-No-LX-V2-01:out)
+    ':out',             # Generic output port suffix used by LV2 synth plugins
 ]
 
 

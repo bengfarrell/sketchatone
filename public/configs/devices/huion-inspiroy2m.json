@@ -1,0 +1,336 @@
+{
+  "name": "Huion Inspiroy 2 Medium",
+  "manufacturer": "Huion",
+  "model": "Inspiroy 2 Medium",
+  "description": "Inspiroy 2 Medium with 8 buttons x 3 modes + a scroll wheel",
+  "vendorId": "0x256c",
+  "productId": "0x0067",
+  "deviceInfo": {
+    "vendor_id": 9580,
+    "product_id": 103,
+    "product_string": "Huion Tablet_H951P",
+    "usage_page": 65280,
+    "usage": 1,
+    "interfaces": [
+      1,
+      13
+    ]
+  },
+  "modes": [
+    {
+      "reportId": 10,
+      "digitizerUsagePage": 65280,
+      "capabilities": {
+        "hasButtons": true,
+        "buttonCount": 30,
+        "hasPressure": true,
+        "pressureLevels": 8191,
+        "hasTilt": true,
+        "resolution": {
+          "x": 32767,
+          "y": 32767
+        }
+      },
+      "byteCodeMappings": {
+        "status": {
+          "byteIndex": [
+            1
+          ],
+          "type": "code",
+          "values": {
+            "192": {
+              "state": "hover"
+            },
+            "193": {
+              "state": "contact"
+            },
+            "0": {
+              "state": "none"
+            },
+            "196": {
+              "state": "hover",
+              "primaryButtonPressed": true
+            },
+            "197": {
+              "state": "contact",
+              "primaryButtonPressed": true
+            },
+            "194": {
+              "state": "hover",
+              "secondaryButtonPressed": true
+            },
+            "195": {
+              "state": "contact",
+              "secondaryButtonPressed": true
+            },
+            "3": {
+              "state": "buttons"
+            },
+            "1": {
+              "state": "buttons"
+            },
+            "6": {
+              "state": "buttons"
+            },
+            "240": {
+              "state": "buttons"
+            }
+          }
+        },
+        "x": {
+          "byteIndex": [
+            2,
+            3
+          ],
+          "max": 32767,
+          "type": "multi-byte-range"
+        },
+        "y": {
+          "byteIndex": [
+            4,
+            5
+          ],
+          "max": 32767,
+          "type": "multi-byte-range"
+        },
+        "pressure": {
+          "byteIndex": [
+            6,
+            7
+          ],
+          "max": 8191,
+          "type": "multi-byte-range"
+        },
+        "tiltX": {
+          "byteIndex": [
+            8
+          ],
+          "positiveMax": 80,
+          "negativeMin": 176,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tiltY": {
+          "byteIndex": [
+            9
+          ],
+          "positiveMax": 80,
+          "negativeMin": 176,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "keyboardButtons": {
+          "description": "Buttons from keyboard HID interface (requires sudo on macOS)",
+          "usagePage": 1,
+          "usage": 6,
+          "buttonCount": 30,
+          "buttons": [
+            {
+              "button": 1,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 5
+            },
+            {
+              "button": 2,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 7,
+              "keycode": 17
+            },
+            {
+              "button": 3,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "button": 4,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 12
+            },
+            {
+              "button": 5,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 46
+            },
+            {
+              "button": 6,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 45
+            },
+            {
+              "button": 7,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 44
+            },
+            {
+              "button": 8,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 8
+            },
+            {
+              "button": 9,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 22
+            },
+            {
+              "button": 10,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 5,
+              "keycode": 29
+            },
+            {
+              "button": 11,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 15
+            },
+            {
+              "button": 12,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 16
+            },
+            {
+              "button": 13,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 24
+            },
+            {
+              "button": 14,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 5
+            },
+            {
+              "button": 15,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 48
+            },
+            {
+              "button": 16,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 47
+            },
+            {
+              "button": 17,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 12
+            },
+            {
+              "button": 18,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 3,
+              "keycode": 24
+            },
+            {
+              "button": 19,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 5,
+              "keycode": 12
+            },
+            {
+              "button": 20,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 5,
+              "keycode": 6
+            },
+            {
+              "button": 21,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 182
+            },
+            {
+              "button": 22,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 181
+            },
+            {
+              "button": 23,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 233
+            },
+            {
+              "button": 24,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 234
+            },
+            {
+              "button": 25,
+              "reportId": 5,
+              "type": "scroll",
+              "scrollDelta": 1
+            },
+            {
+              "button": 26,
+              "reportId": 5,
+              "type": "scroll",
+              "scrollDelta": 255
+            },
+            {
+              "button": 27,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 205
+            },
+            {
+              "button": 28,
+              "reportId": 4,
+              "type": "consumer",
+              "consumerCode": 226
+            },
+            {
+              "button": 29,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 8,
+              "keycode": 7
+            },
+            {
+              "button": 30,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 8,
+              "keycode": 15
+            }
+          ]
+        }
+      },
+      "stylusModeStatusByte": 192
+    }
+  ]
+}

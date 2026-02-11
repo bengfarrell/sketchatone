@@ -24,10 +24,9 @@ Sketchatone provides a `.deb` package installer for Linux systems, with special 
 ```bash
 # Download the .deb package (adjust version as needed)
 sudo apt install ./sketchatone-1.0.0-linux-armhf.deb
-
-# Configure auto-start mode
-sudo sketchatone-setup --mode usb-trigger
 ```
+
+That's it! The installer automatically configures udev rules and sets up USB-triggered auto-start. Your tablet will work immediately when plugged in.
 
 ### Building from Source
 
@@ -86,7 +85,7 @@ sudo apt install ./dist/sketchatone-*.deb
 
 ### Auto-Start Modes
 
-After installation, configure how Sketchatone starts using the setup script:
+By default, installation configures **usb-trigger** mode. You can change this behavior:
 
 ```bash
 sudo sketchatone-setup --mode <mode>
@@ -94,9 +93,9 @@ sudo sketchatone-setup --mode <mode>
 
 | Mode | Description |
 |------|-------------|
-| `usb-trigger` | **Recommended.** Starts automatically when tablet is plugged in, stops when unplugged. Zero resource usage when tablet is disconnected. |
+| `usb-trigger` | **Default.** Starts automatically when tablet is plugged in, stops when unplugged. Zero resource usage when tablet is disconnected. |
 | `always-on` | Traditional service that starts on boot and runs continuously. |
-| `manual` | No auto-start. Run manually with `sketchatone` command. |
+| `manual` | No auto-start. Run manually with `sketchatone` command. HID permissions are preserved. |
 
 #### USB-Triggered Mode (Recommended for Zynthian)
 
@@ -127,24 +126,43 @@ systemctl status sketchatone
 
 ### Understanding udev Rules
 
-The setup script automatically generates udev rules from your device config files. These rules are stored at `/etc/udev/rules.d/99-sketchatone.rules`.
+The installer automatically generates udev rules from your device config files. These rules are stored at `/etc/udev/rules.d/99-sketchatone.rules`.
+
+#### Why udev rules are required
+
+Some drawing tablets expose their hardware buttons through a **separate keyboard HID interface** rather than the main digitizer interface. On Linux, accessing these HID interfaces requires either:
+
+- Running as root (not recommended)
+- Having udev rules that grant permissions to the device
+
+The udev rules generated during installation grant read/write access to **all HID interfaces** for your tablet, ensuring both pen input and hardware buttons work without requiring sudo.
 
 #### What the rules do:
 
-1. **HID Permissions** - Allow non-root access to the tablet:
+1. **HID Permissions** - Allow non-root access to all tablet interfaces (pen and buttons):
    ```
    SUBSYSTEM=="hidraw", ATTRS{idVendor}=="28bd", ATTRS{idProduct}=="2904", MODE="0666"
    ```
 
-2. **USB Plug Detection** - Start service when tablet is connected:
+2. **USB Plug Detection** - Start service when tablet is connected (usb-trigger mode only):
    ```
    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="28bd", ATTR{idProduct}=="2904", TAG+="systemd", ENV{SYSTEMD_WANTS}="sketchatone.service"
    ```
 
-3. **USB Unplug Detection** - Stop service when tablet is disconnected:
+3. **USB Unplug Detection** - Stop service when tablet is disconnected (usb-trigger mode only):
    ```
    ACTION=="remove", SUBSYSTEM=="usb", ENV{ID_VENDOR_ID}=="28bd", ENV{ID_MODEL_ID}=="2904", RUN+="/bin/systemctl stop sketchatone.service"
    ```
+
+#### Disabling auto-start while keeping permissions
+
+If you want to run Sketchatone manually but still need the HID permissions for tablet buttons:
+
+```bash
+sudo sketchatone-setup --mode manual
+```
+
+This removes the USB plug/unplug detection rules but keeps the HID permission rules intact.
 
 #### Adding a new device:
 

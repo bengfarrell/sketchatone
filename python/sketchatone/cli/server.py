@@ -1438,7 +1438,9 @@ class StrummerWebSocketServer(TabletReaderBase):
                     self.repeater_state['last_repeat_time'] = current_time
 
         except Exception as e:
+            import traceback
             print(colored(f'Error processing packet: {e}', Colors.RED))
+            traceback.print_exc()
     
     def handle_device_disconnect(self) -> None:
         """Handle device disconnection"""
