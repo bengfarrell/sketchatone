@@ -53,8 +53,13 @@ export default defineConfig({
       { find: 'blankslate/components/tablet-visualizer/tablet-visualizer.js', replacement: resolve(__dirname, '../blankslate/dist/components/tablet-visualizer/tablet-visualizer.js') },
       { find: 'blankslate/components/bytes-display/bytes-display.js', replacement: resolve(__dirname, '../blankslate/dist/components/bytes-display/bytes-display.js') },
       { find: 'blankslate/components/events-display/events-display.js', replacement: resolve(__dirname, '../blankslate/dist/components/events-display/events-display.js') },
+      // Resolve blankslate subpath exports (browser-safe, no mockbytes)
       { find: 'blankslate/models', replacement: resolve(__dirname, '../blankslate/dist/models/index.js') },
-      // Resolve blankslate main export (for managers, types, etc.) - must be last
+      { find: 'blankslate/utils', replacement: resolve(__dirname, '../blankslate/dist/utils/index.js') },
+      // Use core/managers directly to avoid core/index.js which re-exports mockbytes
+      { find: 'blankslate/core/managers', replacement: resolve(__dirname, '../blankslate/dist/core/managers/index.js') },
+      { find: 'blankslate/core', replacement: resolve(__dirname, '../blankslate/dist/core/index.js') },
+      // Resolve blankslate main export - must be last (but avoid using this in browser code!)
       { find: 'blankslate', replacement: resolve(__dirname, '../blankslate/dist/index.js') },
     ],
   },
@@ -70,11 +75,18 @@ export default defineConfig({
         tablet: resolve(__dirname, 'index.html'),
         web: resolve(__dirname, 'web.html'),
       },
+      // Externalize Node.js-only modules that shouldn't be bundled for browser
+      // This is needed because blankslate's main export includes mockbytes which uses 'fs'
+      external: [
+        'fs',
+        'path',
+      ],
     },
   },
   server: {
     port: 3000,
-    open: true,
+    open: false, // Don't auto-open browser when running with Electron
+    strictPort: true, // Fail if port 3000 is in use
   },
   test: {
     globals: true,

@@ -53,6 +53,10 @@ export class TabletButtonsConfigComponent extends LitElement {
   @property({ type: Object })
   pressedButtons: Set<number> = new Set();
 
+  /** Number of tablet buttons available (from device capabilities) */
+  @property({ type: Number })
+  buttonCount: number = 8;
+
   @state()
   private useChordProgressionMode: boolean = true;
 
@@ -63,16 +67,7 @@ export class TabletButtonsConfigComponent extends LitElement {
   private selectedOctave: number = 4;
 
   @state()
-  private buttonStates: Record<string, ButtonState> = {
-    '1': { actionName: 'none', params: [] },
-    '2': { actionName: 'none', params: [] },
-    '3': { actionName: 'none', params: [] },
-    '4': { actionName: 'none', params: [] },
-    '5': { actionName: 'none', params: [] },
-    '6': { actionName: 'none', params: [] },
-    '7': { actionName: 'none', params: [] },
-    '8': { actionName: 'none', params: [] },
-  };
+  private buttonStates: Record<string, ButtonState> = {};
 
   // Available actions with their parameter definitions
   private readonly actions: ActionDef[] = [
@@ -180,6 +175,11 @@ export class TabletButtonsConfigComponent extends LitElement {
   updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
 
+    // Initialize button states when buttonCount changes
+    if (changedProperties.has('buttonCount')) {
+      this.initializeButtonStates();
+    }
+
     if (changedProperties.has('config') && this.config) {
       // Sync state from config
       this.useChordProgressionMode = this.config.mode === 'progression';
@@ -188,13 +188,32 @@ export class TabletButtonsConfigComponent extends LitElement {
 
       // Parse individual button actions if in individual mode
       if (this.config.mode === 'individual') {
-        for (let i = 1; i <= 8; i++) {
+        for (let i = 1; i <= this.buttonCount; i++) {
           const buttonKey = String(i);
           const action = this.config.buttonActions[buttonKey as keyof typeof this.config.buttonActions];
           this.parseActionFromConfig(action, buttonKey);
         }
       }
     }
+  }
+
+  /**
+   * Initialize button states based on buttonCount
+   */
+  private initializeButtonStates() {
+    const newStates: Record<string, ButtonState> = {};
+    for (let i = 1; i <= this.buttonCount; i++) {
+      const key = String(i);
+      // Preserve existing state if available
+      newStates[key] = this.buttonStates[key] ?? { actionName: 'none', params: [] };
+    }
+    this.buttonStates = newStates;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Initialize button states on first connect
+    this.initializeButtonStates();
   }
 
   /**
@@ -315,10 +334,10 @@ export class TabletButtonsConfigComponent extends LitElement {
     } else {
       // Switch to individual button mode
       const buttonActions: Record<string, TabletButtonAction> = {};
-      for (let i = 1; i <= 8; i++) {
+      for (let i = 1; i <= this.buttonCount; i++) {
         const key = String(i);
         const state = this.buttonStates[key];
-        buttonActions[key] = this.buildActionDefinition(state.actionName, state.params);
+        buttonActions[key] = this.buildActionDefinition(state?.actionName ?? 'none', state?.params ?? []);
       }
       this.dispatchEvent(
         new CustomEvent('config-change', {
@@ -490,8 +509,9 @@ export class TabletButtonsConfigComponent extends LitElement {
   }
 
   private renderIndividualButtonMode() {
+    const buttonNumbers = Array.from({ length: this.buttonCount }, (_, i) => String(i + 1));
     return html`
-      <div class="button-grid">${['1', '2', '3', '4', '5', '6', '7', '8'].map((num) => this.renderButton(num))}</div>
+      <div class="button-grid">${buttonNumbers.map((num) => this.renderButton(num))}</div>
     `;
   }
 

@@ -134,9 +134,6 @@ export class StrumVisualizer extends TabletVisualizer {
                 <!-- Strings (vertical lines) -->
                 ${this.renderStrings(activeAreaWidth, activeAreaHeight, activeAreaX, activeAreaY)}
 
-                <!-- Buttons rendered AFTER strings to appear on top -->
-                ${this.renderButtons(activeAreaWidth, activeAreaX, activeAreaY)}
-
                 <!-- Position indicator -->
                 ${this.renderPositionIndicator(activeAreaX, activeAreaY, activeAreaWidth, activeAreaHeight)}
                 </svg>

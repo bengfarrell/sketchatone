@@ -76,6 +76,21 @@ export interface DeviceStatusData {
 export type ServerMessageType = 'tablet' | 'config' | 'status';
 
 /**
+ * Device capabilities from blankslate tablet configuration
+ */
+export interface DeviceCapabilities {
+  hasButtons: boolean;
+  buttonCount: number;
+  hasPressure: boolean;
+  pressureLevels: number;
+  hasTilt: boolean;
+  resolution: {
+    x: number;
+    y: number;
+  };
+}
+
+/**
  * Server config data sent on connection
  */
 export interface ServerConfigData {
@@ -86,6 +101,8 @@ export interface ServerConfigData {
   config?: Record<string, unknown>;
   /** Server version (Python/Node.js service version) */
   serverVersion?: string;
+  /** Device capabilities from blankslate tablet configuration */
+  deviceCapabilities?: DeviceCapabilities;
 }
 
 /**

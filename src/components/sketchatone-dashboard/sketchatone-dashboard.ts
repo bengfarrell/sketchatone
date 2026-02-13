@@ -44,6 +44,8 @@ import {
   type ServerMidiInputEvent,
   type ServerMidiInputStatus,
 } from '../../utils/strummer-websocket-client.js';
+// Electron IPC bridge client (drop-in replacement for WebSocket client)
+import { ElectronBridgeClient, isElectron } from '../../utils/electron-bridge-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
@@ -126,24 +128,44 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private serverVersion: string | null = null;
 
+  // Device status (for Electron mode)
+  @state()
+  private deviceStatusMessage = 'Waiting for tablet...';
+
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
 
-  // WebSocket client instance
-  private wsClient = new StrummerWebSocketClient();
+  // Client instance - either WebSocket or Electron IPC bridge
+  private client: StrummerWebSocketClient | ElectronBridgeClient;
+
+  // Track if running in Electron
+  private readonly isElectronApp = isElectron();
+
+  constructor() {
+    super();
+    // Use Electron IPC bridge if running in Electron, otherwise use WebSocket
+    this.client = this.isElectronApp
+      ? new ElectronBridgeClient()
+      : new StrummerWebSocketClient();
+  }
 
   connectedCallback() {
     super.connectedCallback();
-    this.setupWebSocketClient();
+    this.setupClient();
+
+    // Auto-connect in Electron mode
+    if (this.isElectronApp) {
+      this.connectElectron();
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.wsClient.cleanup();
+    this.client.cleanup();
   }
 
-  private setupWebSocketClient() {
-    this.wsClient.onConnectionStateChange((state) => {
+  private setupClient() {
+    this.client.onConnectionStateChange((state) => {
       this.websocketConnected = state === 'connected';
       if (state === 'disconnected') {
         this.websocketServerInfo = '';
@@ -152,28 +174,44 @@ export class SketchatoneDashboard extends LitElement {
       }
     });
 
-    this.wsClient.onConfig((config: ServerConfigData) => {
+    this.client.onConfig((config: ServerConfigData) => {
       this.websocketServerInfo = `${config.notes?.length ?? 0} strings`;
       this.strummerConfig = config;
       this.serverVersion = config.serverVersion ?? null;
     });
 
-    this.wsClient.onCombinedEvent((data: CombinedEventData) => {
+    this.client.onCombinedEvent((data: CombinedEventData) => {
       this.handleTabletData(data);
     });
 
     // Listen for server MIDI input status (sent on connect)
-    this.wsClient.onMidiInputStatus((status: ServerMidiInputStatus) => {
+    this.client.onMidiInputStatus((status: ServerMidiInputStatus) => {
       this.serverMidiConnected = status.connected;
       this.serverMidiNotes = status.currentNotes.map((n) => Note.parseNotation(n));
     });
 
     // Listen for server MIDI input events (notes changed)
-    this.wsClient.onMidiInput((event: ServerMidiInputEvent) => {
+    this.client.onMidiInput((event: ServerMidiInputEvent) => {
       this.serverMidiNotes = event.notes.map((n) => Note.parseNotation(n));
       this.lastMidiPortName = event.portName ?? null;
       this.serverMidiConnected = true;
     });
+
+    // Listen for device status changes (Electron mode)
+    if (this.client instanceof ElectronBridgeClient) {
+      this.client.onDeviceStatus((status) => {
+        this.deviceStatusMessage = status.message;
+      });
+    }
+  }
+
+  /**
+   * Connect via Electron IPC bridge
+   */
+  private async connectElectron(): Promise<void> {
+    if (this.client instanceof ElectronBridgeClient) {
+      await this.client.connect();
+    }
   }
 
   private handleTabletData(data: CombinedEventData) {
@@ -230,12 +268,63 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   private connectWebSocket() {
-    this.wsClient.connect(this.websocketUrl);
+    if (this.client instanceof StrummerWebSocketClient) {
+      this.client.connect(this.websocketUrl);
+    }
   }
 
   private disconnectWebSocket() {
-    this.wsClient.disconnect();
+    this.client.disconnect();
     this.resetData();
+  }
+
+  /**
+   * Render connection controls based on mode (Electron vs WebSocket)
+   */
+  private renderConnectionControls() {
+    if (this.websocketConnected) {
+      // Connected state - same for both modes
+      return html`
+        <div class="connection-group">
+          <div class="status-badge connected">
+            <span class="status-dot"></span>
+            ${this.websocketServerInfo || 'Connected'}
+          </div>
+          <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
+            Disconnect
+          </sp-button>
+        </div>
+      `;
+    }
+
+    if (this.isElectronApp) {
+      // Electron mode - show device status (auto-connects)
+      return html`
+        <div class="connection-group">
+          <div class="status-badge disconnected">
+            <span class="status-dot"></span>
+            ${this.deviceStatusMessage}
+          </div>
+        </div>
+      `;
+    }
+
+    // WebSocket mode - URL input and connect button
+    return html`
+      <div class="connection-group">
+        <sp-textfield
+          data-spectrum-pattern="textfield-s"
+          size="s"
+          placeholder="ws://localhost:8081"
+          value=${this.websocketUrl}
+          @input=${this.handleWebSocketUrlChange}
+          style="width: 250px;">
+        </sp-textfield>
+        <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
+          Connect
+        </sp-button>
+      </div>
+    `;
   }
 
   /**
@@ -257,14 +346,14 @@ export class SketchatoneDashboard extends LitElement {
    * Save configuration to the server's config file
    */
   private handleSaveConfig(): void {
-    this.wsClient.saveConfig();
+    this.client.saveConfig();
   }
 
   /**
    * Send a config update to the server
    */
   private updateConfig(path: string, value: unknown) {
-    this.wsClient.updateConfig(path, value);
+    this.client.updateConfig(path, value);
   }
 
   private resetData() {
@@ -464,31 +553,7 @@ export class SketchatoneDashboard extends LitElement {
                   Export Configuration
                 </sp-button>
               </div>
-              ${this.websocketConnected ? html`
-                <div class="connection-group">
-                  <div class="status-badge connected">
-                    <span class="status-dot"></span>
-                    ${this.websocketServerInfo || 'Connected'}
-                  </div>
-                  <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
-                    Disconnect
-                  </sp-button>
-                </div>
-              ` : html`
-                <div class="connection-group">
-                  <sp-textfield
-                    data-spectrum-pattern="textfield-s"
-                    size="s"
-                    placeholder="ws://localhost:8081"
-                    value=${this.websocketUrl}
-                    @input=${this.handleWebSocketUrlChange}
-                    style="width: 250px;">
-                  </sp-textfield>
-                  <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
-                    Connect
-                  </sp-button>
-                </div>
-              `}
+              ${this.renderConnectionControls()}
             </div>
             <div class="version-info">
               <span class="version-label">UI: v${this.uiVersion}</span>
@@ -499,7 +564,7 @@ export class SketchatoneDashboard extends LitElement {
 
         ${!hasActiveConnection ? html`
           <div class="disconnected-message">
-            <p>Connect to a WebSocket server to view strummer data</p>
+            <p>${this.isElectronApp ? this.deviceStatusMessage : 'Connect to a WebSocket server to view strummer data'}</p>
           </div>
         ` : html`
         <!-- Visualization Section (Collapsible) -->
@@ -798,6 +863,7 @@ export class SketchatoneDashboard extends LitElement {
                   <tablet-buttons-config
                     .config=${this.getTabletButtonsConfig()}
                     .pressedButtons=${this.pressedButtons}
+                    .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
                     @config-change=${this.handleTabletButtonsConfigChange}
                   ></tablet-buttons-config>
                 </dashboard-panel>

@@ -2,7 +2,7 @@
   "name": "sketchatone",
   "version": "0.1.0",
   "description": "Sketchatone - Node.js, Python, and Web implementation",
-  "main": "dist/index.js",
+  "main": "dist/electron/main.js",
   "type": "module",
   "workspaces": [
     "../../spectrumizer"
@@ -73,7 +73,64 @@
     "docs": "npx @11ty/eleventy",
     "docs:serve": "npx @11ty/eleventy --serve",
     "docs:watch": "npx @11ty/eleventy --watch",
-    "package:pi": "npm run build && ./package-for-pi.sh"
+    "package:pi": "npm run build && ./package-for-pi.sh",
+    "electron:compile": "npm run build:cli && tsc --project tsconfig.electron.json",
+    "electron:dev": "npm run electron:compile && concurrently -k \"vite\" \"sleep 2 && electron dist/electron/main.js --dev\"",
+    "electron:build": "npm run build && npm run electron:compile && electron-builder",
+    "electron:build:mac": "npm run build && npm run electron:compile && electron-builder --mac",
+    "electron:build:win": "npm run build && npm run electron:compile && electron-builder --win",
+    "electron:build:linux": "npm run build && npm run electron:compile && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.sketchatone.app",
+    "productName": "Sketchatone",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "public/configs/**/*",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "public/configs",
+        "to": "configs"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Audio"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "@julusian/midi": "^3.6.1",
@@ -84,6 +141,7 @@
     "inquirer": "^9.2.23",
     "lit": "^3.3.1",
     "ora": "^8.0.1",
+    "usb": "^2.17.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -98,6 +156,9 @@
     "@typescript-eslint/parser": "^7.16.0",
     "@vitest/coverage-v8": "^1.6.0",
     "@vitest/ui": "^1.6.0",
+    "concurrently": "^9.2.1",
+    "electron": "^40.3.0",
+    "electron-builder": "^26.7.0",
     "eslint": "^8.57.0",
     "happy-dom": "^14.12.3",
     "jsdom": "^24.1.0",
@@ -105,6 +166,7 @@
     "tsx": "^4.7.1",
     "typescript": "~5.5.3",
     "vite": "^5.3.3",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "wait-on": "^9.0.4"
   }
 }

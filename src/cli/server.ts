@@ -3,14 +3,11 @@
  * Strummer WebSocket Server
  *
  * A WebSocket server that broadcasts tablet and strum events from the MIDI Strummer.
- * Clients can subscribe to either tablet events or strum events (not both at the same time).
  *
  * Usage:
- *   npm run strummer-websocket
- *   npm run strummer-websocket -- --port 8081
- *   npm run strummer-websocket -- --mode tablet
- *   npm run strummer-websocket -- --mode strum
- *   npm run strummer-websocket -- --throttle 100
+ *   npm run server
+ *   npm run server -- --ws-port 8081
+ *   npm run server -- --throttle 100
  */
 
 import chalk from 'chalk';
@@ -50,6 +47,21 @@ interface TabletWebSocketEvent extends CombinedEventData {
 }
 
 /**
+ * Device capabilities from blankslate tablet configuration
+ */
+interface DeviceCapabilities {
+  hasButtons: boolean;
+  buttonCount: number;
+  hasPressure: boolean;
+  pressureLevels: number;
+  hasTilt: boolean;
+  resolution: {
+    x: number;
+    y: number;
+  };
+}
+
+/**
  * Full config data sent to clients on connection
  */
 interface ServerConfigData {
@@ -59,6 +71,8 @@ interface ServerConfigData {
   notes: Array<{ notation: string; octave: number }>;
   /** Full strummer configuration */
   config: MidiStrummerConfigData;
+  /** Device capabilities from blankslate tablet configuration */
+  deviceCapabilities?: DeviceCapabilities;
 }
 
 /**
@@ -183,8 +197,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Built webapp files are in dist/public
     this.publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
 
-    // Create a local event bus instance with custom throttle
-    // CLI args take precedence over config file values
+    // Create event bus with throttle for WebSocket (reduces network traffic)
     this.eventBus = new StrummerEventBus(options.throttleMs ?? this.config.wsMessageThrottle ?? 150);
 
     // Create strummer
@@ -544,6 +557,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         octave: n.octave,
       })),
       config: this.config.toDict(),
+      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
     };
 
     client.send(
@@ -582,6 +596,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         octave: n.octave,
       })),
       config: this.config.toDict(),
+      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
     };
 
     const message = JSON.stringify({
@@ -838,7 +853,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Get note velocity configuration for applying curve
       const noteVelocityCfg = this.config.noteVelocity;
 
-      // Emit tablet event to event bus (throttled)
+      // Emit tablet event to event bus
       const tabletEventData: TabletEventData = {
         x,
         y,
@@ -921,7 +936,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
             }
           }
 
-          // Emit strum event to event bus (throttled)
+          // Emit strum event to event bus
           const strumEventData: StrumEventData = {
             type: 'strum',
             notes: event.notes.map((n: StrumNoteData): StrumNoteEventData => ({
@@ -974,7 +989,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
           // Reset strum start time
           this.strumStartTime = 0;
 
-          // Emit release event to event bus (throttled)
+          // Emit release event to event bus
           const releaseEventData: StrumEventData = {
             type: 'release',
             notes: [],

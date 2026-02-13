@@ -1119,6 +1119,7 @@ export class SketchatoneFullApp extends LitElement {
                 <tablet-buttons-config
                   .config=${this.getTabletButtonsConfig()}
                   .pressedButtons=${this.pressedButtons}
+                  .buttonCount=${this.tabletConfig?.getCapabilities()?.buttonCount ?? 8}
                   @config-change=${this.handleTabletButtonsConfigChange}
                 ></tablet-buttons-config>
               </dashboard-panel>
