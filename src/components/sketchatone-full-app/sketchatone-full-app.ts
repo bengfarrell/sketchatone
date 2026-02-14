@@ -8,6 +8,10 @@ import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { styles } from './sketchatone-full-app.styles.js';
 
+// Spectrum theme wrapper
+import '@spectrum-web-components/theme/sp-theme.js';
+import '@spectrum-web-components/theme/src/themes.js';
+
 // Spectrum components
 import '@spectrum-web-components/button/sp-button.js';
 import '@spectrum-web-components/action-button/sp-action-button.js';
@@ -206,8 +210,8 @@ class WebMidiOutput {
 export class SketchatoneFullApp extends LitElement {
   static styles = styles;
 
-  @property({ type: String })
-  themeColor: 'light' | 'dark' = 'light';
+  @state()
+  private themeColor: 'light' | 'dark' = 'light';
 
   // WebHID state
   @state() private hidConnected = false;
@@ -256,6 +260,28 @@ export class SketchatoneFullApp extends LitElement {
   private midiInput = new WebMidiInput();
   private strummer = new Strummer();
   private activeNotes: NoteObject[] = [];
+
+  constructor() {
+    super();
+    // Check for saved preference or system preference
+    const saved = localStorage.getItem('sketchatone-theme') as 'light' | 'dark' | null;
+    if (saved) {
+      this.themeColor = saved;
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      this.themeColor = 'dark';
+    }
+    this._updateDocumentBackground();
+  }
+
+  private _updateDocumentBackground() {
+    // Update document background to match theme for overscroll areas
+    const bgColor = this.themeColor === 'dark' ? '#1a1a1a' : '#f5f7fa';
+    document.documentElement.style.backgroundColor = bgColor;
+    document.body.style.backgroundColor = bgColor;
+    // Update theme class for scrollbar styling
+    document.documentElement.classList.remove('light-theme', 'dark-theme');
+    document.documentElement.classList.add(`${this.themeColor}-theme`);
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -656,10 +682,9 @@ export class SketchatoneFullApp extends LitElement {
   }
 
   private handleThemeToggle() {
-    this.dispatchEvent(new CustomEvent('theme-toggle', {
-      bubbles: true,
-      composed: true
-    }));
+    this.themeColor = this.themeColor === 'light' ? 'dark' : 'light';
+    localStorage.setItem('sketchatone-theme', this.themeColor);
+    this._updateDocumentBackground();
   }
 
   private handleChordChange(chord: string) {
@@ -734,32 +759,34 @@ export class SketchatoneFullApp extends LitElement {
     const hasActiveConnection = this.hidConnected;
 
     return html`
-      <div class="app">
-        <div class="page-content">
-          <div class="dashboard">
-            <!-- Header -->
-            ${this.renderHeader()}
+      <sp-theme system="spectrum" color=${this.themeColor} scale="medium">
+        <div class="app">
+          <div class="page-content">
+            <div class="dashboard">
+              <!-- Header -->
+              ${this.renderHeader()}
 
-            <!-- HID Connection Panel -->
-            ${this.renderHIDConnectionPanel()}
+              <!-- HID Connection Panel -->
+              ${this.renderHIDConnectionPanel()}
 
-            ${!hasActiveConnection ? html`
-              <div class="disconnected-message">
-                <p>Load a tablet configuration and connect via WebHID to start</p>
-              </div>
-            ` : html`
-              <!-- Visualization Section -->
-              ${this.renderVisualizationSection()}
+              ${!hasActiveConnection ? html`
+                <div class="disconnected-message">
+                  <p>Load a tablet configuration and connect via WebHID to start</p>
+                </div>
+              ` : html`
+                <!-- Visualization Section -->
+                ${this.renderVisualizationSection()}
 
-              <!-- Strumming Configuration Section -->
-              ${this.renderStrummingConfigSection()}
+                <!-- Strumming Configuration Section -->
+                ${this.renderStrummingConfigSection()}
 
-              <!-- Tablet Buttons Section -->
-              ${this.renderTabletButtonsSection()}
-            `}
+                <!-- Tablet Buttons Section -->
+                ${this.renderTabletButtonsSection()}
+              `}
+            </div>
           </div>
         </div>
-      </div>
+      </sp-theme>
     `;
   }
 

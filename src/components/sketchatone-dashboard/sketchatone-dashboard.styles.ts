@@ -211,20 +211,20 @@ export const styles = css`
     max-width: 100%;
   }
 
-  /* Settings Grid */
+  /* Settings Grid - matches visualizers-grid sizing */
   .settings-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
   }
 
-  @media (max-width: 1400px) {
+  @media (max-width: 1024px) {
     .settings-grid {
       grid-template-columns: repeat(2, 1fr);
     }
   }
 
-  @media (max-width: 800px) {
+  @media (max-width: 640px) {
     .settings-grid {
       grid-template-columns: 1fr;
     }

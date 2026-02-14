@@ -43,6 +43,9 @@ export class SketchatoneTabletApp extends LitElement {
     const bgColor = this.themeColor === 'dark' ? '#1a1a1a' : '#f5f7fa';
     document.documentElement.style.backgroundColor = bgColor;
     document.body.style.backgroundColor = bgColor;
+    // Update theme class for scrollbar styling
+    document.documentElement.classList.remove('light-theme', 'dark-theme');
+    document.documentElement.classList.add(`${this.themeColor}-theme`);
   }
 
   private _toggleTheme() {
