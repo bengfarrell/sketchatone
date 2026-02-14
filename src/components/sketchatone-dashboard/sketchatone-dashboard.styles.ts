@@ -150,43 +150,36 @@ export const styles = css`
     margin: 0;
   }
 
-  /* Collapsible Sections */
-  .visualizer-section {
-    background: var(--spectrum-gray-100);
-    border-radius: 8px;
-    overflow: hidden;
+  /* Panels Grid - main layout for all panels */
+  .panels-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 16px;
   }
 
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    padding: 12px 16px;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--spectrum-gray-800);
-    text-align: left;
+  @media (max-width: 1024px) {
+    .panels-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
-  .section-header:hover {
-    background: var(--spectrum-gray-200);
+  @media (max-width: 640px) {
+    .panels-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
-  .section-toggle {
-    font-size: 0.75rem;
-    color: var(--spectrum-gray-600);
-  }
-
-  .section-content {
-    padding: 16px;
-    border-top: 1px solid var(--spectrum-gray-200);
+  /* MIDI Panel Content */
+  .midi-panel-content {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 10px;
+  }
+
+  .midi-status-row {
+    display: flex;
+    justify-content: flex-start;
   }
 
   /* Strum Main Visualizer */
@@ -352,12 +345,20 @@ export const styles = css`
   }
 
   .visualizer-card {
-    background: var(--spectrum-gray-75);
-    border-radius: 8px;
+    background: var(--spectrum-gray-100);
+    border-radius: 12px;
+    border: 1px solid var(--spectrum-gray-200);
     padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .visualizer-card:hover {
+    border-color: var(--spectrum-gray-300);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
   }
 
   .visualizer-card.compact {

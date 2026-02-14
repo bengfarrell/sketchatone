@@ -143,6 +143,7 @@ export class DashboardPanel extends LitElement {
                             <h3 class="panel-title">${this.title}</h3>
                         </div>
                         <div class="header-controls">
+                            <slot name="header-actions"></slot>
                             ${this.minimizable ? html`
                                 <sp-action-button data-spectrum-pattern="action-button-quiet-xs" size="xs" quiet
                                     @click="${this.toggleMinimize}"

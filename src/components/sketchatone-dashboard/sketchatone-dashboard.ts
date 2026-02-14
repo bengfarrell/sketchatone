@@ -30,7 +30,18 @@ import '../strum-visualizers/strum-events-display.js';
 
 // Action rules config component
 import '../action-rules-config/action-rules-config.js';
+import { ActionRulesConfigComponent } from '../action-rules-config/action-rules-config.js';
 import { ActionRulesConfig, type ButtonId } from '../../models/action-rules.js';
+import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
+
+// Panel visibility management
+import './panel-toggle-bar.js';
+import {
+  type PanelId,
+  type PanelVisibility,
+  loadPanelVisibility,
+  savePanelVisibility
+} from './panel-visibility.js';
 
 // Blankslate utilities
 import {
@@ -107,15 +118,9 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private strummerConfig: ServerConfigData | null = null;
 
-  // Collapsible sections
+  // Panel visibility state (persisted to localStorage)
   @state()
-  private strumVisualizersExpanded = true;
-
-  @state()
-  private actionRulesExpanded = false;
-
-  @state()
-  private tabletVisualizersExpanded = true;
+  private panelVisibility: PanelVisibility = loadPanelVisibility();
 
   // Server MIDI input state (from Node.js server)
   @state()
@@ -137,6 +142,15 @@ export class SketchatoneDashboard extends LitElement {
 
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
+
+  // Getters for action-rules-config component refs
+  private get actionsConfigRef(): ActionRulesConfigComponent | null {
+    return this.renderRoot.querySelector('#actions-config') as ActionRulesConfigComponent | null;
+  }
+
+  private get groupsConfigRef(): ActionRulesConfigComponent | null {
+    return this.renderRoot.querySelector('#groups-config') as ActionRulesConfigComponent | null;
+  }
 
   // Client instance - either WebSocket or Electron IPC bridge
   private client: StrummerWebSocketClient | ElectronBridgeClient;
@@ -296,50 +310,28 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
-   * Render connection controls based on mode (Electron vs WebSocket)
+   * Render connection status based on mode (Electron vs WebSocket)
    */
-  private renderConnectionControls() {
+  private renderConnectionStatus() {
     if (this.websocketConnected) {
-      // Connected state - same for both modes
+      // Connected state
       return html`
         <div class="connection-group">
           <div class="status-badge connected">
             <span class="status-dot"></span>
             ${this.websocketServerInfo || 'Connected'}
           </div>
-          <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
-            Disconnect
-          </sp-button>
         </div>
       `;
     }
 
-    if (this.isElectronApp) {
-      // Electron mode - show device status (auto-connects)
-      return html`
-        <div class="connection-group">
-          <div class="status-badge disconnected">
-            <span class="status-dot"></span>
-            ${this.deviceStatusMessage}
-          </div>
-        </div>
-      `;
-    }
-
-    // WebSocket mode - URL input and connect button
+    // Disconnected state - show "Waiting for tablet..."
     return html`
       <div class="connection-group">
-        <sp-textfield
-          data-spectrum-pattern="textfield-s"
-          size="s"
-          placeholder="ws://localhost:8081"
-          value=${this.websocketUrl}
-          @input=${this.handleWebSocketUrlChange}
-          style="width: 250px;">
-        </sp-textfield>
-        <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
-          Connect
-        </sp-button>
+        <div class="status-badge disconnected">
+          <span class="status-dot"></span>
+          ${this.isElectronApp ? this.deviceStatusMessage : 'Waiting for tablet...'}
+        </div>
       </div>
     `;
   }
@@ -443,16 +435,20 @@ export class SketchatoneDashboard extends LitElement {
     return pressed;
   }
 
-  private toggleStrumVisualizers() {
-    this.strumVisualizersExpanded = !this.strumVisualizersExpanded;
+  /**
+   * Handle panel toggle from the toggle bar
+   */
+  private handlePanelToggle(e: CustomEvent<{ panelId: PanelId; visible: boolean }>) {
+    this.panelVisibility = { ...this.panelVisibility, [e.detail.panelId]: e.detail.visible };
+    savePanelVisibility(this.panelVisibility);
   }
 
-  private toggleActionRules() {
-    this.actionRulesExpanded = !this.actionRulesExpanded;
-  }
-
-  private toggleTabletVisualizers() {
-    this.tabletVisualizersExpanded = !this.tabletVisualizersExpanded;
+  /**
+   * Handle panel close from dashboard-panel close button
+   */
+  private handlePanelClose(panelId: PanelId) {
+    this.panelVisibility = { ...this.panelVisibility, [panelId]: false };
+    savePanelVisibility(this.panelVisibility);
   }
 
   /**
@@ -586,7 +582,7 @@ export class SketchatoneDashboard extends LitElement {
                   Export Configuration
                 </sp-button>
               </div>
-              ${this.renderConnectionControls()}
+              ${this.renderConnectionStatus()}
             </div>
             <div class="version-info">
               <span class="version-label">UI: v${this.uiVersion}</span>
@@ -600,239 +596,241 @@ export class SketchatoneDashboard extends LitElement {
             <p>${this.isElectronApp ? this.deviceStatusMessage : 'Connect to a WebSocket server to view strummer data'}</p>
           </div>
         ` : html`
-        <!-- Visualization Section (Collapsible) -->
-        <div class="visualizer-section">
-          <button class="section-header" @click=${this.toggleTabletVisualizers}>
-            <span class="section-title">Visualization</span>
-            <span class="section-toggle">${this.tabletVisualizersExpanded ? '▼' : '▶'}</span>
-          </button>
-          ${this.tabletVisualizersExpanded ? html`
-            <div class="section-content">
-              <div class="visualizers-grid">
-                <!-- Coordinates Panel with Strings -->
-                <div class="visualizer-card compact">
-                  <div class="visualizer-wrapper">
-                    <strum-visualizer
-                      mode="tablet"
-                      .socketMode=${hasActiveConnection}
-                      .tabletConnected=${hasActiveConnection}
-                      .externalTabletData=${this.tabletData}
-                      .externalPressedButtons=${this.pressedButtons}
-                      .stringCount=${this.strummerConfig?.notes?.length ?? 6}
-                      .notes=${this.strummerConfig?.notes ?? []}
-                      .externalLastPluckedString=${this.getLastPluckedStringIndex()}>
-                    </strum-visualizer>
-                  </div>
-                  <div class="data-values compact">
-                    <div class="data-item">
-                      <span class="data-label">X</span>
-                      <span class="data-value ${this.tabletData.x === 0 ? 'zero' : ''}">
-                        ${formatValue(this.tabletData.x)}
-                      </span>
-                    </div>
-                    <div class="data-item">
-                      <span class="data-label">Y</span>
-                      <span class="data-value ${this.tabletData.y === 0 ? 'zero' : ''}">
-                        ${formatValue(this.tabletData.y)}
-                      </span>
-                    </div>
-                    <div class="data-item">
-                      <span class="data-label">Btn</span>
-                      <span class="data-value ${this.pressedButtons.size > 0 ? 'active' : ''}">
-                        ${this.lastPressedButton !== null ? this.lastPressedButton : '–'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        <!-- Panel Toggle Bar -->
+        <panel-toggle-bar
+          .visibility=${this.panelVisibility}
+          @panel-toggle=${this.handlePanelToggle}>
+        </panel-toggle-bar>
 
-                <!-- Pressure & Tilt Panel -->
-                <div class="visualizer-card compact">
-                  <div class="visualizer-wrapper">
-                    <tablet-visualizer
-                      mode="tilt"
-                      .socketMode=${hasActiveConnection}
-                      .tabletConnected=${hasActiveConnection}
-                      .externalTabletData=${this.tabletData}
-                      .externalPressedButtons=${this.pressedButtons}>
-                    </tablet-visualizer>
-                  </div>
-                  <div class="data-values compact">
-                    <div class="data-item">
-                      <span class="data-label">Pressure</span>
-                      <span class="data-value ${this.tabletData.pressure === 0 ? 'zero' : ''}">
-                        ${formatValue(this.tabletData.pressure)}
-                      </span>
-                    </div>
-                    <div class="data-item">
-                      <span class="data-label">Tilt X</span>
-                      <span class="data-value ${this.tabletData.tiltX === 0 ? 'zero' : ''}">
-                        ${formatValue(this.tabletData.tiltX)}
-                      </span>
-                    </div>
-                    <div class="data-item">
-                      <span class="data-label">Tilt Y</span>
-                      <span class="data-value ${this.tabletData.tiltY === 0 ? 'zero' : ''}">
-                        ${formatValue(this.tabletData.tiltY)}
-                      </span>
-                    </div>
-                  </div>
+        <!-- All Panels Grid -->
+        <div class="panels-grid">
+          <!-- Tablet Visualizer Panel -->
+          ${this.panelVisibility.tabletVisualizer ? html`
+            <dashboard-panel title="Tablet Visualizer" panelId="tabletVisualizer" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('tabletVisualizer')}>
+              <div class="visualizer-wrapper">
+                <strum-visualizer
+                  mode="tablet"
+                  .socketMode=${hasActiveConnection}
+                  .tabletConnected=${hasActiveConnection}
+                  .externalTabletData=${this.tabletData}
+                  .externalPressedButtons=${this.pressedButtons}
+                  .stringCount=${this.strummerConfig?.notes?.length ?? 6}
+                  .notes=${this.strummerConfig?.notes ?? []}
+                  .externalLastPluckedString=${this.getLastPluckedStringIndex()}>
+                </strum-visualizer>
+              </div>
+              <div class="data-values compact">
+                <div class="data-item">
+                  <span class="data-label">X</span>
+                  <span class="data-value ${this.tabletData.x === 0 ? 'zero' : ''}">${formatValue(this.tabletData.x)}</span>
                 </div>
-
-                <!-- MIDI Input Panel -->
-                <div class="visualizer-card compact midi-panel">
-                  <div class="midi-panel-header">
-                    <span class="midi-panel-title">MIDI Input</span>
-                    <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
-                      <span class="status-dot"></span>
-                      ${this.serverMidiConnected ? 'connected' : 'disconnected'}
-                    </div>
-                  </div>
-                  <div class="midi-notes compact">
-                    <span class="midi-notes-label">Notes:</span>
-                    <span class="midi-notes-value">${this.serverMidiNotes.length > 0
-                      ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
-                      : '—'}</span>
-                  </div>
-                  ${this.lastMidiPortName ? html`
-                    <div class="midi-source">from: ${this.lastMidiPortName}</div>
-                  ` : ''}
+                <div class="data-item">
+                  <span class="data-label">Y</span>
+                  <span class="data-value ${this.tabletData.y === 0 ? 'zero' : ''}">${formatValue(this.tabletData.y)}</span>
                 </div>
-
-                <!-- Events Panel -->
-                <div class="visualizer-card events-panel">
-                  <strum-events-display
-                    .events=${this.tabletEvents}
-                    .isEmpty=${this.tabletEvents.length === 0}
-                    .lastStrumEvent=${this.lastStrumEvent}
-                    .deviceInfo=${{ packetCount: this.packetCount, isMock: false, isTranslated: true }}>
-                  </strum-events-display>
+                <div class="data-item">
+                  <span class="data-label">Btn</span>
+                  <span class="data-value ${this.pressedButtons.size > 0 ? 'active' : ''}">${this.lastPressedButton !== null ? this.lastPressedButton : '–'}</span>
                 </div>
               </div>
-            </div>
+            </dashboard-panel>
           ` : ''}
-        </div>
 
-        <!-- Strumming Configuration Section (Collapsible) -->
-        <div class="visualizer-section">
-          <button class="section-header" @click=${this.toggleStrumVisualizers}>
-            <span class="section-title">Strumming Configuration</span>
-            <span class="section-toggle">${this.strumVisualizersExpanded ? '▼' : '▶'}</span>
-          </button>
-          ${this.strumVisualizersExpanded ? html`
-            <div class="section-content">
-              <div class="settings-grid">
-                <!-- Curve Visualizers -->
-                <dashboard-panel title="Note Velocity" size="small" .draggable=${false} .minimizable=${false}>
-                  <curve-visualizer
-                    label="Note Velocity"
-                    parameterKey="noteVelocity"
-                    control="${this.fullConfig?.strummer?.noteVelocity?.control ?? 'pressure'}"
-                    outputLabel="Velocity"
-                    color="#51cf66"
-                    .config=${this.fullConfig?.strummer?.noteVelocity ?? { min: 0, max: 127, curve: 4, spread: 'direct', multiplier: 1 }}
-                    @config-change=${this.handleCurveConfigChange}
-                    @control-change=${this.handleCurveControlChange}>
-                  </curve-visualizer>
-                </dashboard-panel>
-
-                <dashboard-panel title="Note Duration" size="small" .draggable=${false} .minimizable=${false}>
-                  <curve-visualizer
-                    label="Note Duration"
-                    parameterKey="noteDuration"
-                    control="${this.fullConfig?.strummer?.noteDuration?.control ?? 'tiltXY'}"
-                    outputLabel="Duration"
-                    color="#f59f00"
-                    .config=${this.fullConfig?.strummer?.noteDuration ?? { min: 0.15, max: 1.5, curve: 1, spread: 'inverse', multiplier: 1 }}
-                    @config-change=${this.handleCurveConfigChange}
-                    @control-change=${this.handleCurveControlChange}>
-                  </curve-visualizer>
-                </dashboard-panel>
-
-                <dashboard-panel title="Pitch Bend" size="small" .draggable=${false} .minimizable=${false}>
-                  <curve-visualizer
-                    label="Pitch Bend"
-                    parameterKey="pitchBend"
-                    control="${this.fullConfig?.strummer?.pitchBend?.control ?? 'yaxis'}"
-                    outputLabel="Bend"
-                    color="#339af0"
-                    .config=${this.fullConfig?.strummer?.pitchBend ?? { min: -1, max: 1, curve: 4, spread: 'central', multiplier: 1 }}
-                    @config-change=${this.handleCurveConfigChange}
-                    @control-change=${this.handleCurveControlChange}>
-                  </curve-visualizer>
-                </dashboard-panel>
-
-                <!-- Settings Panels -->
-                <dashboard-panel title="Strumming Settings" size="medium" .draggable=${false} .minimizable=${false}>
-                  <div class="settings-form">
-                    <div class="setting-row">
-                      <label>Pluck Velocity Scale</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pluckVelocityScale ?? 4.0}" step="0.1" min="0.1" max="10"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.pluckVelocityScale', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Pressure Threshold</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>MIDI Channel</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.midiChannel ?? 1}" step="1" min="1" max="16"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Upper Note Spread</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3}" step="1" min="0" max="12"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Lower Note Spread</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                  </div>
-                </dashboard-panel>
-
-                <dashboard-panel title="Strum Release" size="medium" .draggable=${false} .minimizable=${false}
-                  .hasActiveControl=${true}
-                  .active=${this.fullConfig?.strummer?.strumRelease?.active ?? false}
-                  @active-change=${(e: CustomEvent) => this.updateConfig('strummer.strumRelease.active', e.detail.active)}>
-                  <div class="settings-form">
-                    <div class="setting-row">
-                      <label>MIDI Note</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38}" step="1" min="0" max="127"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>MIDI Channel</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 10}" step="1" min="1" max="16"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Max Duration</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25}" step="0.05" min="0.05" max="2"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Velocity Multiplier</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0}" step="0.1" min="0.1" max="2"
-                        @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                  </div>
-                </dashboard-panel>
+          <!-- Stylus Visualizer Panel -->
+          ${this.panelVisibility.stylusVisualizer ? html`
+            <dashboard-panel title="Stylus Visualizer" panelId="stylusVisualizer" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('stylusVisualizer')}>
+              <div class="visualizer-wrapper">
+                <tablet-visualizer
+                  mode="tilt"
+                  .socketMode=${hasActiveConnection}
+                  .tabletConnected=${hasActiveConnection}
+                  .externalTabletData=${this.tabletData}
+                  .externalPressedButtons=${this.pressedButtons}>
+                </tablet-visualizer>
               </div>
-            </div>
+              <div class="data-values compact">
+                <div class="data-item">
+                  <span class="data-label">Pressure</span>
+                  <span class="data-value ${this.tabletData.pressure === 0 ? 'zero' : ''}">${formatValue(this.tabletData.pressure)}</span>
+                </div>
+                <div class="data-item">
+                  <span class="data-label">Tilt X</span>
+                  <span class="data-value ${this.tabletData.tiltX === 0 ? 'zero' : ''}">${formatValue(this.tabletData.tiltX)}</span>
+                </div>
+                <div class="data-item">
+                  <span class="data-label">Tilt Y</span>
+                  <span class="data-value ${this.tabletData.tiltY === 0 ? 'zero' : ''}">${formatValue(this.tabletData.tiltY)}</span>
+                </div>
+              </div>
+            </dashboard-panel>
           ` : ''}
-        </div>
 
-        <!-- Action Rules Section (Collapsible) -->
-        <div class="visualizer-section">
-          <button class="section-header" @click=${this.toggleActionRules}>
-            <span class="section-title">Action Rules</span>
-            <span class="section-toggle">${this.actionRulesExpanded ? '▼' : '▶'}</span>
-          </button>
-          ${this.actionRulesExpanded ? html`
-            <div class="section-content">
+          <!-- MIDI Input Panel -->
+          ${this.panelVisibility.midiInput ? html`
+            <dashboard-panel title="MIDI Input" panelId="midiInput" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('midiInput')}>
+              <div class="midi-panel-content">
+                <div class="midi-status-row">
+                  <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
+                    <span class="status-dot"></span>
+                    ${this.serverMidiConnected ? 'connected' : 'disconnected'}
+                  </div>
+                </div>
+                <div class="midi-notes compact">
+                  <span class="midi-notes-label">Notes:</span>
+                  <span class="midi-notes-value">${this.serverMidiNotes.length > 0
+                    ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
+                    : '—'}</span>
+                </div>
+                ${this.lastMidiPortName ? html`
+                  <div class="midi-source">from: ${this.lastMidiPortName}</div>
+                ` : ''}
+              </div>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Events Panel -->
+          ${this.panelVisibility.events ? html`
+            <dashboard-panel title="Events" panelId="events" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('events')}>
+              <strum-events-display
+                .events=${this.tabletEvents}
+                .isEmpty=${this.tabletEvents.length === 0}
+                .lastStrumEvent=${this.lastStrumEvent}
+                .deviceInfo=${{ packetCount: this.packetCount, isMock: false, isTranslated: true }}>
+              </strum-events-display>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Note Velocity Panel -->
+          ${this.panelVisibility.noteVelocity ? html`
+            <dashboard-panel title="Note Velocity" panelId="noteVelocity" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('noteVelocity')}>
+              <curve-visualizer
+                label="Note Velocity"
+                parameterKey="noteVelocity"
+                control="${this.fullConfig?.strummer?.noteVelocity?.control ?? 'pressure'}"
+                outputLabel="Velocity"
+                color="#51cf66"
+                .config=${this.fullConfig?.strummer?.noteVelocity ?? { min: 0, max: 127, curve: 4, spread: 'direct', multiplier: 1 }}
+                @config-change=${this.handleCurveConfigChange}
+                @control-change=${this.handleCurveControlChange}>
+              </curve-visualizer>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Note Duration Panel -->
+          ${this.panelVisibility.noteDuration ? html`
+            <dashboard-panel title="Note Duration" panelId="noteDuration" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('noteDuration')}>
+              <curve-visualizer
+                label="Note Duration"
+                parameterKey="noteDuration"
+                control="${this.fullConfig?.strummer?.noteDuration?.control ?? 'tiltXY'}"
+                outputLabel="Duration"
+                color="#f59f00"
+                .config=${this.fullConfig?.strummer?.noteDuration ?? { min: 0.15, max: 1.5, curve: 1, spread: 'inverse', multiplier: 1 }}
+                @config-change=${this.handleCurveConfigChange}
+                @control-change=${this.handleCurveControlChange}>
+              </curve-visualizer>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Pitch Bend Panel -->
+          ${this.panelVisibility.pitchBend ? html`
+            <dashboard-panel title="Pitch Bend" panelId="pitchBend" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('pitchBend')}>
+              <curve-visualizer
+                label="Pitch Bend"
+                parameterKey="pitchBend"
+                control="${this.fullConfig?.strummer?.pitchBend?.control ?? 'yaxis'}"
+                outputLabel="Bend"
+                color="#339af0"
+                .config=${this.fullConfig?.strummer?.pitchBend ?? { min: -1, max: 1, curve: 4, spread: 'central', multiplier: 1 }}
+                @config-change=${this.handleCurveConfigChange}
+                @control-change=${this.handleCurveControlChange}>
+              </curve-visualizer>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Strumming Settings Panel -->
+          ${this.panelVisibility.strummingSettings ? html`
+            <dashboard-panel title="Strumming Settings" panelId="strummingSettings" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('strummingSettings')}>
+              <div class="settings-form">
+                <div class="setting-row">
+                  <label>Pluck Velocity Scale</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pluckVelocityScale ?? 4.0}" step="0.1" min="0.1" max="10"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pluckVelocityScale', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Pressure Threshold</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>MIDI Channel</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.midiChannel ?? 1}" step="1" min="1" max="16"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Upper Note Spread</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3}" step="1" min="0" max="12"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Lower Note Spread</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+              </div>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Strum Release Panel -->
+          ${this.panelVisibility.strumRelease ? html`
+            <dashboard-panel title="Strum Release" panelId="strumRelease" .closable=${true} .draggable=${false} .minimizable=${false}
+              .hasActiveControl=${true}
+              .active=${this.fullConfig?.strummer?.strumRelease?.active ?? false}
+              @active-change=${(e: CustomEvent) => this.updateConfig('strummer.strumRelease.active', e.detail.active)}
+              @panel-close=${() => this.handlePanelClose('strumRelease')}>
+              <div class="settings-form">
+                <div class="setting-row">
+                  <label>MIDI Note</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38}" step="1" min="0" max="127"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>MIDI Channel</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 10}" step="1" min="1" max="16"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Max Duration</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25}" step="0.05" min="0.05" max="2"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Velocity Multiplier</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0}" step="0.1" min="0.1" max="2"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+              </div>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Actions Panel -->
+          ${this.panelVisibility.actions ? html`
+            <dashboard-panel title="Actions" panelId="actions" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('actions')}>
+              <sp-action-button slot="header-actions" size="s" quiet @click=${() => this.actionsConfigRef?.openAddAction()}>
+                <sp-icon-add slot="icon"></sp-icon-add>
+              </sp-action-button>
               <action-rules-config
+                id="actions-config"
+                mode="actions"
                 .config=${this.getActionRulesConfig()}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
@@ -840,7 +838,27 @@ export class SketchatoneDashboard extends LitElement {
                 .hasSecondaryButton=${true}
                 @config-change=${this.handleActionRulesConfigChange}
               ></action-rules-config>
-            </div>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Groups Panel -->
+          ${this.panelVisibility.groups ? html`
+            <dashboard-panel title="Groups" panelId="groups" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('groups')}>
+              <sp-action-button slot="header-actions" size="s" quiet @click=${() => this.groupsConfigRef?.openAddGroup()}>
+                <sp-icon-add slot="icon"></sp-icon-add>
+              </sp-action-button>
+              <action-rules-config
+                id="groups-config"
+                mode="groups"
+                .config=${this.getActionRulesConfig()}
+                .pressedButtons=${this.getPressedButtonIds()}
+                .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
+                .hasPrimaryButton=${true}
+                .hasSecondaryButton=${true}
+                @config-change=${this.handleActionRulesConfigChange}
+              ></action-rules-config>
+            </dashboard-panel>
           ` : ''}
         </div>
         `}

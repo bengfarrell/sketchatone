@@ -12,40 +12,72 @@ export const styles = css`
     gap: 24px;
   }
 
+  /* Single panel mode - panel takes full width without wrapper */
+  .config-section.single-panel .panel {
+    width: 100%;
+  }
+
+  /* Two-column layout for panels */
+  .panels-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .panels-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
   /* Unified panel container */
   .panel {
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--spectrum-gray-100);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--spectrum-gray-200);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .panel:hover {
+    border-color: var(--spectrum-gray-300);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
   }
 
   .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 12px 16px;
+    background: var(--spectrum-gray-200);
+    border-bottom: 1px solid var(--spectrum-gray-300);
   }
 
   .section-title {
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.95em;
+    color: var(--spectrum-gray-900);
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
   }
 
   .rules-list {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 400px;
   }
 
   .rule-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--spectrum-gray-200);
   }
 
   .rule-item:last-child {
@@ -53,73 +85,77 @@ export const styles = css`
   }
 
   .rule-item:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--spectrum-gray-100);
   }
 
   .rule-button-id {
-    min-width: 120px;
+    min-width: 80px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--spectrum-gray-900);
+    font-size: 0.85em;
   }
 
   .rule-arrow {
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--spectrum-gray-500);
   }
 
   .rule-action {
     flex: 1;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--spectrum-gray-800);
+    font-size: 0.85em;
   }
 
   .rule-trigger {
     padding: 2px 8px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--spectrum-gray-200);
     border-radius: 4px;
-    font-size: 0.8em;
-    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75em;
+    color: var(--spectrum-gray-700);
   }
 
   .rule-type-badge {
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 4px;
-    font-size: 0.75em;
+    font-size: 0.7em;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
   }
 
   .rule-type-badge.button {
-    background: rgba(59, 130, 246, 0.2);
-    color: rgb(147, 197, 253);
+    background: var(--spectrum-blue-100);
+    color: var(--spectrum-blue-900);
   }
 
   .rule-type-badge.group {
-    background: rgba(168, 85, 247, 0.2);
-    color: rgb(216, 180, 254);
+    background: var(--spectrum-purple-100);
+    color: var(--spectrum-purple-900);
   }
 
   .rule-type-badge.startup {
-    background: rgba(234, 179, 8, 0.2);
-    color: rgb(253, 224, 71);
+    background: var(--spectrum-yellow-100);
+    color: var(--spectrum-yellow-900);
   }
 
   .rule-name {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.85em;
+    color: var(--spectrum-gray-600);
+    font-size: 0.8em;
     font-style: italic;
   }
 
   .rule-actions {
     display: flex;
-    gap: 4px;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .group-item {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--spectrum-gray-200);
   }
 
   .group-item:last-child {
@@ -127,7 +163,7 @@ export const styles = css`
   }
 
   .group-item:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--spectrum-gray-100);
   }
 
   .group-header {
@@ -138,14 +174,15 @@ export const styles = css`
 
   .group-name {
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--spectrum-gray-900);
+    font-size: 0.9em;
   }
 
   .group-details {
     display: flex;
     gap: 16px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.9em;
+    color: var(--spectrum-gray-700);
+    font-size: 0.85em;
   }
 
   .group-buttons {
@@ -156,25 +193,27 @@ export const styles = css`
 
   .button-chip {
     padding: 4px 10px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--spectrum-gray-200);
     border-radius: 4px;
-    font-size: 0.85em;
-    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.8em;
+    color: var(--spectrum-gray-800);
   }
 
   .button-chip.pressed {
-    background: var(--spectrum-global-color-blue-500);
+    background: var(--spectrum-blue-400);
+    color: white;
   }
 
   .startup-icon {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--spectrum-gray-600);
   }
 
   .empty-state {
-    padding: 32px 24px;
+    padding: 24px 16px;
     text-align: center;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--spectrum-gray-600);
     font-style: italic;
+    font-size: 0.9em;
   }
 
   /* Add/Edit Form Styles */
@@ -184,7 +223,7 @@ export const styles = css`
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -192,20 +231,21 @@ export const styles = css`
   }
 
   .form-dialog {
-    background: var(--spectrum-global-color-gray-100);
+    background: var(--spectrum-gray-100);
     border-radius: 12px;
     padding: 24px;
     min-width: 400px;
     max-width: 500px;
     max-height: 80vh;
     overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   }
 
   .form-title {
-    font-size: 1.2em;
+    font-size: 1.1em;
     font-weight: 600;
     margin-bottom: 20px;
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--spectrum-gray-900);
   }
 
   .form-field {
@@ -251,6 +291,6 @@ export const styles = css`
   }
 
   sp-action-button {
-    --spectrum-actionbutton-m-min-width: 32px;
+    --spectrum-actionbutton-m-min-width: 28px;
   }
 `;

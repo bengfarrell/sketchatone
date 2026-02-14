@@ -73,6 +73,10 @@ export class ActionRulesConfigComponent extends LitElement {
   @property({ type: Object })
   config?: ActionRulesConfig;
 
+  /** Display mode: 'all' shows both panels, 'actions' shows only actions, 'groups' shows only groups */
+  @property({ type: String })
+  mode: 'all' | 'actions' | 'groups' = 'all';
+
   /** Set of currently pressed button IDs for visual feedback */
   @property({ type: Object })
   pressedButtons: Set<ButtonId> = new Set();
@@ -480,8 +484,18 @@ export class ActionRulesConfigComponent extends LitElement {
     this.dispatchConfigChange();
   }
 
+  // Public method to open add action form (for external trigger from header button)
+  public openAddAction() {
+    this.openAddActionForm();
+  }
+
+  // Public method to open add group form (for external trigger from header button)
+  public openAddGroup() {
+    this.openAddGroupForm();
+  }
+
   // Render methods
-  private renderActionsList() {
+  private renderActionsListContent() {
     const rules = this.config?.rules ?? [];
     const groupRules = this.config?.groupRules ?? [];
     const startupRules = this.config?.startupRules ?? [];
@@ -489,6 +503,74 @@ export class ActionRulesConfigComponent extends LitElement {
 
     const hasAnyActions = rules.length > 0 || groupRules.length > 0 || startupRules.length > 0;
 
+    return html`
+      <div class="rules-list">
+        ${!hasAnyActions
+          ? html`<div class="empty-state">No actions configured</div>`
+          : html`
+              ${rules.map(
+                (rule) => html`
+                  <div class="rule-item">
+                    <span class="rule-type-badge button">Button</span>
+                    <span class="rule-button-id">${getButtonLabel(rule.button, this.config?.buttonNames)}</span>
+                    <span class="rule-arrow">→</span>
+                    <span class="rule-action">${this.formatAction(rule.action)}</span>
+                    <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
+                    ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
+                    <div class="rule-actions">
+                      <sp-action-button size="s" quiet @click=${() => this.openEditButtonRuleForm(rule)}>
+                        <sp-icon-edit slot="icon"></sp-icon-edit>
+                      </sp-action-button>
+                      <sp-action-button size="s" quiet @click=${() => this.deleteRule(rule.id)}>
+                        <sp-icon-delete slot="icon"></sp-icon-delete>
+                      </sp-action-button>
+                    </div>
+                  </div>
+                `
+              )}
+              ${groupRules.map((rule) => {
+                const group = groups.find((g) => g.id === rule.groupId);
+                return html`
+                  <div class="rule-item">
+                    <span class="rule-type-badge group">Group</span>
+                    <span class="rule-button-id">${group?.name ?? 'Unknown Group'}</span>
+                    <span class="rule-arrow">→</span>
+                    <span class="rule-action">${rule.action.type}: ${rule.action.progression} (Oct ${rule.action.octave})</span>
+                    ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
+                    <div class="rule-actions">
+                      <sp-action-button size="s" quiet @click=${() => this.openEditGroupRuleForm(rule)}>
+                        <sp-icon-edit slot="icon"></sp-icon-edit>
+                      </sp-action-button>
+                      <sp-action-button size="s" quiet @click=${() => this.deleteGroupRule(rule.id)}>
+                        <sp-icon-delete slot="icon"></sp-icon-delete>
+                      </sp-action-button>
+                    </div>
+                  </div>
+                `;
+              })}
+              ${startupRules.map(
+                (rule) => html`
+                  <div class="rule-item">
+                    <span class="rule-type-badge startup">Startup</span>
+                    <span class="startup-icon">⚡</span>
+                    <span class="rule-action">${rule.name}: ${this.formatAction(rule.action)}</span>
+                    <div class="rule-actions">
+                      <sp-action-button size="s" quiet @click=${() => this.openEditStartupRuleForm(rule)}>
+                        <sp-icon-edit slot="icon"></sp-icon-edit>
+                      </sp-action-button>
+                      <sp-action-button size="s" quiet @click=${() => this.deleteStartupRule(rule.id)}>
+                        <sp-icon-delete slot="icon"></sp-icon-delete>
+                      </sp-action-button>
+                    </div>
+                  </div>
+                `
+              )}
+            `}
+      </div>
+    `;
+  }
+
+  private renderActionsList() {
     return html`
       <div class="panel">
         <div class="section-header">
@@ -498,76 +580,48 @@ export class ActionRulesConfigComponent extends LitElement {
             Add Action
           </sp-action-button>
         </div>
-        <div class="rules-list">
-          ${!hasAnyActions
-            ? html`<div class="empty-state">No actions configured</div>`
-            : html`
-                ${rules.map(
-                  (rule) => html`
-                    <div class="rule-item">
-                      <span class="rule-type-badge button">Button</span>
-                      <span class="rule-button-id">${getButtonLabel(rule.button, this.config?.buttonNames)}</span>
-                      <span class="rule-arrow">→</span>
-                      <span class="rule-action">${this.formatAction(rule.action)}</span>
-                      <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
-                      ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
-                      <div class="rule-actions">
-                        <sp-action-button size="s" quiet @click=${() => this.openEditButtonRuleForm(rule)}>
-                          <sp-icon-edit slot="icon"></sp-icon-edit>
-                        </sp-action-button>
-                        <sp-action-button size="s" quiet @click=${() => this.deleteRule(rule.id)}>
-                          <sp-icon-delete slot="icon"></sp-icon-delete>
-                        </sp-action-button>
-                      </div>
+        ${this.renderActionsListContent()}
+      </div>
+    `;
+  }
+
+  private renderGroupsListContent() {
+    const groups = this.config?.groups ?? [];
+
+    return html`
+      <div class="rules-list">
+        ${groups.length === 0
+          ? html`<div class="empty-state">No button groups configured</div>`
+          : groups.map(
+              (group) => html`
+                <div class="group-item">
+                  <div class="group-header">
+                    <span class="group-name">${group.name}</span>
+                    <div class="rule-actions">
+                      <sp-action-button size="s" quiet @click=${() => this.openEditGroupForm(group)}>
+                        <sp-icon-edit slot="icon"></sp-icon-edit>
+                      </sp-action-button>
+                      <sp-action-button size="s" quiet @click=${() => this.deleteGroup(group.id)}>
+                        <sp-icon-delete slot="icon"></sp-icon-delete>
+                      </sp-action-button>
                     </div>
-                  `
-                )}
-                ${groupRules.map((rule) => {
-                  const group = groups.find((g) => g.id === rule.groupId);
-                  return html`
-                    <div class="rule-item">
-                      <span class="rule-type-badge group">Group</span>
-                      <span class="rule-button-id">${group?.name ?? 'Unknown Group'}</span>
-                      <span class="rule-arrow">→</span>
-                      <span class="rule-action">${rule.action.type}: ${rule.action.progression} (Oct ${rule.action.octave})</span>
-                      ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
-                      <div class="rule-actions">
-                        <sp-action-button size="s" quiet @click=${() => this.openEditGroupRuleForm(rule)}>
-                          <sp-icon-edit slot="icon"></sp-icon-edit>
-                        </sp-action-button>
-                        <sp-action-button size="s" quiet @click=${() => this.deleteGroupRule(rule.id)}>
-                          <sp-icon-delete slot="icon"></sp-icon-delete>
-                        </sp-action-button>
-                      </div>
-                    </div>
-                  `;
-                })}
-                ${startupRules.map(
-                  (rule) => html`
-                    <div class="rule-item">
-                      <span class="rule-type-badge startup">Startup</span>
-                      <span class="startup-icon">⚡</span>
-                      <span class="rule-action">${rule.name}: ${this.formatAction(rule.action)}</span>
-                      <div class="rule-actions">
-                        <sp-action-button size="s" quiet @click=${() => this.openEditStartupRuleForm(rule)}>
-                          <sp-icon-edit slot="icon"></sp-icon-edit>
-                        </sp-action-button>
-                        <sp-action-button size="s" quiet @click=${() => this.deleteStartupRule(rule.id)}>
-                          <sp-icon-delete slot="icon"></sp-icon-delete>
-                        </sp-action-button>
-                      </div>
-                    </div>
-                  `
-                )}
-              `}
-        </div>
+                  </div>
+                  <div class="group-buttons">
+                    ${group.buttons.map((btn) => {
+                      const isPressed = this.pressedButtons.has(btn);
+                      return html`<span class="button-chip ${isPressed ? 'pressed' : ''}"
+                        >${getButtonLabel(btn, this.config?.buttonNames)}</span
+                      >`;
+                    })}
+                  </div>
+                </div>
+              `
+            )}
       </div>
     `;
   }
 
   private renderGroupsList() {
-    const groups = this.config?.groups ?? [];
-
     return html`
       <div class="panel">
         <div class="section-header">
@@ -577,35 +631,7 @@ export class ActionRulesConfigComponent extends LitElement {
             Add Group
           </sp-action-button>
         </div>
-        <div class="rules-list">
-          ${groups.length === 0
-            ? html`<div class="empty-state">No button groups configured</div>`
-            : groups.map(
-                (group) => html`
-                  <div class="group-item">
-                    <div class="group-header">
-                      <span class="group-name">${group.name}</span>
-                      <div class="rule-actions">
-                        <sp-action-button size="s" quiet @click=${() => this.openEditGroupForm(group)}>
-                          <sp-icon-edit slot="icon"></sp-icon-edit>
-                        </sp-action-button>
-                        <sp-action-button size="s" quiet @click=${() => this.deleteGroup(group.id)}>
-                          <sp-icon-delete slot="icon"></sp-icon-delete>
-                        </sp-action-button>
-                      </div>
-                    </div>
-                    <div class="group-buttons">
-                      ${group.buttons.map((btn) => {
-                        const isPressed = this.pressedButtons.has(btn);
-                        return html`<span class="button-chip ${isPressed ? 'pressed' : ''}"
-                          >${getButtonLabel(btn, this.config?.buttonNames)}</span
-                        >`;
-                      })}
-                    </div>
-                  </div>
-                `
-              )}
-        </div>
+        ${this.renderGroupsListContent()}
       </div>
     `;
   }
@@ -825,9 +851,20 @@ export class ActionRulesConfigComponent extends LitElement {
   }
 
   render() {
+    const showActions = this.mode === 'all' || this.mode === 'actions';
+    const showGroups = this.mode === 'all' || this.mode === 'groups';
+
     return html`
-      <div class="config-section">
-        ${this.renderActionsList()} ${this.renderGroupsList()}
+      <div class="config-section ${this.mode !== 'all' ? 'single-panel' : ''}">
+        ${this.mode === 'all' ? html`
+          <div class="panels-row">
+            ${this.renderActionsList()}
+            ${this.renderGroupsList()}
+          </div>
+        ` : html`
+          ${showActions ? this.renderActionsListContent() : ''}
+          ${showGroups ? this.renderGroupsListContent() : ''}
+        `}
         ${this.formMode === 'add-action' || this.formMode === 'edit-action' ? this.renderActionForm() : ''}
         ${this.formMode === 'add-group' || this.formMode === 'edit-group' ? this.renderGroupForm() : ''}
       </div>
