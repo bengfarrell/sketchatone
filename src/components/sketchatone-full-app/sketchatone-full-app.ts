@@ -236,6 +236,7 @@ export class SketchatoneFullApp extends LitElement {
     secondaryButtonPressed: false
   };
   @state() private pressedButtons: Set<number> = new Set();
+  @state() private lastPressedButton: number | null = null;
   @state() private tabletEvents: StrumTabletEvent[] = [];
   @state() private lastStrumEvent: StrumEvent | null = null;
   @state() private packetCount = 0;
@@ -331,6 +332,11 @@ export class SketchatoneFullApp extends LitElement {
     // Extract button states
     this.pressedButtons = this.extractButtonsFromData(processed);
 
+    // Track last pressed button for display
+    if (this.pressedButtons.size > 0) {
+      this.lastPressedButton = Array.from(this.pressedButtons)[0];
+    }
+
     // Update shared controller
     const isPressed = this.tabletData.pressure > 0;
     sharedTabletInteraction.setTabletPosition(this.tabletData.x, this.tabletData.y, isPressed);
@@ -365,6 +371,15 @@ export class SketchatoneFullApp extends LitElement {
       primaryButtonPressed: this.tabletData.primaryButtonPressed,
       secondaryButtonPressed: this.tabletData.secondaryButtonPressed,
       state: processed.state as string | undefined,
+      // Include tablet hardware button states
+      button1: Boolean(processed.button1),
+      button2: Boolean(processed.button2),
+      button3: Boolean(processed.button3),
+      button4: Boolean(processed.button4),
+      button5: Boolean(processed.button5),
+      button6: Boolean(processed.button6),
+      button7: Boolean(processed.button7),
+      button8: Boolean(processed.button8),
     };
 
     if (this.lastStrumEvent) {
@@ -562,6 +577,7 @@ export class SketchatoneFullApp extends LitElement {
       secondaryButtonPressed: false
     };
     this.pressedButtons = new Set();
+    this.lastPressedButton = null;
     this.tabletEvents = [];
     this.lastStrumEvent = null;
     this.packetCount = 0;
@@ -915,6 +931,10 @@ export class SketchatoneFullApp extends LitElement {
                   <div class="data-item">
                     <span class="data-label">Y</span>
                     <span class="data-value ${this.tabletData.y === 0 ? 'zero' : ''}">${formatValue(this.tabletData.y)}</span>
+                  </div>
+                  <div class="data-item">
+                    <span class="data-label">Btn</span>
+                    <span class="data-value ${this.pressedButtons.size > 0 ? 'active' : ''}">${this.lastPressedButton !== null ? this.lastPressedButton : '–'}</span>
                   </div>
                 </div>
               </div>

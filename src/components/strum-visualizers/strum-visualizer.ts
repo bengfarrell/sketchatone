@@ -40,12 +40,9 @@ export class StrumVisualizer extends TabletVisualizer {
 
         const stringSpacing = activeAreaWidth / (this.stringCount + 1);
 
-        // Button area dimensions (matching parent's renderButtons)
-        const buttonRadius = 8;
-        const verticalPadding = 20;
-        const buttonCenterY = activeAreaY + verticalPadding + buttonRadius;
-        const buttonMargin = 5;
-        const stringStartY = buttonCenterY + buttonRadius + buttonMargin;
+        // Strings extend from top to bottom of active area (with small padding)
+        const topPadding = 5;
+        const stringStartY = activeAreaY + topPadding;
 
         // Leave room for labels at the bottom
         const labelHeight = 18;

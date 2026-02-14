@@ -3,25 +3,26 @@
  *
  * Main process module that handles HID reading, strummer processing, and MIDI output.
  * This replaces WebSocket communication with direct IPC for the Electron app.
+ *
+ * Extends TabletReaderBase from blankslate to share device management and packet processing logic.
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { usb } from 'usb';
 
 // Import from blankslate CLI modules
 import {
+  TabletReaderBase,
   normalizeTabletEvent,
   resolveConfigPath,
   findConfigForDevice,
   loadConfig,
-  initializeRealDevice
 } from 'blankslate/cli/tablet-reader-base.js';
 // Import from blankslate main exports
-import { Config, processDeviceData, processKeyboardButtonData, type KeyboardButtonsConfig } from 'blankslate';
-import type { IHIDReader } from 'blankslate/core';
+import { Config } from 'blankslate';
+import type { HIDInterfaceType } from 'blankslate/core';
 
 // Import strummer modules
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
@@ -54,9 +55,9 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 /**
  * IPC Bridge class - handles HID reading and strummer processing
- * Uses composition instead of inheritance from TabletReaderBase
+ * Extends TabletReaderBase to share device management and packet processing logic
  */
-class IPCBridge {
+class IPCBridge extends TabletReaderBase {
   private mainWindow: BrowserWindow | null = null;
   private config: MidiStrummerConfig;
   private strummer: Strummer;
@@ -65,13 +66,7 @@ class IPCBridge {
   private deviceConnected: boolean = false;
   private connectionState: ConnectionState = 'disconnected';
 
-  // HID reader (from blankslate)
-  private reader: IHIDReader | null = null;
-  private tabletConfig: Config | null = null;
-
-  // USB hotplug event handlers
-  private usbAttachHandler: ((device: usb.Device) => void) | null = null;
-  private isWaitingForDevice: boolean = false;
+  // Note: reader and configData are inherited from TabletReaderBase
 
   // MIDI support
   private backend: MidiBackendProtocol | null = null;
@@ -104,12 +99,6 @@ class IPCBridge {
   // Path to the strummer config file (for saving)
   private strummerConfigPath: string | undefined;
 
-  // Packet counter for debugging
-  private packetCount: number = 0;
-
-  // Current mode tracking for multi-mode configs
-  private currentMode: ReturnType<Config['getModeByReportId']> | null = null;
-
   constructor(
     options: {
       strummerConfigPath?: string;
@@ -118,6 +107,10 @@ class IPCBridge {
       noteDuration?: number;
     } = {}
   ) {
+    // Call parent constructor with deferred initialization (no config path, use configDir for auto-detection)
+    // exitOnStop: false because we don't want the Electron app to exit when the tablet disconnects
+    super(null, { configDir: DEFAULT_CONFIG_DIR, exitOnStop: false });
+
     this.strummerConfigPath = options.strummerConfigPath;
 
     // Load combined config from file or use defaults
@@ -343,7 +336,7 @@ class IPCBridge {
       })),
       config: this.config.toDict(),
       serverVersion: '1.0.0-electron',
-      deviceCapabilities: this.tabletConfig?.getCapabilities() ?? undefined,
+      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
     };
 
     this.mainWindow!.webContents.send('bridge:config', configData);
@@ -374,75 +367,14 @@ class IPCBridge {
   }
 
   /**
-   * Process a raw packet through the config mappings
+   * Handle a packet from the tablet device.
+   * Overrides the abstract method from TabletReaderBase.
+   * Processes the packet and emits strummer events.
    */
-  private processPacket(data: Uint8Array, reportId?: number): Record<string, string | number | boolean> {
-    if (!this.tabletConfig || data.length === 0) {
-      return {};
-    }
-
-    // Extract report ID from first byte if not provided
-    const rid = reportId !== undefined ? reportId : data[0];
-
-    // Check if this is a keyboard button packet (report IDs 3, 4, 5)
-    if (rid === 3 || rid === 4 || rid === 5) {
-      let keyboardButtonsConfig: KeyboardButtonsConfig | null = null;
-      for (const mode of this.tabletConfig.modes) {
-        const kbConfig = mode.byteCodeMappings?.keyboardButtons;
-        if (kbConfig && kbConfig.buttons) {
-          keyboardButtonsConfig = kbConfig as KeyboardButtonsConfig;
-          break;
-        }
-      }
-
-      if (keyboardButtonsConfig) {
-        return processKeyboardButtonData(data, keyboardButtonsConfig);
-      }
-    }
-
-    // For multi-mode configs, get Report ID and appropriate mappings
-    let mappings;
-    let buttonInterfaceReportId;
-
-    const isMultiMode = this.tabletConfig.modes && this.tabletConfig.modes.length > 1;
-
-    if (isMultiMode) {
-      let mode = this.tabletConfig.getModeByReportId(rid);
-
-      if (mode && this.currentMode === null) {
-        this.currentMode = mode;
-        console.log(`Detected device mode: Report ID ${rid}`);
-      }
-
-      if (!mode && rid !== undefined) {
-        if (this.currentMode && this.currentMode.buttonInterfaceReportId === rid) {
-          mode = this.currentMode;
-        } else if (this.tabletConfig.modes) {
-          mode = this.tabletConfig.modes.find(m => m.buttonInterfaceReportId === rid);
-        }
-      }
-
-      if (mode) {
-        mappings = mode.byteCodeMappings;
-        buttonInterfaceReportId = mode.buttonInterfaceReportId;
-      } else {
-        return {};
-      }
-    } else {
-      const mode = this.tabletConfig.modes[0];
-      mappings = mode?.byteCodeMappings;
-      buttonInterfaceReportId = mode?.buttonInterfaceReportId;
-    }
-
-    return processDeviceData(data, mappings, 0, {
-      buttonInterfaceReportId,
-    });
-  }
-
-  private handlePacket(data: Uint8Array): void {
+  protected handlePacket(data: Uint8Array, reportId?: number, interfaceType?: HIDInterfaceType): void {
     try {
       this.packetCount++;
-      const events = this.processPacket(data);
+      const events = this.processPacket(data, reportId, interfaceType);
       const normalized = normalizeTabletEvent(events);
       const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
 
@@ -576,96 +508,47 @@ class IPCBridge {
   }
 
   /**
-   * Initialize the HID reader using the tablet config
+   * Handle device disconnection - override to add IPC-specific behavior
    */
-  private async initializeReader(): Promise<void> {
-    if (!this.tabletConfig) {
-      throw new Error('Tablet config not loaded');
-    }
-    this.reader = await initializeRealDevice(this.tabletConfig, {
-      onDisconnect: () => this.handleDeviceDisconnect()
-    });
-  }
+  protected handleDeviceDisconnect(): void {
+    // Call parent implementation (handles reader cleanup, config clearing, and starts polling)
+    super.handleDeviceDisconnect();
 
-  /**
-   * Handle device disconnection
-   */
-  private handleDeviceDisconnect(): void {
-    console.log('Tablet device disconnected');
+    // IPC-specific: update connection state and notify renderer
     this.deviceConnected = false;
-    this.reader = null;
-    this.tabletConfig = null;
     this.sendConnectionState('disconnected');
     this.sendDeviceStatus();
-
-    // Start listening for device reconnection via USB events
-    this.startWaitingForDevice();
   }
 
   /**
-   * Start listening for USB device attach events (event-based hotplug)
+   * Called when a device is connected (hook from TabletReaderBase)
+   * Override to send IPC status updates
    */
-  private startWaitingForDevice(): void {
-    if (this.isWaitingForDevice) return;
-
-    this.isWaitingForDevice = true;
-    console.log('Waiting for USB device attach event...');
-
-    // Create attach handler
-    this.usbAttachHandler = async (device: usb.Device) => {
-      console.log(`USB device attached: vendor=0x${device.deviceDescriptor.idVendor.toString(16)}, product=0x${device.deviceDescriptor.idProduct.toString(16)}`);
-
-      // Small delay to let the device fully initialize
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Check if this device has a matching config
-      const foundConfig = findConfigForDevice(DEFAULT_CONFIG_DIR);
-      if (foundConfig) {
-        console.log(`Matching config found: ${foundConfig}`);
-        this.stopWaitingForDevice();
-        await this.connect();
-      }
-    };
-
-    usb.on('attach', this.usbAttachHandler);
-  }
-
-  /**
-   * Stop listening for USB device attach events
-   */
-  private stopWaitingForDevice(): void {
-    if (this.usbAttachHandler) {
-      usb.off('attach', this.usbAttachHandler);
-      this.usbAttachHandler = null;
-    }
-    this.isWaitingForDevice = false;
+  protected onDeviceConnected(): void {
+    this.deviceConnected = true;
+    this.sendConnectionState('connected');
+    this.sendDeviceStatus();
   }
 
   async connect(configPath?: string): Promise<boolean> {
-    // Stop waiting for device if we were
-    this.stopWaitingForDevice();
     try {
       this.sendConnectionState('connecting');
 
-      // Find tablet config
-      let tabletConfigPath: string;
+      // Find and load tablet config
       if (configPath) {
-        tabletConfigPath = resolveConfigPath(configPath, DEFAULT_CONFIG_DIR);
+        const tabletConfigPath = resolveConfigPath(configPath, DEFAULT_CONFIG_DIR);
+        this.configData = loadConfig(tabletConfigPath);
       } else {
-        const foundConfig = findConfigForDevice(DEFAULT_CONFIG_DIR);
-        if (!foundConfig) {
-          // No device found - start listening for USB attach events
-          console.log('No tablet device found. Waiting for USB attach event...');
+        // Try to auto-detect device using inherited method
+        if (!this.loadConfigForDetectedDevice()) {
+          // No device found - start polling for device connection (inherited from TabletReaderBase)
+          console.log('No tablet device found. Starting device polling...');
           this.sendConnectionState('disconnected');
           this.sendDeviceStatus();
-          this.startWaitingForDevice();
+          this.startDevicePolling();
           return false;
         }
-        tabletConfigPath = foundConfig;
       }
-
-      // Load the tablet config
-      this.tabletConfig = loadConfig(tabletConfigPath);
 
       // Initialize MIDI
       console.log('Initializing MIDI...');
@@ -680,7 +563,7 @@ class IPCBridge {
       this.setupEventSubscriptions();
       this.eventBus.resume();
 
-      // Initialize tablet reader
+      // Initialize tablet reader (inherited from TabletReaderBase)
       console.log('Initializing tablet reader...');
       await this.initializeReader();
 
@@ -696,8 +579,8 @@ class IPCBridge {
       this.sendConfig();
 
       // Start reading
-      this.reader.startReading((data) => {
-        this.handlePacket(data);
+      this.reader.startReading((data, reportId, interfaceType) => {
+        this.handlePacket(data, reportId, interfaceType);
       });
 
       console.log('IPC Bridge connected and reading tablet data');
@@ -711,8 +594,11 @@ class IPCBridge {
   }
 
   async disconnect(): Promise<void> {
-    // Stop waiting for USB device events
-    this.stopWaitingForDevice();
+    // Stop device polling if active (inherited from TabletReaderBase)
+    if (this.reconnectCheckInterval) {
+      clearInterval(this.reconnectCheckInterval);
+      this.reconnectCheckInterval = null;
+    }
 
     this.eventBus.pause();
 
@@ -738,7 +624,7 @@ class IPCBridge {
     }
 
     this.deviceConnected = false;
-    this.tabletConfig = null;
+    this.configData = null;
     this.sendConnectionState('disconnected');
     this.sendDeviceStatus();
   }
@@ -765,7 +651,7 @@ class IPCBridge {
       })),
       config: this.config.toDict(),
       serverVersion: '1.0.0-electron',
-      deviceCapabilities: this.tabletConfig?.getCapabilities() ?? undefined,
+      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
     };
   }
 

@@ -19,6 +19,7 @@ import * as fs from 'fs';
 
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath, findConfigForDevice } from 'blankslate/cli/tablet-reader-base.js';
+import type { HIDInterfaceType } from 'blankslate/core';
 
 // Default config directory
 const DEFAULT_CONFIG_DIR = './public/configs';
@@ -763,12 +764,12 @@ class StrummerWebSocketServer extends TabletReaderBase {
     });
   }
 
-  protected handlePacket(data: Uint8Array): void {
+  protected handlePacket(data: Uint8Array, reportId?: number, interfaceType?: HIDInterfaceType): void {
     try {
       this.packetCount++;
 
       // Process the data using the config
-      const events = this.processPacket(data);
+      const events = this.processPacket(data, reportId, interfaceType);
 
       // Extract normalized values
       const normalized = normalizeTabletEvent(events);
@@ -1154,8 +1155,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.deviceConnected = true;
 
         // Start reading
-        this.reader.startReading((data) => {
-          this.handlePacket(data);
+        this.reader.startReading((data, reportId, interfaceType) => {
+          this.handlePacket(data, reportId, interfaceType);
         });
 
         console.log(chalk.green('✓ Started reading tablet data'));

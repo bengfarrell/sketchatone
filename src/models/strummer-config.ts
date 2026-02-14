@@ -25,6 +25,11 @@ import {
   TabletButtonsConfig,
   TabletButtonsConfigData,
 } from './strummer-features.js';
+import {
+  ActionRulesConfig,
+  ActionRulesConfigData,
+  DEFAULT_ACTION_RULES_CONFIG,
+} from './action-rules.js';
 
 /**
  * Core strumming configuration data
@@ -125,6 +130,7 @@ export interface StrummerConfigData {
   stylusButtons: StylusButtonsConfigData;
   strumRelease: StrumReleaseConfigData;
   tabletButtons: TabletButtonsConfigData;
+  actionRules: ActionRulesConfigData;
 }
 
 /**
@@ -145,6 +151,7 @@ export class StrummerConfig {
   stylusButtons: StylusButtonsConfig;
   strumRelease: StrumReleaseConfig;
   tabletButtons: TabletButtonsConfig;
+  actionRules: ActionRulesConfig;
 
   constructor(data: {
     noteDuration?: ParameterMapping;
@@ -156,6 +163,7 @@ export class StrummerConfig {
     stylusButtons?: StylusButtonsConfig;
     strumRelease?: StrumReleaseConfig;
     tabletButtons?: TabletButtonsConfig;
+    actionRules?: ActionRulesConfig;
   } = {}) {
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
     this.pitchBend = data.pitchBend ?? defaultPitchBend();
@@ -166,6 +174,7 @@ export class StrummerConfig {
     this.stylusButtons = data.stylusButtons ?? new StylusButtonsConfig();
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.tabletButtons = data.tabletButtons ?? new TabletButtonsConfig();
+    this.actionRules = data.actionRules ?? new ActionRulesConfig();
   }
 
   // Convenience properties for backward compatibility
@@ -210,6 +219,7 @@ export class StrummerConfig {
     const stylusButtonsData = (data.stylus_buttons ?? data.stylusButtons ?? {}) as Record<string, unknown>;
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const tabletButtonsData = data.tablet_buttons ?? data.tabletButtons;
+    const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
 
     return new StrummerConfig({
       noteDuration: Object.keys(noteDurationData).length > 0
@@ -239,6 +249,9 @@ export class StrummerConfig {
       tabletButtons: tabletButtonsData !== undefined && tabletButtonsData !== null
         ? TabletButtonsConfig.fromDict(tabletButtonsData as string | Record<string, unknown>)
         : new TabletButtonsConfig(),
+      actionRules: Object.keys(actionRulesData).length > 0
+        ? ActionRulesConfig.fromDict(actionRulesData)
+        : new ActionRulesConfig(),
     });
   }
 
@@ -265,6 +278,7 @@ export class StrummerConfig {
       stylusButtons: this.stylusButtons.toDict(),
       strumRelease: this.strumRelease.toDict(),
       tabletButtons: this.tabletButtons.toDict(),
+      actionRules: this.actionRules.toDict(),
     };
   }
 

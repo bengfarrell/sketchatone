@@ -6,22 +6,20 @@
  */
 
 import { EventEmitter } from './event-emitter.js';
+import type { TabletEventData as BlankslateTabletEventData } from 'blankslate/cli/tablet-reader-base.js';
 
 /**
- * HID tablet event data - matches blankslate's format
+ * HID tablet event data - extends blankslate's TabletEventData with timestamp
+ * and a more specific state type for the UI.
+ *
+ * Button fields are made optional here because not all code paths provide them
+ * (e.g., mock mode, websocket client). The normalizeTabletEvent function in
+ * blankslate always provides them, so they'll be present for real device data.
  */
-export interface TabletEventData {
-  x: number;
-  y: number;
-  pressure: number;
-  tiltX: number;
-  tiltY: number;
-  tiltXY: number;
-  primaryButtonPressed: boolean;
-  secondaryButtonPressed: boolean;
+export interface TabletEventData extends Omit<BlankslateTabletEventData, 'state' | 'tabletButtons' | 'button1' | 'button2' | 'button3' | 'button4' | 'button5' | 'button6' | 'button7' | 'button8'> {
   state: 'hover' | 'contact' | 'out-of-range';
   timestamp: number;
-  // Tablet hardware buttons
+  // Tablet hardware buttons - optional because not all sources provide them
   tabletButtons?: number;
   button1?: boolean;
   button2?: boolean;

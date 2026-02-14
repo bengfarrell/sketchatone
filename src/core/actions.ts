@@ -9,6 +9,7 @@ import { EventEmitter } from '../utils/event-emitter.js';
 import { Note, type NoteObject } from '../models/note.js';
 import { CHORD_PROGRESSION_PRESETS } from '../models/strummer-features.js';
 import type { Strummer } from './strummer.js';
+import type { ActionRulesConfig, ButtonId, TriggerType } from '../models/action-rules.js';
 
 /**
  * Manages the state of a chord progression.
@@ -132,6 +133,7 @@ export class Actions extends EventEmitter {
   private strummer: Strummer | null;
   private actionHandlers: Map<string, ActionHandler>;
   progressionState: ChordProgressionState;
+  private actionRulesConfig: ActionRulesConfig | null = null;
 
   /**
    * Initialize Actions with a configuration instance.
@@ -153,10 +155,70 @@ export class Actions extends EventEmitter {
       ['set-strum-chord', this.setStrumChord.bind(this)],
       ['set-chord-in-progression', this.setChordInProgression.bind(this)],
       ['increment-chord-in-progression', this.incrementChordInProgression.bind(this)],
+      ['set-group-progression', this.setGroupProgression.bind(this)],
     ]);
 
     // Chord progression state
     this.progressionState = new ChordProgressionState();
+  }
+
+  /**
+   * Set the action rules configuration.
+   * This enables button-to-action mapping and group progression features.
+   */
+  setActionRulesConfig(rulesConfig: ActionRulesConfig): void {
+    this.actionRulesConfig = rulesConfig;
+  }
+
+  /**
+   * Get the current action rules configuration.
+   */
+  getActionRulesConfig(): ActionRulesConfig | null {
+    return this.actionRulesConfig;
+  }
+
+  /**
+   * Execute startup rules from the action rules configuration.
+   * Should be called once during initialization.
+   */
+  executeStartupRules(): void {
+    if (!this.actionRulesConfig) {
+      console.log('[ACTIONS] No action rules config set, skipping startup rules');
+      return;
+    }
+
+    const startupRules = this.actionRulesConfig.startupRules;
+    if (startupRules.length === 0) {
+      console.log('[ACTIONS] No startup rules to execute');
+      return;
+    }
+
+    console.log(`[ACTIONS] Executing ${startupRules.length} startup rule(s)`);
+    for (const rule of startupRules) {
+      console.log(`[ACTIONS] Executing startup rule: ${rule.name}`);
+      this.execute(rule.action, { button: 'startup', ruleName: rule.name });
+    }
+  }
+
+  /**
+   * Handle a button event using the action rules configuration.
+   *
+   * @param buttonId - The button identifier (e.g., "button:primary", "button:1")
+   * @param trigger - The trigger type ('press', 'release', or 'hold')
+   * @returns True if an action was executed, false otherwise
+   */
+  handleButtonEvent(buttonId: ButtonId, trigger: TriggerType): boolean {
+    if (!this.actionRulesConfig) {
+      console.log('[ACTIONS] No action rules config set, cannot handle button event');
+      return false;
+    }
+
+    const action = this.actionRulesConfig.getActionForButtonEvent(buttonId, trigger);
+    if (action) {
+      return this.execute(action, { button: buttonId, trigger });
+    }
+
+    return false;
   }
 
   /**
@@ -638,6 +700,77 @@ export class Actions extends EventEmitter {
     } catch (e) {
       console.log(`[ACTIONS] Error incrementing chord in progression: ${e}`);
     }
+  }
+
+  /**
+   * Set the chord progression for a button group.
+   * This allows dynamically changing which progression a group of buttons uses.
+   *
+   * @param params - [groupId, progressionName, optionalOctave]
+   */
+  setGroupProgression(params: unknown[], context: ActionContext): void {
+    if (params.length < 2) {
+      console.log('[ACTIONS] Error: set-group-progression requires groupId and progressionName');
+      return;
+    }
+
+    if (typeof params[0] !== 'string') {
+      console.log('[ACTIONS] Error: First parameter must be groupId (string)');
+      return;
+    }
+
+    if (typeof params[1] !== 'string') {
+      console.log('[ACTIONS] Error: Second parameter must be progressionName (string)');
+      return;
+    }
+
+    const groupId = params[0] as string;
+    const progressionName = params[1] as string;
+
+    if (!this.actionRulesConfig) {
+      console.log('[ACTIONS] Error: No action rules config set');
+      return;
+    }
+
+    // Validate progression exists
+    if (!(progressionName in CHORD_PROGRESSION_PRESETS)) {
+      console.log(`[ACTIONS] Error: Unknown progression '${progressionName}'`);
+      return;
+    }
+
+    // Find the group
+    const group = this.actionRulesConfig.groups.find(g => g.id === groupId);
+    if (!group) {
+      console.log(`[ACTIONS] Error: Unknown group '${groupId}'`);
+      return;
+    }
+
+    // Find the group rule for this group
+    const groupRule = this.actionRulesConfig.getGroupRuleForGroup(groupId);
+    if (!groupRule) {
+      console.log(`[ACTIONS] Error: No rule assigned to group '${group.name}'`);
+      return;
+    }
+
+    // Update the group rule's progression (only for chord-progression action type)
+    if (groupRule.action.type === 'chord-progression') {
+      const oldProgression = groupRule.action.progression;
+      groupRule.action.progression = progressionName;
+
+      // Optionally update octave
+      if (params.length > 2 && typeof params[2] === 'number') {
+        groupRule.action.octave = Math.floor(params[2]);
+      }
+
+      const button = context.button ?? 'Unknown';
+      console.log(`[ACTIONS] ${button} changed group '${group.name}' progression from '${oldProgression}' to '${progressionName}'`);
+    } else {
+      console.log(`[ACTIONS] Error: Group '${group.name}' does not have a chord-progression action`);
+      return;
+    }
+
+    // Emit config changed event
+    this.emit('config_changed');
   }
 
   /**

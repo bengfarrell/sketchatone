@@ -28,8 +28,9 @@ import '../strum-visualizers/strum-visualizer.js';
 import '../strum-visualizers/strum-events-display.js';
 // import '../strum-visualizers/piano-keys.js'; // TODO: Add back later
 
-// Tablet buttons config component
-import '../tablet-buttons-config/tablet-buttons-config.js';
+// Action rules config component
+import '../action-rules-config/action-rules-config.js';
+import { ActionRulesConfig, type ButtonId } from '../../models/action-rules.js';
 
 // Blankslate utilities
 import {
@@ -49,7 +50,6 @@ import { ElectronBridgeClient, isElectron } from '../../utils/electron-bridge-cl
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
-import { TabletButtonsConfig } from '../../models/strummer-features.js';
 import { Note, type NoteObject } from '../../models/note.js';
 
 // Shared tablet interaction controller for curve visualizers
@@ -93,6 +93,9 @@ export class SketchatoneDashboard extends LitElement {
   private pressedButtons: Set<number> = new Set();
 
   @state()
+  private lastPressedButton: number | null = null;
+
+  @state()
   private tabletEvents: StrumTabletEvent[] = [];
 
   @state()
@@ -109,7 +112,7 @@ export class SketchatoneDashboard extends LitElement {
   private strumVisualizersExpanded = true;
 
   @state()
-  private tabletButtonsExpanded = false;
+  private actionRulesExpanded = false;
 
   @state()
   private tabletVisualizersExpanded = true;
@@ -225,6 +228,11 @@ export class SketchatoneDashboard extends LitElement {
     // The server sends button1, button2, etc. as booleans
     this.pressedButtons = this.extractButtonsFromData(data);
 
+    // Track last pressed button for display
+    if (this.pressedButtons.size > 0) {
+      this.lastPressedButton = Array.from(this.pressedButtons)[0];
+    }
+
     // Update the shared tablet interaction controller so curve visualizers react
     const isPressed = this.tabletData.pressure > 0;
     sharedTabletInteraction.setTabletPosition(this.tabletData.x, this.tabletData.y, isPressed);
@@ -250,6 +258,15 @@ export class SketchatoneDashboard extends LitElement {
       primaryButtonPressed: this.tabletData.primaryButtonPressed,
       secondaryButtonPressed: this.tabletData.secondaryButtonPressed,
       state: data.state,
+      // Include tablet hardware button states
+      button1: data.button1,
+      button2: data.button2,
+      button3: data.button3,
+      button4: data.button4,
+      button5: data.button5,
+      button6: data.button6,
+      button7: data.button7,
+      button8: data.button8,
     };
 
     // Check for strum data in the combined event
@@ -364,6 +381,7 @@ export class SketchatoneDashboard extends LitElement {
       secondaryButtonPressed: false
     };
     this.pressedButtons = new Set();
+    this.lastPressedButton = null;
     this.tabletEvents = [];
     this.lastStrumEvent = null;
     this.packetCount = 0;
@@ -429,23 +447,12 @@ export class SketchatoneDashboard extends LitElement {
     this.strumVisualizersExpanded = !this.strumVisualizersExpanded;
   }
 
-  private toggleTabletButtons() {
-    this.tabletButtonsExpanded = !this.tabletButtonsExpanded;
+  private toggleActionRules() {
+    this.actionRulesExpanded = !this.actionRulesExpanded;
   }
 
   private toggleTabletVisualizers() {
     this.tabletVisualizersExpanded = !this.tabletVisualizersExpanded;
-  }
-
-  /**
-   * Handle config changes from the tablet-buttons-config component
-   */
-  private handleTabletButtonsConfigChange(e: CustomEvent) {
-    const detail = e.detail as Record<string, unknown>;
-    // The component emits multiple path-value pairs in the detail
-    for (const [path, value] of Object.entries(detail)) {
-      this.updateConfig(`strummer.${path}`, value);
-    }
   }
 
   /**
@@ -468,12 +475,38 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
-   * Get the TabletButtonsConfig instance from the full config
+   * Get the ActionRulesConfig instance from the full config
    */
-  private getTabletButtonsConfig(): TabletButtonsConfig | undefined {
-    if (!this.fullConfig?.strummer?.tabletButtons) return undefined;
-    // @ts-ignore
-    return TabletButtonsConfig.fromDict(this.fullConfig.strummer.tabletButtons);
+  private getActionRulesConfig(): ActionRulesConfig | undefined {
+    if (!this.fullConfig?.strummer?.actionRules) return undefined;
+    return ActionRulesConfig.fromDict(this.fullConfig.strummer.actionRules);
+  }
+
+  /**
+   * Convert pressed buttons (Set<number>) to ButtonId format (Set<ButtonId>)
+   */
+  private getPressedButtonIds(): Set<ButtonId> {
+    const buttonIds = new Set<ButtonId>();
+    // Add stylus buttons if pressed
+    if (this.tabletData.primaryButtonPressed) {
+      buttonIds.add('button:primary');
+    }
+    if (this.tabletData.secondaryButtonPressed) {
+      buttonIds.add('button:secondary');
+    }
+    // Add tablet buttons
+    for (const buttonNum of this.pressedButtons) {
+      buttonIds.add(`button:${buttonNum}` as ButtonId);
+    }
+    return buttonIds;
+  }
+
+  /**
+   * Handle config changes from the action rules component
+   */
+  private handleActionRulesConfigChange(e: CustomEvent) {
+    const { actionRules } = e.detail;
+    this.updateConfig('strummer.actionRules', actionRules);
   }
 
   render() {
@@ -601,6 +634,12 @@ export class SketchatoneDashboard extends LitElement {
                       <span class="data-label">Y</span>
                       <span class="data-value ${this.tabletData.y === 0 ? 'zero' : ''}">
                         ${formatValue(this.tabletData.y)}
+                      </span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Btn</span>
+                      <span class="data-value ${this.pressedButtons.size > 0 ? 'active' : ''}">
+                        ${this.lastPressedButton !== null ? this.lastPressedButton : '–'}
                       </span>
                     </div>
                   </div>
@@ -753,71 +792,6 @@ export class SketchatoneDashboard extends LitElement {
                   </div>
                 </dashboard-panel>
 
-                <dashboard-panel title="Stylus Buttons" size="medium" .draggable=${false} .minimizable=${false}
-                  .hasActiveControl=${true}
-                  .active=${this.fullConfig?.strummer?.stylusButtons?.active ?? true}
-                  @active-change=${(e: CustomEvent) => this.updateConfig('strummer.stylusButtons.active', e.detail.active)}>
-                  <div class="settings-form">
-                    <div class="setting-row">
-                      <label>Primary Button</label>
-                      <sp-picker data-spectrum-pattern="picker-s" label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.primaryButtonAction ?? 'toggle-transpose'}"
-                        @change=${(e: Event) => this.updateConfig('strummer.stylusButtons.primaryButtonAction', (e.target as HTMLInputElement).value)}>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-transpose">Momentary Transpose</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-repeater">Momentary Repeater</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-up">Octave Up</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-down">Octave Down</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="none">None</sp-menu-item>
-                      </sp-picker>
-                    </div>
-                    <div class="setting-row">
-                      <label>Secondary Button</label>
-                      <sp-picker data-spectrum-pattern="picker-s" label="Action" value="${this.fullConfig?.strummer?.stylusButtons?.secondaryButtonAction ?? 'toggle-repeater'}"
-                        @change=${(e: Event) => this.updateConfig('strummer.stylusButtons.secondaryButtonAction', (e.target as HTMLInputElement).value)}>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-transpose">Momentary Transpose</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="momentary-repeater">Momentary Repeater</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-up">Octave Up</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="octave-down">Octave Down</sp-menu-item>
-                        <sp-menu-item data-spectrum-pattern="menu-item" value="none">None</sp-menu-item>
-                      </sp-picker>
-                    </div>
-                  </div>
-                </dashboard-panel>
-
-                <dashboard-panel title="Note Repeater" size="medium" .draggable=${false} .minimizable=${false}
-                  .hasActiveControl=${true}
-                  .active=${this.fullConfig?.strummer?.noteRepeater?.active ?? false}
-                  @active-change=${(e: CustomEvent) => this.updateConfig('strummer.noteRepeater.active', e.detail.active)}>
-                  <div class="settings-form">
-                    <div class="setting-row">
-                      <label>Pressure Multiplier</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.noteRepeater?.pressureMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
-                        @change=${(e: Event) => this.updateConfig('strummer.noteRepeater.pressureMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                    <div class="setting-row">
-                      <label>Frequency Multiplier</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.noteRepeater?.frequencyMultiplier ?? 1.0}" step="0.1" min="0.1" max="10"
-                        @change=${(e: Event) => this.updateConfig('strummer.noteRepeater.frequencyMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                  </div>
-                </dashboard-panel>
-
-                <dashboard-panel title="Transpose" size="medium" .draggable=${false} .minimizable=${false}
-                  .hasActiveControl=${true}
-                  .active=${this.fullConfig?.strummer?.transpose?.active ?? false}
-                  @active-change=${(e: CustomEvent) => this.updateConfig('strummer.transpose.active', e.detail.active)}>
-                  <div class="settings-form">
-                    <div class="setting-row">
-                      <label>Semitones</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.transpose?.semitones ?? 12}" step="1" min="-24" max="24"
-                        @change=${(e: Event) => this.updateConfig('strummer.transpose.semitones', (e.target as HTMLInputElement).value)}></sp-number-field>
-                    </div>
-                  </div>
-                </dashboard-panel>
-
                 <dashboard-panel title="Strum Release" size="medium" .draggable=${false} .minimizable=${false}
                   .hasActiveControl=${true}
                   .active=${this.fullConfig?.strummer?.strumRelease?.active ?? false}
@@ -850,24 +824,22 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
         </div>
 
-        <!-- Tablet Buttons Section (Collapsible) -->
+        <!-- Action Rules Section (Collapsible) -->
         <div class="visualizer-section">
-          <button class="section-header" @click=${this.toggleTabletButtons}>
-            <span class="section-title">Tablet Buttons</span>
-            <span class="section-toggle">${this.tabletButtonsExpanded ? '▼' : '▶'}</span>
+          <button class="section-header" @click=${this.toggleActionRules}>
+            <span class="section-title">Action Rules</span>
+            <span class="section-toggle">${this.actionRulesExpanded ? '▼' : '▶'}</span>
           </button>
-          ${this.tabletButtonsExpanded ? html`
+          ${this.actionRulesExpanded ? html`
             <div class="section-content">
-              <div class="tablet-buttons-grid">
-                <dashboard-panel title="Tablet Buttons Configuration" size="wide" .draggable=${false} .minimizable=${false}>
-                  <tablet-buttons-config
-                    .config=${this.getTabletButtonsConfig()}
-                    .pressedButtons=${this.pressedButtons}
-                    .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
-                    @config-change=${this.handleTabletButtonsConfigChange}
-                  ></tablet-buttons-config>
-                </dashboard-panel>
-              </div>
+              <action-rules-config
+                .config=${this.getActionRulesConfig()}
+                .pressedButtons=${this.getPressedButtonIds()}
+                .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
+                .hasPrimaryButton=${true}
+                .hasSecondaryButton=${true}
+                @config-change=${this.handleActionRulesConfigChange}
+              ></action-rules-config>
             </div>
           ` : ''}
         </div>
