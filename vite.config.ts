@@ -8,6 +8,7 @@ const uiVersion = packageJson.version;
 
 export default defineConfig({
   root: '.',
+  base: './', // Use relative paths for assets (needed for Electron file:// protocol)
   define: {
     __UI_VERSION__: JSON.stringify(uiVersion),
     __UI_BUILD_TIME__: JSON.stringify(new Date().toISOString()),

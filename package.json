@@ -90,7 +90,12 @@
     "files": [
       "dist/**/*",
       "public/configs/**/*",
-      "!node_modules/**/*"
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-hid/**/*",
+      "node_modules/usb/**/*",
+      "node_modules/blankslate/**/*"
     ],
     "extraResources": [
       {

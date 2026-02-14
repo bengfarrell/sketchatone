@@ -54,7 +54,8 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools();
   } else {
     // Load the built app from dist/public
-    const indexPath = path.join(__dirname, '../dist/public/index.html');
+    // __dirname is dist/electron, so we go up one level to dist, then into public
+    const indexPath = path.join(__dirname, '../public/index.html');
     mainWindow.loadFile(indexPath);
   }
 

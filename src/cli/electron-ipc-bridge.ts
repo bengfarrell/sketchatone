@@ -46,7 +46,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Default config directory (device configs are in the 'devices' subdirectory)
-const DEFAULT_CONFIG_DIR = path.join(__dirname, '../public/configs/devices');
+// In packaged app, configs are in Resources/configs/devices (via extraResources)
+// In dev mode, they're in dist/public/configs/devices
+const isPackaged = !process.argv.includes('--dev') && process.resourcesPath && !process.resourcesPath.includes('node_modules');
+const DEFAULT_CONFIG_DIR = isPackaged
+  ? path.join(process.resourcesPath!, 'configs/devices')
+  : path.join(__dirname, '../public/configs/devices');
 
 /**
  * Connection state for the IPC bridge
