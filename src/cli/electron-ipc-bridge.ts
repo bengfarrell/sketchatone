@@ -111,6 +111,10 @@ class IPCBridge extends TabletReaderBase {
     // exitOnStop: false because we don't want the Electron app to exit when the tablet disconnects
     super(null, { configDir: DEFAULT_CONFIG_DIR, exitOnStop: false });
 
+    // For Electron app, poll indefinitely for device reconnection
+    // (unlike CLI which gives up after 6 seconds)
+    this.maxReconnectAttempts = Infinity;
+
     this.strummerConfigPath = options.strummerConfigPath;
 
     // Load combined config from file or use defaults
@@ -528,6 +532,7 @@ class IPCBridge extends TabletReaderBase {
     this.deviceConnected = true;
     this.sendConnectionState('connected');
     this.sendDeviceStatus();
+    this.sendConfig(); // Send config on reconnect so UI can show panels
   }
 
   async connect(configPath?: string): Promise<boolean> {
