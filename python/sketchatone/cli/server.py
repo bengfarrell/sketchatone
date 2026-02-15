@@ -55,8 +55,11 @@ except ImportError:
     print("Make sure websockets is installed: pip install websockets")
     sys.exit(1)
 
-# Default config directory (relative to python/ directory)
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs')
+# Default config directory
+# Check environment variable first (for packaged apps), then fall back to relative path
+DEFAULT_CONFIG_DIR = os.environ.get('SKETCHATONE_CONFIG_DIR') or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs'
+)
 
 # MIME types for HTTP server
 MIME_TYPES = {
@@ -387,9 +390,12 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.search_dir = search_dir or DEFAULT_CONFIG_DIR
 
         # Determine public directory for HTTP server
+        # Check environment variable first (for packaged apps), then fall back to relative path
         # __file__ is python/sketchatone/cli/server.py
         # Go up 4 levels to project root, then into dist/public
-        self.public_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'dist', 'public')
+        self.public_dir = os.environ.get('SKETCHATONE_PUBLIC_DIR') or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'dist', 'public'
+        )
         self.clients: Set[WebSocketServerProtocol] = set()
         self.server: Optional[websockets.WebSocketServer] = None
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None

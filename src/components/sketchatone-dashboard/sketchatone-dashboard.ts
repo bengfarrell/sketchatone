@@ -56,8 +56,6 @@ import {
   type ServerMidiInputEvent,
   type ServerMidiInputStatus,
 } from '../../utils/strummer-websocket-client.js';
-// Electron IPC bridge client (drop-in replacement for WebSocket client)
-import { ElectronBridgeClient, isElectron } from '../../utils/electron-bridge-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
@@ -136,10 +134,6 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private serverVersion: string | null = null;
 
-  // Device status (for Electron mode)
-  @state()
-  private deviceStatusMessage = 'Waiting for tablet...';
-
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
 
@@ -152,28 +146,17 @@ export class SketchatoneDashboard extends LitElement {
     return this.renderRoot.querySelector('#groups-config') as ActionRulesConfigComponent | null;
   }
 
-  // Client instance - either WebSocket or Electron IPC bridge
-  private client: StrummerWebSocketClient | ElectronBridgeClient;
-
-  // Track if running in Electron
-  private readonly isElectronApp = isElectron();
+  // WebSocket client instance
+  private client: StrummerWebSocketClient;
 
   constructor() {
     super();
-    // Use Electron IPC bridge if running in Electron, otherwise use WebSocket
-    this.client = this.isElectronApp
-      ? new ElectronBridgeClient()
-      : new StrummerWebSocketClient();
+    this.client = new StrummerWebSocketClient();
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.setupClient();
-
-    // Auto-connect in Electron mode
-    if (this.isElectronApp) {
-      this.connectElectron();
-    }
   }
 
   disconnectedCallback() {
@@ -214,21 +197,6 @@ export class SketchatoneDashboard extends LitElement {
       this.serverMidiConnected = true;
     });
 
-    // Listen for device status changes (Electron mode)
-    if (this.client instanceof ElectronBridgeClient) {
-      this.client.onDeviceStatus((status) => {
-        this.deviceStatusMessage = status.message;
-      });
-    }
-  }
-
-  /**
-   * Connect via Electron IPC bridge
-   */
-  private async connectElectron(): Promise<void> {
-    if (this.client instanceof ElectronBridgeClient) {
-      await this.client.connect();
-    }
   }
 
   private handleTabletData(data: CombinedEventData) {
@@ -330,7 +298,7 @@ export class SketchatoneDashboard extends LitElement {
       <div class="connection-group">
         <div class="status-badge disconnected">
           <span class="status-dot"></span>
-          ${this.isElectronApp ? this.deviceStatusMessage : 'Waiting for tablet...'}
+          Waiting for tablet...
         </div>
       </div>
     `;
@@ -593,7 +561,7 @@ export class SketchatoneDashboard extends LitElement {
 
         ${!hasActiveConnection ? html`
           <div class="disconnected-message">
-            <p>${this.isElectronApp ? this.deviceStatusMessage : 'Connect to a WebSocket server to view strummer data'}</p>
+            <p>Connect to a WebSocket server to view strummer data</p>
           </div>
         ` : html`
         <!-- Panel Toggle Bar -->

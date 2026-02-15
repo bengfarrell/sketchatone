@@ -23,7 +23,6 @@
     "node_modules",
     "dist",
     "test",
-    "src/utils/web-midi-input.ts",
-    "src/utils/electron-bridge-client.ts"
+    "src/utils/web-midi-input.ts"
   ]
 }
