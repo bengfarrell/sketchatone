@@ -21,8 +21,8 @@ import * as path from 'path';
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath } from 'blankslate/cli/tablet-reader-base.js';
 
-// Default config directory
-const DEFAULT_CONFIG_DIR = './public/configs';
+// Default config directory for device configs
+const DEFAULT_CONFIG_DIR = './public/configs/devices';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig } from '../models/midi-strummer-config.js';
@@ -134,15 +134,15 @@ class MidiStrummer extends TabletReaderBase {
     this.setupNotes();
 
     // Create Actions handler for stylus buttons
-    this.actions = new Actions(
-      {
-        noteRepeater: this.config.noteRepeater,
-        transpose: this.config.transpose,
-        lowerSpread: this.config.strummer.lowerSpread,
-        upperSpread: this.config.strummer.upperSpread,
-      },
-      this.strummer
-    );
+    // Pass the actual config object so Actions can access live values
+    // (e.g., lowerSpread/upperSpread that may be updated via UI)
+    this.actions = new Actions(this.config, this.strummer);
+
+    // Configure action rules so button-to-action mapping works
+    this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+
+    // Execute any startup rules defined in the config
+    this.actions.executeStartupRules();
   }
 
   private setupNotes(): void {
@@ -289,20 +289,23 @@ class MidiStrummer extends TabletReaderBase {
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses (buttons 1-8)
-      const tabletButtonsCfg = this.config.tabletButtons;
+      // Handle tablet hardware button presses (buttons 1-8) via action rules
       for (let i = 1; i <= 8; i++) {
         const buttonKey = `button${i}` as keyof typeof normalized;
         const buttonPressed = Boolean(normalized[buttonKey]);
         const stateKey = `button${i}`;
+        const wasPressed = this.tabletButtonState[stateKey];
 
         // Detect button down event (transition from not pressed to pressed)
-        if (buttonPressed && !this.tabletButtonState[stateKey]) {
-          // Button just pressed - execute configured action
-          const action = tabletButtonsCfg?.getButtonAction(i);
-          if (action) {
-            this.actions.execute(action, { button: `Tablet${i}` });
-          }
+        if (buttonPressed && !wasPressed) {
+          // Button just pressed - execute 'press' action via action rules system
+          this.actions.handleButtonEvent(`button:${i}`, 'press');
+        }
+
+        // Detect button up event (transition from pressed to not pressed)
+        if (!buttonPressed && wasPressed) {
+          // Button just released - execute 'release' action via action rules system
+          this.actions.handleButtonEvent(`button:${i}`, 'release');
         }
 
         // Update tablet button state
@@ -364,8 +367,11 @@ class MidiStrummer extends TabletReaderBase {
       // Update strummer bounds
       this.strummer.updateBounds(1.0, 1.0);
 
+      // Apply X inversion for left-handed use if configured
+      const strumX = this.config.strumming.invertX ? 1.0 - x : x;
+
       // Process strum
-      const event = this.strummer.strum(x, pressure);
+      const event = this.strummer.strum(strumX, pressure);
 
       // Get note repeater configuration
       const noteRepeaterCfg = this.config.noteRepeater;

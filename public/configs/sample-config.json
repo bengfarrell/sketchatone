@@ -33,7 +33,8 @@
     "initial_notes": ["C4", "E4", "G4"],
     "chord": null,
     "upper_note_spread": 3,
-    "lower_note_spread": 3
+    "lower_note_spread": 3,
+    "invert_x": false
   },
   "note_repeater": {
     "active": false,
@@ -56,10 +57,35 @@
     "max_duration": 0.25,
     "velocity_multiplier": 1.0
   },
-  "tablet_buttons": {
-    "preset": "c-major-pop",
-    "chords": ["C", "G", "Am", "F"],
-    "current_index": 0
+  "action_rules": {
+    "button_names": {
+      "button:1": "Button 1",
+      "button:2": "Button 2",
+      "button:3": "Button 3",
+      "button:4": "Button 4"
+    },
+    "rules": [],
+    "groups": [
+      {
+        "id": "chord-buttons",
+        "name": "Chord Buttons",
+        "buttons": ["button:1", "button:2", "button:3", "button:4"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "chord-progression-rule",
+        "name": "C Major Pop Progression",
+        "group_id": "chord-buttons",
+        "trigger": "press",
+        "action": {
+          "type": "chord-progression",
+          "progression": "c-major-pop",
+          "octave": 4
+        }
+      }
+    ],
+    "startup_rules": []
   },
   "midi": {
     "midi_output_backend": "rtmidi",

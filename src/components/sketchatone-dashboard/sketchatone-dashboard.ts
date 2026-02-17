@@ -17,6 +17,7 @@ import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-moon.js';
+import '@spectrum-web-components/switch/sp-switch.js';
 
 // Blankslate visualizer components
 import 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
@@ -278,7 +279,7 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
-   * Render connection status based on mode (Electron vs WebSocket)
+   * Render connection status with WebSocket URL input and Connect/Disconnect buttons
    */
   private renderConnectionStatus() {
     if (this.websocketConnected) {
@@ -289,17 +290,27 @@ export class SketchatoneDashboard extends LitElement {
             <span class="status-dot"></span>
             ${this.websocketServerInfo || 'Connected'}
           </div>
+          <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
+            Disconnect
+          </sp-button>
         </div>
       `;
     }
 
-    // Disconnected state - show "Waiting for tablet..."
+    // Disconnected state - show URL input and Connect button
     return html`
       <div class="connection-group">
-        <div class="status-badge disconnected">
-          <span class="status-dot"></span>
-          Waiting for tablet...
-        </div>
+        <sp-textfield
+          data-spectrum-pattern="textfield-s"
+          size="s"
+          placeholder="ws://localhost:8081"
+          value=${this.websocketUrl}
+          @input=${this.handleWebSocketUrlChange}
+          style="width: 250px;">
+        </sp-textfield>
+        <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
+          Connect
+        </sp-button>
       </div>
     `;
   }
@@ -752,6 +763,14 @@ export class SketchatoneDashboard extends LitElement {
                   <label>Lower Note Spread</label>
                   <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
                     @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Reverse Direction</label>
+                  <sp-switch
+                    data-spectrum-pattern="switch-s"
+                    ?checked=${this.fullConfig?.strummer?.strumming?.invertX ?? false}
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.invertX', (e.target as HTMLInputElement).checked)}>
+                  </sp-switch>
                 </div>
               </div>
             </dashboard-panel>

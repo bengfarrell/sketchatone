@@ -87,6 +87,8 @@ export interface GroupRule {
   groupId: string;
   /** Group action to execute */
   action: GroupAction;
+  /** When to trigger: 'press', 'release' (default), or 'hold' */
+  trigger?: TriggerType;
 }
 
 /**
@@ -216,11 +218,21 @@ export class ActionRulesConfig implements ActionRulesConfigData {
       return new ActionRulesConfig();
     }
 
+    // Parse group rules with snake_case to camelCase conversion
+    const rawGroupRules = (data.groupRules ?? data.group_rules) as Array<Record<string, unknown>> | undefined;
+    const groupRules: GroupRule[] = rawGroupRules?.map(rule => ({
+      id: rule.id as string,
+      name: rule.name as string | undefined,
+      groupId: (rule.groupId ?? rule.group_id) as string,
+      action: rule.action as GroupAction,
+      trigger: rule.trigger as TriggerType | undefined,
+    })) ?? [];
+
     return new ActionRulesConfig({
       buttonNames: (data.buttonNames ?? data.button_names) as Record<ButtonId, string> | undefined,
       rules: (data.rules as ActionRule[]) ?? [],
       groups: (data.groups as ButtonGroup[]) ?? [],
-      groupRules: (data.groupRules ?? data.group_rules) as GroupRule[] | undefined,
+      groupRules,
       startupRules: (data.startupRules ?? data.startup_rules) as StartupRule[] | undefined,
     });
   }
@@ -414,15 +426,17 @@ export class ActionRulesConfig implements ActionRulesConfigData {
       return rule.action;
     }
 
-    // Then check groups (groups only respond to 'release' by default)
-    if (trigger === 'release') {
-      const group = this.getGroupForButton(buttonId);
-      if (group) {
-        const buttonIndex = group.buttons.indexOf(buttonId);
-        if (buttonIndex >= 0) {
-          // Find the group rule for this group
-          const groupRule = this.getGroupRuleForGroup(group.id);
-          if (groupRule) {
+    // Then check groups - respect the trigger setting on the group rule (defaults to 'release')
+    const group = this.getGroupForButton(buttonId);
+    if (group) {
+      const buttonIndex = group.buttons.indexOf(buttonId);
+      if (buttonIndex >= 0) {
+        // Find the group rule for this group
+        const groupRule = this.getGroupRuleForGroup(group.id);
+        if (groupRule) {
+          // Check if the trigger matches (default to 'release' if not specified)
+          const ruleTrigger = groupRule.trigger ?? 'release';
+          if (ruleTrigger === trigger) {
             // Handle group action based on type
             if (groupRule.action.type === 'chord-progression') {
               // Return a set-chord-in-progression action

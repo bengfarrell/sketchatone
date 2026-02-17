@@ -43,8 +43,8 @@ except ImportError:
     print("Make sure blankslate is installed: pip install -e ../blankslate/python")
     sys.exit(1)
 
-# Default config directory (relative to python/ directory)
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs')
+# Default config directory for device configs (relative to python/ directory)
+DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices')
 
 
 def resolve_device_config_path(
@@ -199,17 +199,18 @@ class MidiStrummer(TabletReaderBase):
         self.bridge: Optional[MidiStrummerBridge] = None
 
         # Create Actions handler for stylus buttons
-        # Pass a dict with properly nested config references since MidiStrummerConfig
-        # has note_repeater/transpose at strummer.note_repeater, not directly
+        # Pass the actual config object so Actions can access live values
+        # (e.g., lower_spread/upper_spread that may be updated via UI)
         self.actions = Actions(
-            config={
-                'note_repeater': self.config.strummer.note_repeater,
-                'transpose': self.config.strummer.transpose,
-                'lower_spread': self.config.lower_spread,
-                'upper_spread': self.config.upper_spread,
-            },
+            config=self.config,
             strummer=self.strummer
         )
+
+        # Configure action rules so button-to-action mapping works
+        self.actions.set_action_rules_config(self.config.strummer.action_rules)
+
+        # Execute any startup rules defined in the config
+        self.actions.execute_startup_rules()
 
         # State tracking for stylus buttons
         self.button_state = {
@@ -432,18 +433,21 @@ class MidiStrummer(TabletReaderBase):
             self.button_state['primaryButtonPressed'] = primary_pressed
             self.button_state['secondaryButtonPressed'] = secondary_pressed
 
-            # Handle tablet hardware button presses (buttons 1-8)
-            tablet_buttons_cfg = self.config.strummer.tablet_buttons
+            # Handle tablet hardware button presses (buttons 1-8) via action rules
             for i in range(1, 9):
                 button_key = f'button{i}'
                 button_pressed = bool(events.get(button_key, False))
+                was_pressed = self.tablet_button_state[button_key]
 
                 # Detect button down event (transition from not pressed to pressed)
-                if button_pressed and not self.tablet_button_state[button_key]:
-                    # Button just pressed - execute configured action
-                    action = tablet_buttons_cfg.get_button_action(i) if tablet_buttons_cfg else None
-                    if action:
-                        self.actions.execute(action, context={'button': f'Tablet{i}'})
+                if button_pressed and not was_pressed:
+                    # Button just pressed - execute 'press' action via action rules system
+                    self.actions.handle_button_event(f'button:{i}', 'press')
+
+                # Detect button up event (transition from pressed to not pressed)
+                if not button_pressed and was_pressed:
+                    # Button just released - execute 'release' action via action rules system
+                    self.actions.handle_button_event(f'button:{i}', 'release')
 
                 # Update tablet button state
                 self.tablet_button_state[button_key] = button_pressed
@@ -475,8 +479,11 @@ class MidiStrummer(TabletReaderBase):
             # Update strummer bounds
             self.strummer.update_bounds(1.0, 1.0)
 
+            # Apply X inversion for left-handed use if configured
+            strum_x = 1.0 - x if self.config.strummer.strumming.invert_x else x
+
             # Process strum
-            event = self.strummer.strum(x, pressure)
+            event = self.strummer.strum(strum_x, pressure)
 
             # Get note repeater configuration
             note_repeater_cfg = self.config.strummer.note_repeater

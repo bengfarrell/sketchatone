@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import signal
+import socket
 import sys
 import os
 import time
@@ -23,6 +24,19 @@ import mimetypes
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
 from urllib.parse import unquote
+
+
+def get_local_ip() -> Optional[str]:
+    """Get the local network IP address (for LAN access)."""
+    try:
+        # Create a socket to determine the local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return None
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -55,10 +69,10 @@ except ImportError:
     print("Make sure websockets is installed: pip install websockets")
     sys.exit(1)
 
-# Default config directory
+# Default config directory for device configs
 # Check environment variable first (for packaged apps), then fall back to relative path
 DEFAULT_CONFIG_DIR = os.environ.get('SKETCHATONE_CONFIG_DIR') or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs'
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices'
 )
 
 # MIME types for HTTP server
@@ -447,15 +461,18 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.is_running = False
 
         # Create Actions handler for stylus buttons
+        # Pass the actual config object so Actions can access live values
+        # (e.g., lower_spread/upper_spread that may be updated via UI)
         self.actions = Actions(
-            config={
-                'note_repeater': self.config.strummer.note_repeater,
-                'transpose': self.config.strummer.transpose,
-                'lower_spread': self.config.lower_spread,
-                'upper_spread': self.config.upper_spread,
-            },
+            config=self.config,
             strummer=self.strummer
         )
+
+        # Configure action rules so button-to-action mapping works
+        self.actions.set_action_rules_config(self.config.strummer.action_rules)
+
+        # Execute any startup rules defined in the config
+        self.actions.execute_startup_rules()
 
         # State tracking for stylus buttons
         self.button_state = {
@@ -1099,6 +1116,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             if 'midiChannel' in path and self.backend is not None:
                 self.backend.set_channel(value)
 
+            # Re-apply action rules if they changed
+            if 'actionRules' in path or 'action_rules' in path:
+                self.actions.set_action_rules_config(self.config.strummer.action_rules)
+                # Re-execute startup rules to apply new chord progression
+                self.actions.execute_startup_rules()
+
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
             print(colored(f'Failed to update config: {path} - {e}', Colors.RED))
@@ -1106,15 +1129,29 @@ class StrummerWebSocketServer(TabletReaderBase):
     def _handle_save_config(self) -> None:
         """
         Save the current configuration to the config file.
+        Preserves original file ownership even when running as root (sudo).
         """
         if not self.strummer_config_path:
             print(colored('[Save Config] No config file path - config was not loaded from a file', Colors.RED))
             return
 
         try:
+            # Get original file ownership before writing (to preserve when running as sudo)
+            original_uid = None
+            original_gid = None
+            if os.path.exists(self.strummer_config_path):
+                stat_info = os.stat(self.strummer_config_path)
+                original_uid = stat_info.st_uid
+                original_gid = stat_info.st_gid
+
             config_dict = self.config.to_dict()
             with open(self.strummer_config_path, 'w', encoding='utf-8') as f:
                 json.dump(config_dict, f, indent=2)
+
+            # Restore original ownership if we had it and we're running as root
+            if original_uid is not None and os.geteuid() == 0:
+                os.chown(self.strummer_config_path, original_uid, original_gid)
+
             print(colored(f'[Save Config] Configuration saved to {self.strummer_config_path}', Colors.GREEN))
         except Exception as e:
             print(colored(f'[Save Config] Failed to save configuration: {e}', Colors.RED))
@@ -1149,6 +1186,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         last_part = parts[-1]
         snake_last = self._camel_to_snake(last_part)
 
+        # Convert dict values to proper config objects for known complex types
+        if isinstance(value, dict):
+            value = self._convert_dict_to_config(snake_last, value)
+
         if hasattr(current, snake_last):
             setattr(current, snake_last, value)
         elif hasattr(current, last_part):
@@ -1168,6 +1209,41 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Insert underscore before uppercase letters and convert to lowercase
         s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
         return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _convert_dict_to_config(self, attr_name: str, value: Dict[str, Any]) -> Any:
+        """
+        Convert a dict value to the appropriate config object based on attribute name.
+
+        Args:
+            attr_name: The snake_case attribute name being set
+            value: The dict value to convert
+
+        Returns:
+            The converted config object, or the original dict if no conversion needed
+        """
+        from ..models.action_rules import ActionRulesConfig
+        from ..models.strummer_features import (
+            NoteRepeaterConfig, TransposeConfig, StylusButtonsConfig, StrumReleaseConfig
+        )
+        from ..models.strummer_config import StrummingConfig
+        from ..models.parameter_mapping import ParameterMapping
+
+        converters = {
+            'action_rules': ActionRulesConfig.from_dict,
+            'note_repeater': NoteRepeaterConfig.from_dict,
+            'transpose': TransposeConfig.from_dict,
+            'stylus_buttons': StylusButtonsConfig.from_dict,
+            'strum_release': StrumReleaseConfig.from_dict,
+            'strumming': StrummingConfig.from_dict,
+            'note_duration': ParameterMapping.from_dict,
+            'pitch_bend': ParameterMapping.from_dict,
+            'note_velocity': ParameterMapping.from_dict,
+        }
+
+        converter = converters.get(attr_name)
+        if converter:
+            return converter(value)
+        return value
 
     def handle_packet(self, data: bytes) -> None:
         """Handle incoming HID packet"""
@@ -1207,18 +1283,21 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.button_state['primaryButtonPressed'] = primary_button
             self.button_state['secondaryButtonPressed'] = secondary_button
 
-            # Handle tablet hardware button presses (buttons 1-8)
-            tablet_buttons_cfg = self.config.strummer.tablet_buttons
+            # Handle tablet hardware button presses (buttons 1-8) via action rules
             for i in range(1, 9):
                 button_key = f'button{i}'
                 button_pressed = bool(events.get(button_key, False))
+                was_pressed = self.tablet_button_state[button_key]
 
                 # Detect button down event (transition from not pressed to pressed)
-                if button_pressed and not self.tablet_button_state[button_key]:
-                    # Button just pressed - execute configured action
-                    action = tablet_buttons_cfg.get_button_action(i) if tablet_buttons_cfg else None
-                    if action:
-                        self.actions.execute(action, context={'button': f'Tablet{i}'})
+                if button_pressed and not was_pressed:
+                    # Button just pressed - execute 'press' action via action rules system
+                    self.actions.handle_button_event(f'button:{i}', 'press')
+
+                # Detect button up event (transition from pressed to not pressed)
+                if not button_pressed and was_pressed:
+                    # Button just released - execute 'release' action via action rules system
+                    self.actions.handle_button_event(f'button:{i}', 'release')
 
                 # Update tablet button state
                 self.tablet_button_state[button_key] = button_pressed
@@ -1289,8 +1368,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Update strummer bounds (use normalized 0-1 range)
             self.strummer.update_bounds(1.0, 1.0)
 
+            # Apply X inversion for left-handed use if configured
+            strum_x = 1.0 - x if self.config.strummer.strumming.invert_x else x
+
             # Process strum
-            event = self.strummer.strum(x, pressure)
+            event = self.strummer.strum(strum_x, pressure)
 
             # Get note repeater configuration
             note_repeater_cfg = self.config.strummer.note_repeater
@@ -1513,6 +1595,9 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Pause event bus initially (no clients)
         self.event_bus.pause()
 
+        # Get local IP for LAN access URLs
+        local_ip = get_local_ip()
+
         # Start HTTP server if port is configured
         if self.http_port:
             http_server = await asyncio.start_server(
@@ -1520,8 +1605,14 @@ class StrummerWebSocketServer(TabletReaderBase):
                 "0.0.0.0",
                 self.http_port
             )
-            print(colored(f'HTTP server started on http://0.0.0.0:{self.http_port}', Colors.CYAN))
-            print(colored(f'Serving files from: {self.public_dir}', Colors.GRAY))
+            print(colored(f'✓ HTTP server listening on port {self.http_port}', Colors.GREEN))
+            print(colored(f'  Serving: {self.public_dir}', Colors.CYAN))
+            # Use ANSI underline (\033[4m) to make URLs visually clickable
+            UNDERLINE = '\033[4m'
+            RESET = '\033[0m'
+            print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://localhost:{self.http_port}{RESET}')
+            if local_ip:
+                print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://{local_ip}:{self.http_port}{RESET}')
 
         # Start WebSocket server
         self.server = await websockets.serve(
@@ -1530,7 +1621,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.ws_port
         )
 
-        print(colored(f'WebSocket server started on ws://0.0.0.0:{self.ws_port}', Colors.CYAN))
+        print(colored(f'✓ WebSocket server listening on port {self.ws_port}', Colors.GREEN))
+        print(colored(f'  Throttle: {self.event_bus.throttle_ms}ms', Colors.CYAN))
+        print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://localhost:{self.ws_port}{RESET}')
+        if local_ip:
+            print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://{local_ip}:{self.ws_port}{RESET}')
         print(colored('Press Ctrl+C to stop', Colors.GRAY))
 
         # Start reading tablet data in a separate thread

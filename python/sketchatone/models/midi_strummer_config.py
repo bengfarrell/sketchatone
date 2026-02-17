@@ -61,6 +61,16 @@ class MidiStrummerConfig:
         return self.strummer.upper_spread
 
     @property
+    def note_repeater(self):
+        """Access note_repeater config for Actions class compatibility"""
+        return self.strummer.note_repeater
+
+    @property
+    def transpose(self):
+        """Access transpose config for Actions class compatibility"""
+        return self.strummer.transpose
+
+    @property
     def channel(self):
         return self.strummer.channel
 

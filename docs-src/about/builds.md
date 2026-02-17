@@ -9,7 +9,60 @@ Pre-built packages are available for various platforms.
 
 ## macOS
 
-*Coming soon* - Standalone application bundle
+Sketchatone provides a lightweight macOS application bundle (~11MB) that includes everything needed to run.
+
+### Quick Install
+
+1. Download `Sketchatone.app` from the [releases page](https://github.com/bengfarrell/sketchatone/releases)
+2. Drag to `/Applications`
+3. Double-click to launch
+
+The app opens Terminal with the server running and automatically opens your browser to the Sketchatone interface.
+
+### For Tablets Requiring Exclusive HID Access
+
+Some tablets (like Huion) require exclusive HID access for hardware button support. Run with sudo:
+
+```bash
+sudo /Applications/Sketchatone.app/Contents/MacOS/sketchatone-server
+```
+
+Or use the included `Run Sketchatone (sudo).command` file which prompts for your password.
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/bengfarrell/sketchatone.git
+cd sketchatone
+
+# Install dependencies
+npm install
+
+# Build the macOS app bundle
+npm run package:macos
+```
+
+This creates `dist/Sketchatone.app` (~11MB) containing:
+- Bundled Python virtual environment with all dependencies
+- The Sketchatone webapp
+- Device configuration files
+- App icon
+
+**Requirements for building:**
+- Python 3.x
+- Node.js
+- `librsvg` for icon generation (optional): `brew install librsvg`
+
+### What's Included
+
+The app bundle is self-contained with:
+- Python venv with `hidapi`, `websockets`, `python-rtmidi`, and other dependencies
+- Pre-built webapp served at `http://localhost:8080`
+- WebSocket server at `ws://localhost:8081`
+- All device configuration files
+
+No additional Python packages need to be installed on the target system.
 
 ## Windows
 

@@ -22,8 +22,6 @@ import {
   StylusButtonsConfigData,
   StrumReleaseConfig,
   StrumReleaseConfigData,
-  TabletButtonsConfig,
-  TabletButtonsConfigData,
 } from './strummer-features.js';
 import {
   ActionRulesConfig,
@@ -49,6 +47,8 @@ export interface StrummingConfigData {
   upperNoteSpread: number;
   /** Number of notes to add below the chord */
   lowerNoteSpread: number;
+  /** Invert X axis for left-handed use (flips which notes are on which side) */
+  invertX: boolean;
 }
 
 /**
@@ -62,6 +62,7 @@ export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
   chord: undefined,
   upperNoteSpread: 3,
   lowerNoteSpread: 3,
+  invertX: false,
 };
 
 /**
@@ -75,6 +76,7 @@ export class StrummingConfig implements StrummingConfigData {
   chord?: string;
   upperNoteSpread: number;
   lowerNoteSpread: number;
+  invertX: boolean;
 
   constructor(data: Partial<StrummingConfigData> = {}) {
     this.pluckVelocityScale = data.pluckVelocityScale ?? DEFAULT_STRUMMING_CONFIG.pluckVelocityScale;
@@ -84,6 +86,7 @@ export class StrummingConfig implements StrummingConfigData {
     this.chord = data.chord;
     this.upperNoteSpread = data.upperNoteSpread ?? DEFAULT_STRUMMING_CONFIG.upperNoteSpread;
     this.lowerNoteSpread = data.lowerNoteSpread ?? DEFAULT_STRUMMING_CONFIG.lowerNoteSpread;
+    this.invertX = data.invertX ?? DEFAULT_STRUMMING_CONFIG.invertX;
   }
 
   /**
@@ -98,6 +101,7 @@ export class StrummingConfig implements StrummingConfigData {
       chord: data.chord as string | undefined,
       upperNoteSpread: (data.upper_note_spread ?? data.upperNoteSpread) as number | undefined,
       lowerNoteSpread: (data.lower_note_spread ?? data.lowerNoteSpread) as number | undefined,
+      invertX: (data.invert_x ?? data.invertX) as boolean | undefined,
     });
   }
 
@@ -113,6 +117,7 @@ export class StrummingConfig implements StrummingConfigData {
       chord: this.chord,
       upperNoteSpread: this.upperNoteSpread,
       lowerNoteSpread: this.lowerNoteSpread,
+      invertX: this.invertX,
     };
   }
 }
@@ -129,7 +134,6 @@ export interface StrummerConfigData {
   transpose: TransposeConfigData;
   stylusButtons: StylusButtonsConfigData;
   strumRelease: StrumReleaseConfigData;
-  tabletButtons: TabletButtonsConfigData;
   actionRules: ActionRulesConfigData;
 }
 
@@ -150,7 +154,6 @@ export class StrummerConfig {
   transpose: TransposeConfig;
   stylusButtons: StylusButtonsConfig;
   strumRelease: StrumReleaseConfig;
-  tabletButtons: TabletButtonsConfig;
   actionRules: ActionRulesConfig;
 
   constructor(data: {
@@ -162,7 +165,6 @@ export class StrummerConfig {
     transpose?: TransposeConfig;
     stylusButtons?: StylusButtonsConfig;
     strumRelease?: StrumReleaseConfig;
-    tabletButtons?: TabletButtonsConfig;
     actionRules?: ActionRulesConfig;
   } = {}) {
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
@@ -173,7 +175,6 @@ export class StrummerConfig {
     this.transpose = data.transpose ?? new TransposeConfig();
     this.stylusButtons = data.stylusButtons ?? new StylusButtonsConfig();
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
-    this.tabletButtons = data.tabletButtons ?? new TabletButtonsConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
   }
 
@@ -218,7 +219,6 @@ export class StrummerConfig {
     const transposeData = (data.transpose ?? {}) as Record<string, unknown>;
     const stylusButtonsData = (data.stylus_buttons ?? data.stylusButtons ?? {}) as Record<string, unknown>;
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
-    const tabletButtonsData = data.tablet_buttons ?? data.tabletButtons;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
 
     return new StrummerConfig({
@@ -246,9 +246,6 @@ export class StrummerConfig {
       strumRelease: Object.keys(strumReleaseData).length > 0
         ? StrumReleaseConfig.fromDict(strumReleaseData)
         : new StrumReleaseConfig(),
-      tabletButtons: tabletButtonsData !== undefined && tabletButtonsData !== null
-        ? TabletButtonsConfig.fromDict(tabletButtonsData as string | Record<string, unknown>)
-        : new TabletButtonsConfig(),
       actionRules: Object.keys(actionRulesData).length > 0
         ? ActionRulesConfig.fromDict(actionRulesData)
         : new ActionRulesConfig(),
@@ -277,7 +274,6 @@ export class StrummerConfig {
       transpose: this.transpose.toDict(),
       stylusButtons: this.stylusButtons.toDict(),
       strumRelease: this.strumRelease.toDict(),
-      tabletButtons: this.tabletButtons.toDict(),
       actionRules: this.actionRules.toDict(),
     };
   }

@@ -22,7 +22,6 @@ import {
   TransposeConfig,
   StylusButtonsConfig,
   StrumReleaseConfig,
-  TabletButtonsConfig,
 } from './strummer-features.js';
 
 /**
@@ -247,8 +246,13 @@ export class MidiStrummerConfig {
     return this._strummer.strumRelease;
   }
 
-  get tabletButtons(): TabletButtonsConfig {
-    return this._strummer.tabletButtons;
+  // Convenience properties for Actions class compatibility
+  get lowerSpread(): number {
+    return this._strummer.lowerSpread;
+  }
+
+  get upperSpread(): number {
+    return this._strummer.upperSpread;
   }
 
   // MIDI config accessors

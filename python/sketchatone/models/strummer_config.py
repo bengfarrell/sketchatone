@@ -16,8 +16,8 @@ from .strummer_features import (
     TransposeConfig,
     StylusButtonsConfig,
     StrumReleaseConfig,
-    TabletButtonsConfig
 )
+from .action_rules import ActionRulesConfig
 
 
 @dataclass
@@ -33,6 +33,7 @@ class StrummingConfig:
         chord: Optional chord notation (e.g., "Am", "Gmaj7")
         upper_note_spread: Number of notes to add above the chord
         lower_note_spread: Number of notes to add below the chord
+        invert_x: Invert X axis for left-handed use (flips which notes are on which side)
     """
     pluck_velocity_scale: float = 4.0
     pressure_threshold: float = 0.1
@@ -41,6 +42,7 @@ class StrummingConfig:
     chord: Optional[str] = None
     upper_note_spread: int = 3
     lower_note_spread: int = 3
+    invert_x: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrummingConfig':
@@ -52,7 +54,8 @@ class StrummingConfig:
             initial_notes=data.get('initial_notes', data.get('initialNotes', ["C4", "E4", "G4"])),
             chord=data.get('chord'),
             upper_note_spread=data.get('upper_note_spread', data.get('upperNoteSpread', 3)),
-            lower_note_spread=data.get('lower_note_spread', data.get('lowerNoteSpread', 3))
+            lower_note_spread=data.get('lower_note_spread', data.get('lowerNoteSpread', 3)),
+            invert_x=data.get('invert_x', data.get('invertX', False))
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -64,7 +67,8 @@ class StrummingConfig:
             'initialNotes': self.initial_notes,
             'chord': self.chord,
             'upperNoteSpread': self.upper_note_spread,
-            'lowerNoteSpread': self.lower_note_spread
+            'lowerNoteSpread': self.lower_note_spread,
+            'invertX': self.invert_x
         }
 
 
@@ -96,7 +100,7 @@ class StrummerConfig:
     transpose: TransposeConfig = field(default_factory=TransposeConfig)
     stylus_buttons: StylusButtonsConfig = field(default_factory=StylusButtonsConfig)
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
-    tablet_buttons: TabletButtonsConfig = field(default_factory=TabletButtonsConfig)
+    action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
 
     # Convenience properties for backward compatibility
     @property
@@ -140,7 +144,7 @@ class StrummerConfig:
         transpose_data = data.get('transpose', {})
         stylus_buttons_data = data.get('stylus_buttons', data.get('stylusButtons', {}))
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
-        tablet_buttons_data = data.get('tablet_buttons', data.get('tabletButtons'))
+        action_rules_data = data.get('action_rules', data.get('actionRules', {}))
 
         return cls(
             note_duration=ParameterMapping.from_dict(note_duration_data) if note_duration_data else default_note_duration(),
@@ -151,7 +155,7 @@ class StrummerConfig:
             transpose=TransposeConfig.from_dict(transpose_data) if transpose_data else TransposeConfig(),
             stylus_buttons=StylusButtonsConfig.from_dict(stylus_buttons_data) if stylus_buttons_data else StylusButtonsConfig(),
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
-            tablet_buttons=TabletButtonsConfig.from_dict(tablet_buttons_data)
+            action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig()
         )
 
     @classmethod
@@ -172,7 +176,7 @@ class StrummerConfig:
             'transpose': self.transpose.to_dict(),
             'stylusButtons': self.stylus_buttons.to_dict(),
             'strumRelease': self.strum_release.to_dict(),
-            'tabletButtons': self.tablet_buttons.to_dict()
+            'actionRules': self.action_rules.to_dict()
         }
 
     def to_json_file(self, path: str) -> None:

@@ -95,7 +95,7 @@ echo "📝 Creating launcher scripts..."
 cat > "$MACOS_DIR/sketchatone-server" << 'SERVEREOF'
 #!/bin/bash
 # Sketchatone Server
-# Starts the Python server and opens the browser
+# Starts the Python server
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESOURCES_DIR="$(dirname "$SCRIPT_DIR")/Resources"
@@ -103,34 +103,29 @@ RESOURCES_DIR="$(dirname "$SCRIPT_DIR")/Resources"
 # Use the bundled Python venv
 PYTHON="$RESOURCES_DIR/venv/bin/python3"
 
-# Configuration
-WS_PORT=8081
-HTTP_PORT=8080
+# Config file path
+CONFIG_FILE="$RESOURCES_DIR/configs/config.json"
 
 # Set environment variables for the server
 export SKETCHATONE_PUBLIC_DIR="$RESOURCES_DIR/public"
-export SKETCHATONE_CONFIG_DIR="$RESOURCES_DIR/configs"
+export SKETCHATONE_CONFIG_DIR="$RESOURCES_DIR/configs/devices"
+
+# Create default config if it doesn't exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    if [ -f "$RESOURCES_DIR/configs/sample-config.json" ]; then
+        cp "$RESOURCES_DIR/configs/sample-config.json" "$CONFIG_FILE"
+        echo "📋 Created default config: $CONFIG_FILE"
+    fi
+fi
 
 echo "🎸 Starting Sketchatone..."
-echo "   WebSocket: ws://localhost:$WS_PORT"
-echo "   HTTP: http://localhost:$HTTP_PORT"
 echo ""
 
-# Function to open browser after a short delay
-open_browser() {
-    sleep 2
-    open "http://localhost:$HTTP_PORT"
-}
-
-# Start browser opener in background
-open_browser &
-
 # Start the Python server using the bundled venv
-# Use --poll to wait for device connection (user can override with args)
-# Pass all arguments through (allows --config, etc.)
+# Use config file for all settings, with --poll as fallback for device detection
+# Pass all arguments through (allows overrides)
 exec "$PYTHON" -m sketchatone.cli.server \
-    --ws-port $WS_PORT \
-    --http-port $HTTP_PORT \
+    -c "$CONFIG_FILE" \
     --poll 2000 \
     "$@"
 SERVEREOF
@@ -244,16 +239,50 @@ echo ""
 cat > "dist/Run Sketchatone (sudo).command" << 'CMDFILE'
 #!/bin/bash
 # Double-click to run Sketchatone with sudo (for full tablet button access)
+# Only the Python process runs as root to avoid changing file permissions
+
 cd "$(dirname "$0")"
+
+# Find the app bundle
 if [ -d "Sketchatone.app" ]; then
-    sudo ./Sketchatone.app/Contents/MacOS/Sketchatone
+    APP_DIR="./Sketchatone.app"
 elif [ -d "/Applications/Sketchatone.app" ]; then
-    sudo /Applications/Sketchatone.app/Contents/MacOS/Sketchatone
+    APP_DIR="/Applications/Sketchatone.app"
 else
     echo "Error: Sketchatone.app not found"
     echo "Please install to /Applications or run from the same directory"
     exit 1
 fi
+
+RESOURCES_DIR="$APP_DIR/Contents/Resources"
+PYTHON="$RESOURCES_DIR/venv/bin/python3"
+CONFIG_FILE="$RESOURCES_DIR/configs/config.json"
+
+# Set environment variables
+export SKETCHATONE_PUBLIC_DIR="$RESOURCES_DIR/public"
+export SKETCHATONE_CONFIG_DIR="$RESOURCES_DIR/configs/devices"
+
+# Create default config if it doesn't exist (as current user, not root)
+if [ ! -f "$CONFIG_FILE" ]; then
+    if [ -f "$RESOURCES_DIR/configs/sample-config.json" ]; then
+        cp "$RESOURCES_DIR/configs/sample-config.json" "$CONFIG_FILE"
+        echo "📋 Created default config: $CONFIG_FILE"
+    fi
+fi
+
+echo "🔐 Running Sketchatone with sudo (for full tablet button access)..."
+echo "🎸 Starting Sketchatone..."
+echo ""
+
+# Run only the Python process with sudo, preserving environment variables
+# PYTHONDONTWRITEBYTECODE=1 prevents creating root-owned __pycache__ files
+sudo PYTHONDONTWRITEBYTECODE=1 \
+    SKETCHATONE_PUBLIC_DIR="$SKETCHATONE_PUBLIC_DIR" \
+    SKETCHATONE_CONFIG_DIR="$SKETCHATONE_CONFIG_DIR" \
+    "$PYTHON" -m sketchatone.cli.server \
+    -c "$CONFIG_FILE" \
+    --poll 2000 \
+    "$@"
 CMDFILE
 chmod +x "dist/Run Sketchatone (sudo).command"
 

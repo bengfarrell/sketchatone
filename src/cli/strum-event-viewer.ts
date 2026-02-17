@@ -20,8 +20,8 @@ import * as path from 'path';
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath } from 'blankslate/cli/tablet-reader-base.js';
 
-// Default config directory
-const DEFAULT_CONFIG_DIR = './public/configs';
+// Default config directory for device configs
+const DEFAULT_CONFIG_DIR = './public/configs/devices';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { StrummerConfig } from '../models/strummer-config.js';
 import { Note, type NoteObject } from '../models/note.js';

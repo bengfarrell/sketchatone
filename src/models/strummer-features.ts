@@ -263,18 +263,52 @@ export class StrumReleaseConfig implements StrumReleaseConfigData {
 /**
  * Chord progression presets
  * Maps preset names to arrays of chord names for tablet buttons
+ * Based on midi-strummer's chord_progressions.json
  */
 export const CHORD_PROGRESSION_PRESETS: Record<string, string[]> = {
+  // Major key progressions
+  'c-major-basic': ['C', 'F', 'G', 'Am'],
   'c-major-pop': ['C', 'G', 'Am', 'F'], // I-V-vi-IV
+  'c-major-jazz': ['Cmaj7', 'Dm7', 'Em7', 'Fmaj7', 'G7', 'Am7', 'Bm7'],
   'c-major-50s': ['C', 'Am', 'F', 'G'], // I-vi-IV-V
+  'g-major-basic': ['G', 'C', 'D', 'Em'],
   'g-major-pop': ['G', 'D', 'Em', 'C'], // I-V-vi-IV in G
+  'g-major-jazz': ['Gmaj7', 'Am7', 'Bm7', 'Cmaj7', 'D7', 'Em7', 'F#m7'],
+  'd-major-basic': ['D', 'G', 'A', 'Bm'],
   'd-major-pop': ['D', 'A', 'Bm', 'G'], // I-V-vi-IV in D
+  'd-major-jazz': ['Dmaj7', 'Em7', 'F#m7', 'Gmaj7', 'A7', 'Bm7', 'C#m7'],
+  'a-major-basic': ['A', 'D', 'E', 'F#m'],
   'a-major-pop': ['A', 'E', 'F#m', 'D'], // I-V-vi-IV in A
+  'e-major-basic': ['E', 'A', 'B', 'C#m'],
   'e-major-pop': ['E', 'B', 'C#m', 'A'], // I-V-vi-IV in E
+  'f-major-basic': ['F', 'Bb', 'C', 'Dm'],
   'f-major-pop': ['F', 'C', 'Dm', 'Bb'], // I-V-vi-IV in F
-  'am-minor': ['Am', 'F', 'C', 'G'], // i-VI-III-VII (Aeolian)
-  'em-minor': ['Em', 'C', 'G', 'D'], // i-VI-III-VII in Em
-  'dm-minor': ['Dm', 'Bb', 'F', 'C'], // i-VI-III-VII in Dm
+
+  // Minor key progressions
+  'a-minor-basic': ['Am', 'Dm', 'Em', 'F', 'E'],
+  'a-minor-pop': ['Am', 'F', 'C', 'G', 'E'], // i-VI-III-VII
+  'a-minor-sad': ['Am', 'Em', 'F', 'C', 'G', 'Dm', 'E'],
+  'e-minor-basic': ['Em', 'Am', 'Bm', 'C', 'B'],
+  'e-minor-pop': ['Em', 'C', 'G', 'D', 'B'], // i-VI-III-VII in Em
+  'd-minor-basic': ['Dm', 'Gm', 'Am', 'Bb', 'A'],
+  'd-minor-pop': ['Dm', 'Bb', 'F', 'C', 'A'], // i-VI-III-VII in Dm
+
+  // Blues progressions
+  'blues-e': ['E7', 'A7', 'B7'],
+  'blues-a': ['A7', 'D7', 'E7'],
+  'blues-g': ['G7', 'C7', 'D7'],
+
+  // Rock progressions
+  'rock-classic': ['E', 'A', 'D', 'B'],
+  'rock-power': ['E5', 'G5', 'A5', 'C5', 'D5'],
+
+  // Jazz progressions
+  'jazz-251-c': ['Dm7', 'G7', 'Cmaj7', 'Em7', 'A7'],
+  'jazz-251-f': ['Gm7', 'C7', 'Fmaj7', 'Am7', 'D7'],
+
+  // Gospel progressions
+  'gospel-c': ['C', 'Am7', 'Dm7', 'G7', 'F'],
+  'gospel-g': ['G', 'Em7', 'Am7', 'D7', 'C'],
 };
 
 /**
@@ -282,213 +316,4 @@ export const CHORD_PROGRESSION_PRESETS: Record<string, string[]> = {
  */
 export function getChordProgressionPresetNames(): string[] {
   return Object.keys(CHORD_PROGRESSION_PRESETS);
-}
-
-/**
- * Action definition for a tablet button - can be a string or array with parameters
- * Examples: "toggle-repeater", ["transpose", 12], ["set-strum-chord", "C", 4]
- */
-export type TabletButtonAction = string | [string, ...unknown[]] | null;
-
-/**
- * Individual button actions configuration (keys "1" through "8")
- */
-export interface IndividualButtonActions {
-  '1'?: TabletButtonAction;
-  '2'?: TabletButtonAction;
-  '3'?: TabletButtonAction;
-  '4'?: TabletButtonAction;
-  '5'?: TabletButtonAction;
-  '6'?: TabletButtonAction;
-  '7'?: TabletButtonAction;
-  '8'?: TabletButtonAction;
-}
-
-/**
- * Tablet buttons configuration data - supports two modes:
- * 1. Chord progression mode: uses preset/chords/currentIndex
- * 2. Individual button mode: uses buttonActions with per-button action definitions
- */
-export interface TabletButtonsConfigData {
-  /** Mode: 'progression' for chord progression, 'individual' for per-button actions */
-  mode: 'progression' | 'individual';
-  /** Preset name (e.g., 'c-major-pop') - used in progression mode */
-  preset: string;
-  /** Chord names for each button (derived from preset or custom) - used in progression mode */
-  chords: string[];
-  /** Currently active chord index (0-based) - used in progression mode */
-  currentIndex: number;
-  /** Default octave for chord actions */
-  octave: number;
-  /** Individual button actions - used in individual mode */
-  buttonActions: IndividualButtonActions;
-}
-
-/**
- * Default tablet buttons configuration
- */
-export const DEFAULT_TABLET_BUTTONS_CONFIG: TabletButtonsConfigData = {
-  mode: 'progression',
-  preset: 'c-major-pop',
-  chords: ['C', 'G', 'Am', 'F'],
-  currentIndex: 0,
-  octave: 4,
-  buttonActions: {},
-};
-
-/**
- * Configuration for tablet buttons.
- * Supports two modes:
- * 1. Chord progression mode - buttons map to chords in a progression
- * 2. Individual button mode - each button has its own action
- */
-export class TabletButtonsConfig implements TabletButtonsConfigData {
-  mode: 'progression' | 'individual';
-  preset: string;
-  chords: string[];
-  currentIndex: number;
-  octave: number;
-  buttonActions: IndividualButtonActions;
-
-  constructor(data: Partial<TabletButtonsConfigData> = {}) {
-    this.mode = data.mode ?? DEFAULT_TABLET_BUTTONS_CONFIG.mode;
-    this.preset = data.preset ?? DEFAULT_TABLET_BUTTONS_CONFIG.preset;
-    this.octave = data.octave ?? DEFAULT_TABLET_BUTTONS_CONFIG.octave;
-    this.currentIndex = data.currentIndex ?? DEFAULT_TABLET_BUTTONS_CONFIG.currentIndex;
-    this.buttonActions = data.buttonActions ?? {};
-
-    // If preset is provided and valid, use its chords; otherwise use provided chords or default
-    if (this.preset !== 'custom' && CHORD_PROGRESSION_PRESETS[this.preset]) {
-      this.chords = CHORD_PROGRESSION_PRESETS[this.preset];
-    } else {
-      this.chords = data.chords ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
-    }
-  }
-
-  /**
-   * Create from dictionary, preset string, or individual button actions
-   * Supports multiple formats:
-   * - String: "c-major-pop" (preset name for progression mode)
-   * - Object with preset/chords: { preset: "c-major-pop", chords: [...] }
-   * - Object with button actions: { "1": "toggle-repeater", "2": ["transpose", 12] }
-   */
-  static fromDict(data: Record<string, unknown> | string | null | undefined): TabletButtonsConfig {
-    if (data === null || data === undefined) {
-      return new TabletButtonsConfig();
-    }
-
-    // Handle simple string preset format (e.g., "c-major-pop")
-    if (typeof data === 'string') {
-      const preset = data;
-      const chords = CHORD_PROGRESSION_PRESETS[preset] ?? DEFAULT_TABLET_BUTTONS_CONFIG.chords;
-      return new TabletButtonsConfig({
-        mode: 'progression',
-        preset,
-        chords,
-        currentIndex: 0,
-      });
-    }
-
-    // Check if this is individual button actions format (has keys "1" through "8")
-    const hasButtonKeys = ['1', '2', '3', '4', '5', '6', '7', '8'].some(key => key in data);
-    const hasPresetOrChords = 'preset' in data || 'chords' in data || 'mode' in data;
-
-    if (hasButtonKeys && !hasPresetOrChords) {
-      // Individual button actions format
-      const buttonActions: IndividualButtonActions = {};
-      for (let i = 1; i <= 8; i++) {
-        const key = String(i) as keyof IndividualButtonActions;
-        if (key in data) {
-          buttonActions[key] = data[key] as ButtonAction;
-        }
-      }
-      return new TabletButtonsConfig({
-        mode: 'individual',
-        buttonActions,
-      });
-    }
-
-    // Handle object format with preset/chords
-    const mode = (data.mode as 'progression' | 'individual') ?? 'progression';
-    return new TabletButtonsConfig({
-      mode,
-      preset: data.preset as string | undefined,
-      chords: data.chords as string[] | undefined,
-      currentIndex: (data.current_index ?? data.currentIndex) as number | undefined,
-      octave: data.octave as number | undefined,
-      buttonActions: data.buttonActions as IndividualButtonActions | undefined,
-    });
-  }
-
-  /**
-   * Convert to dictionary for JSON serialization
-   */
-  toDict(): TabletButtonsConfigData {
-    return {
-      mode: this.mode,
-      preset: this.preset,
-      chords: this.chords,
-      currentIndex: this.currentIndex,
-      octave: this.octave,
-      buttonActions: this.buttonActions,
-    };
-  }
-
-  /**
-   * Get the action for a specific button (1-8)
-   * In progression mode, returns set-strum-chord action for the corresponding chord
-   * In individual mode, returns the configured action
-   */
-  getButtonAction(buttonNumber: number): TabletButtonAction {
-    if (buttonNumber < 1 || buttonNumber > 8) {
-      return null;
-    }
-
-    if (this.mode === 'individual') {
-      const key = String(buttonNumber) as keyof IndividualButtonActions;
-      return this.buttonActions[key] ?? null;
-    }
-
-    // Progression mode - map button to chord
-    const chordIndex = (buttonNumber - 1) % this.chords.length;
-    const chord = this.chords[chordIndex];
-    if (chord) {
-      return ['set-strum-chord', chord, this.octave] as [string, ...unknown[]];
-    }
-    return null;
-  }
-
-  /**
-   * Get the currently active chord
-   */
-  getCurrentChord(): string {
-    return this.chords[this.currentIndex] ?? this.chords[0];
-  }
-
-  /**
-   * Advance to the next chord in the progression
-   */
-  nextChord(): string {
-    this.currentIndex = (this.currentIndex + 1) % this.chords.length;
-    return this.getCurrentChord();
-  }
-
-  /**
-   * Go to the previous chord in the progression
-   */
-  prevChord(): string {
-    this.currentIndex = (this.currentIndex - 1 + this.chords.length) % this.chords.length;
-    return this.getCurrentChord();
-  }
-
-  /**
-   * Set chord by button index (1-based, like tablet buttons)
-   */
-  setChordByButton(buttonNumber: number): string {
-    const index = buttonNumber - 1;
-    if (index >= 0 && index < this.chords.length) {
-      this.currentIndex = index;
-    }
-    return this.getCurrentChord();
-  }
 }

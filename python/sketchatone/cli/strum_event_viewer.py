@@ -32,8 +32,8 @@ except ImportError:
     print("Make sure blankslate is installed: pip install -e ../blankslate/python")
     sys.exit(1)
 
-# Default config directory (relative to python/ directory)
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs')
+# Default config directory for device configs (relative to python/ directory)
+DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices')
 
 
 def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFIG_DIR) -> str:

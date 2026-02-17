@@ -111,11 +111,19 @@ class TestFlatFormatConfig:
         assert strum_release["maxDuration"] == 0.5
         assert strum_release["velocityMultiplier"] == 0.8
     
-    def test_tablet_buttons_settings(self, config):
-        tablet_buttons = config["strummer"]["tabletButtons"]
-        assert tablet_buttons["preset"] == "jazz-standards"
-        assert tablet_buttons["chords"] == ["Dm7", "G7", "Cmaj7", "Fmaj7"]
-        assert tablet_buttons["currentIndex"] == 2
+    def test_action_rules_settings(self, config):
+        action_rules = config["strummer"]["actionRules"]
+        # Check button names
+        assert action_rules["buttonNames"]["button:1"] == "Chord 1"
+        assert action_rules["buttonNames"]["button:2"] == "Chord 2"
+        # Check groups
+        assert len(action_rules["groups"]) == 1
+        assert action_rules["groups"][0]["id"] == "test-chord-group"
+        assert action_rules["groups"][0]["buttons"] == ["button:1", "button:2", "button:3", "button:4"]
+        # Check group rules
+        assert len(action_rules["groupRules"]) == 1
+        assert action_rules["groupRules"][0]["id"] == "test-chord-rule"
+        assert action_rules["groupRules"][0]["trigger"] == "press"
     
     def test_midi_settings(self, config):
         midi = config["midi"]

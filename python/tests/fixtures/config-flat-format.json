@@ -56,10 +56,35 @@
     "max_duration": 0.5,
     "velocity_multiplier": 0.8
   },
-  "tablet_buttons": {
-    "preset": "jazz-standards",
-    "chords": ["Dm7", "G7", "Cmaj7", "Fmaj7"],
-    "current_index": 2
+  "action_rules": {
+    "button_names": {
+      "button:1": "Chord 1",
+      "button:2": "Chord 2",
+      "button:3": "Chord 3",
+      "button:4": "Chord 4"
+    },
+    "rules": [],
+    "groups": [
+      {
+        "id": "test-chord-group",
+        "name": "Test Chord Group",
+        "buttons": ["button:1", "button:2", "button:3", "button:4"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "test-chord-rule",
+        "name": "Test Chord Progression",
+        "group_id": "test-chord-group",
+        "trigger": "press",
+        "action": {
+          "type": "chord-progression",
+          "progression": "c-major-pop",
+          "octave": 4
+        }
+      }
+    ],
+    "startup_rules": []
   },
   "midi": {
     "output_port": "Test Port",

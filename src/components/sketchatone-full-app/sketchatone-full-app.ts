@@ -19,6 +19,7 @@ import '@spectrum-web-components/textfield/sp-textfield.js';
 import '@spectrum-web-components/picker/sp-picker.js';
 import '@spectrum-web-components/menu/sp-menu-item.js';
 import '@spectrum-web-components/number-field/sp-number-field.js';
+import '@spectrum-web-components/switch/sp-switch.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
@@ -56,7 +57,6 @@ import { Strummer, type StrummerEvent, type StrumEvent, type ReleaseEvent } from
 import { Note, type NoteObject } from '../../models/note.js';
 import { StrummerConfig, type StrummerConfigData } from '../../models/strummer-config.js';
 import { ParameterMapping } from '../../models/parameter-mapping.js';
-import { TabletButtonsConfig } from '../../models/strummer-features.js';
 
 // MIDI input (for external keyboards)
 import { WebMidiInput, MIDI_NOTE_EVENT, type MidiNoteEvent } from '../../utils/web-midi-input.js';
@@ -247,7 +247,6 @@ export class SketchatoneFullApp extends LitElement {
 
   // Collapsible sections
   @state() private strumVisualizersExpanded = true;
-  @state() private tabletButtonsExpanded = false;
   @state() private tabletVisualizersExpanded = true;
 
   // Feature states
@@ -378,9 +377,6 @@ export class SketchatoneFullApp extends LitElement {
 
     // Handle stylus button actions
     this.handleStylusButtons();
-
-    // Handle tablet button actions
-    this.handleTabletButtons();
 
     // Process strumming
     this.processStrumming();
@@ -515,43 +511,6 @@ export class SketchatoneFullApp extends LitElement {
       case 'octave-down':
         this.transposeOctave(-1);
         break;
-    }
-  }
-
-  private handleTabletButtons() {
-    const config = this.strummerConfig.tabletButtons;
-
-    for (let i = 1; i <= 8; i++) {
-      if (this.pressedButtons.has(i)) {
-        const action = config.getButtonAction(i);
-        if (action && typeof action === 'string') {
-          this.executeTabletButtonAction(action);
-        }
-      }
-    }
-  }
-
-  private executeTabletButtonAction(action: string) {
-    // Handle chord changes
-    if (action.match(/^[A-G][#b]?(m|maj|min|dim|aug|7|maj7|m7)?$/)) {
-      this.setChord(action);
-    } else {
-      // Handle other actions
-      switch (action) {
-        case 'octave-up':
-          this.transposeOctave(1);
-          break;
-        case 'octave-down':
-          this.transposeOctave(-1);
-          break;
-        case 'toggle-transpose':
-          this.transposeActive = !this.transposeActive;
-          this.updateStrummerNotes();
-          break;
-        case 'toggle-repeater':
-          this.repeaterActive = !this.repeaterActive;
-          break;
-      }
     }
   }
 
@@ -719,19 +678,8 @@ export class SketchatoneFullApp extends LitElement {
     this.updateConfig(`${parameterKey}.control`, control);
   }
 
-  private handleTabletButtonsConfigChange(e: CustomEvent) {
-    const detail = e.detail as Record<string, unknown>;
-    for (const [path, value] of Object.entries(detail)) {
-      this.updateConfig(`tabletButtons./Users/farrell/Library/pnpm:/Users/farrell/.nvm/versions/node/v20.19.3/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin/python3:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/usr/local/sbin`, value);
-    }
-  }
-
   private toggleStrumVisualizers() {
     this.strumVisualizersExpanded = !this.strumVisualizersExpanded;
-  }
-
-  private toggleTabletButtons() {
-    this.tabletButtonsExpanded = !this.tabletButtonsExpanded;
   }
 
   private toggleTabletVisualizers() {
@@ -746,10 +694,6 @@ export class SketchatoneFullApp extends LitElement {
       n => n.notation === strumNote.note.notation && n.octave === strumNote.note.octave
     );
     return index >= 0 ? index : null;
-  }
-
-  private getTabletButtonsConfig(): TabletButtonsConfig | undefined {
-    return this.strummerConfig.tabletButtons;
   }
 
   // Common chord presets
@@ -779,9 +723,6 @@ export class SketchatoneFullApp extends LitElement {
 
                 <!-- Strumming Configuration Section -->
                 ${this.renderStrummingConfigSection()}
-
-                <!-- Tablet Buttons Section -->
-                ${this.renderTabletButtonsSection()}
               `}
             </div>
           </div>
@@ -1100,6 +1041,13 @@ export class SketchatoneFullApp extends LitElement {
                     <sp-number-field value="${config.strumming.lowerNoteSpread}" step="1" min="0" max="12"
                       @change=${(e: Event) => this.updateConfig('strumming.lowerNoteSpread', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                   </div>
+                  <div class="setting-row">
+                    <label>Reverse Direction</label>
+                    <sp-switch
+                      ?checked=${config.strumming.invertX}
+                      @change=${(e: Event) => this.updateConfig('strumming.invertX', (e.target as HTMLInputElement).checked)}>
+                    </sp-switch>
+                  </div>
                 </div>
               </dashboard-panel>
 
@@ -1152,30 +1100,6 @@ export class SketchatoneFullApp extends LitElement {
     `;
   }
 
-  private renderTabletButtonsSection() {
-    return html`
-      <div class="visualizer-section">
-        <button class="section-header" @click=${this.toggleTabletButtons}>
-          <span class="section-title">Tablet Buttons</span>
-          <span class="section-toggle">${this.tabletButtonsExpanded ? '▼' : '▶'}</span>
-        </button>
-        ${this.tabletButtonsExpanded ? html`
-          <div class="section-content">
-            <div class="tablet-buttons-grid">
-              <dashboard-panel title="Tablet Buttons Configuration" size="wide" .draggable=${false} .minimizable=${false}>
-                <tablet-buttons-config
-                  .config=${this.getTabletButtonsConfig()}
-                  .pressedButtons=${this.pressedButtons}
-                  .buttonCount=${this.tabletConfig?.getCapabilities()?.buttonCount ?? 8}
-                  @config-change=${this.handleTabletButtonsConfigChange}
-                ></tablet-buttons-config>
-              </dashboard-panel>
-            </div>
-          </div>
-        ` : ''}
-      </div>
-    `;
-  }
 }
 
 declare global {

@@ -134,6 +134,9 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private formGroupOctave: number = 4;
 
+  @state()
+  private formGroupTrigger: TriggerType = 'release';
+
   // Form state for groups (just name and buttons)
   @state()
   private formGroupName: string = '';
@@ -244,6 +247,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formGroupActionType = 'chord-progression';
     this.formGroupProgression = 'c-major-pop';
     this.formGroupOctave = 4;
+    this.formGroupTrigger = 'release';
   }
 
   private openEditButtonRuleForm(rule: ActionRule) {
@@ -276,6 +280,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formGroupActionType = rule.action.type;
     this.formGroupProgression = rule.action.progression;
     this.formGroupOctave = rule.action.octave;
+    this.formGroupTrigger = rule.trigger ?? 'release';
   }
 
   private openEditStartupRuleForm(rule: StartupRule) {
@@ -401,12 +406,14 @@ export class ActionRulesConfigComponent extends LitElement {
         groupId: this.formGroupId,
         name: this.formName || undefined,
         action: groupAction,
+        trigger: this.formGroupTrigger,
       });
     } else if (this.formMode === 'edit-action' && this.editingId) {
       this.config.updateGroupRule(this.editingId, {
         groupId: this.formGroupId,
         name: this.formName || undefined,
         action: groupAction,
+        trigger: this.formGroupTrigger,
       });
     }
 
@@ -687,6 +694,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formGroupActionType = 'chord-progression';
     this.formGroupProgression = 'c-major-pop';
     this.formGroupOctave = 4;
+    this.formGroupTrigger = 'release';
   }
 
   private renderActionForm() {
@@ -783,6 +791,15 @@ export class ActionRulesConfigComponent extends LitElement {
             <div class="form-field">
               <sp-field-label>Octave</sp-field-label>
               <sp-number-field value="${this.formGroupOctave}" min="0" max="8" step="1" @change=${(e: Event) => (this.formGroupOctave = Number((e.target as HTMLInputElement).value))}></sp-number-field>
+            </div>
+
+            <div class="form-field">
+              <sp-field-label>Trigger</sp-field-label>
+              <sp-picker value="${this.formGroupTrigger}" @change=${(e: Event) => (this.formGroupTrigger = (e.target as HTMLSelectElement).value as TriggerType)}>
+                <sp-menu-item value="release">On Release (default)</sp-menu-item>
+                <sp-menu-item value="press">On Press</sp-menu-item>
+                <sp-menu-item value="hold">While Held</sp-menu-item>
+              </sp-picker>
             </div>
           ` : ''}
 

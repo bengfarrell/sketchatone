@@ -5,11 +5,14 @@ Provides a centralized way to handle user actions like toggling features.
 Ported from midi-strummer/server/actions.py
 """
 
-from typing import Dict, Any, Optional, Union, List, Callable
+from typing import Dict, Any, Optional, Union, List, Callable, TYPE_CHECKING
 
 from ..utils.event_emitter import EventEmitter
 from ..models.note import Note, NoteObject
 from ..models.strummer_features import CHORD_PROGRESSION_PRESETS
+
+if TYPE_CHECKING:
+    from ..models.action_rules import ActionRulesConfig, TriggerType, ButtonId
 
 
 class ChordProgressionState:
@@ -101,7 +104,7 @@ class Actions(EventEmitter):
     def __init__(self, config: Any, strummer: Any = None):
         """
         Initialize Actions with a configuration instance.
-        
+
         Args:
             config: Configuration instance that will be modified by actions
             strummer: Optional Strummer instance for setting notes
@@ -109,7 +112,7 @@ class Actions(EventEmitter):
         super().__init__()
         self.config = config
         self.strummer = strummer
-        
+
         # Map action names to handler methods
         self._action_handlers: Dict[str, Callable] = {
             'toggle-repeater': self.toggle_repeater,
@@ -120,9 +123,59 @@ class Actions(EventEmitter):
             'set-chord-in-progression': self.set_chord_in_progression,
             'increment-chord-in-progression': self.increment_chord_in_progression,
         }
-        
+
         # Chord progression state
         self.progression_state = ChordProgressionState()
+
+        # Action rules configuration (set via set_action_rules_config)
+        self._action_rules_config: Optional['ActionRulesConfig'] = None
+
+    @property
+    def action_rules_config(self) -> Optional['ActionRulesConfig']:
+        """Get the current action rules configuration"""
+        return self._action_rules_config
+
+    def set_action_rules_config(self, config: 'ActionRulesConfig') -> None:
+        """
+        Set the action rules configuration.
+
+        Args:
+            config: ActionRulesConfig instance to use for button-to-action mapping
+        """
+        self._action_rules_config = config
+
+    def handle_button_event(self, button_id: 'ButtonId', trigger: 'TriggerType') -> bool:
+        """
+        Handle a button event using the action rules configuration.
+
+        Args:
+            button_id: The button identifier (e.g., "button:primary", "button:1")
+            trigger: The trigger type ('press', 'release', or 'hold')
+
+        Returns:
+            True if an action was executed, False otherwise
+        """
+        if not self._action_rules_config:
+            print('[ACTIONS] No action rules config set, cannot handle button event')
+            return False
+
+        action = self._action_rules_config.get_action_for_button_event(button_id, trigger)
+        if action:
+            return self.execute(action, context={'button': button_id, 'trigger': trigger})
+
+        return False
+
+    def execute_startup_rules(self) -> None:
+        """
+        Execute all startup rules defined in the action rules configuration.
+        Called after initialization to set up initial state.
+        """
+        if not self._action_rules_config:
+            return
+
+        for rule in self._action_rules_config.startup_rules:
+            print(f"[ACTIONS] Executing startup rule: {rule.name}")
+            self.execute(rule.action, context={'startup': True, 'rule_id': rule.id})
     
     def execute(self, action_def: Union[str, List, None], context: Optional[Dict[str, Any]] = None) -> bool:
         """

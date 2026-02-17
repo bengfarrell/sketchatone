@@ -56,11 +56,6 @@
     "max_duration": 0.5,
     "velocity_multiplier": 0.8
   },
-  "tablet_buttons": {
-    "preset": "jazz-standards",
-    "chords": ["Dm7", "G7", "Cmaj7", "Fmaj7"],
-    "current_index": 2
-  },
   "midi": {
     "output_port": "Test Port",
     "input_port": null,

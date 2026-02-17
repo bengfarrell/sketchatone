@@ -16,13 +16,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath, findConfigForDevice } from 'blankslate/cli/tablet-reader-base.js';
 import type { HIDInterfaceType } from 'blankslate/core';
 
-// Default config directory
-const DEFAULT_CONFIG_DIR = './public/configs';
+// Default config directory for device configs
+const DEFAULT_CONFIG_DIR = './public/configs/devices';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
@@ -45,6 +46,22 @@ import {
  */
 interface TabletWebSocketEvent extends CombinedEventData {
   type: 'tablet-data';
+}
+
+/**
+ * Get the local network IP address (for LAN access)
+ */
+function getLocalIP(): string | null {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] ?? []) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -209,15 +226,15 @@ class StrummerWebSocketServer extends TabletReaderBase {
     this.setupNotes();
 
     // Create Actions handler for stylus buttons
-    this.actions = new Actions(
-      {
-        noteRepeater: this.config.noteRepeater,
-        transpose: this.config.transpose,
-        lowerSpread: this.config.strummer.lowerSpread,
-        upperSpread: this.config.strummer.upperSpread,
-      },
-      this.strummer
-    );
+    // Pass the actual config object so Actions can access live values
+    // (e.g., lowerSpread/upperSpread that may be updated via UI)
+    this.actions = new Actions(this.config, this.strummer);
+
+    // Configure action rules so button-to-action mapping works
+    this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+
+    // Execute any startup rules defined in the config
+    this.actions.executeStartupRules();
   }
 
   /**
@@ -681,6 +698,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.setupNotes();
       }
 
+      // Re-apply action rules if they changed
+      if (path.includes('actionRules') || path.includes('action_rules')) {
+        this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+        // Re-execute startup rules to apply new chord progression
+        this.actions.executeStartupRules();
+      }
+
       console.log(chalk.yellow(`Config updated: ${path} = ${JSON.stringify(value)}`));
 
       // Broadcast updated config to all clients
@@ -797,20 +821,23 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses (buttons 1-8)
-      const tabletButtonsCfg = this.config.tabletButtons;
+      // Handle tablet hardware button presses (buttons 1-8) via action rules
       for (let i = 1; i <= 8; i++) {
         const buttonKey = `button${i}` as keyof typeof normalized;
         const buttonPressed = Boolean(normalized[buttonKey]);
         const stateKey = `button${i}`;
+        const wasPressed = this.tabletButtonState[stateKey];
 
         // Detect button down event (transition from not pressed to pressed)
-        if (buttonPressed && !this.tabletButtonState[stateKey]) {
-          // Button just pressed - execute configured action
-          const action = tabletButtonsCfg?.getButtonAction(i);
-          if (action) {
-            this.actions.execute(action, { button: `Tablet${i}` });
-          }
+        if (buttonPressed && !wasPressed) {
+          // Button just pressed - execute 'press' action via action rules system
+          this.actions.handleButtonEvent(`button:${i}`, 'press');
+        }
+
+        // Detect button up event (transition from pressed to not pressed)
+        if (!buttonPressed && wasPressed) {
+          // Button just released - execute 'release' action via action rules system
+          this.actions.handleButtonEvent(`button:${i}`, 'release');
         }
 
         // Update tablet button state
@@ -882,8 +909,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Update strummer bounds
       this.strummer.updateBounds(1.0, 1.0);
 
+      // Apply X inversion for left-handed use if configured
+      const strumX = this.config.strumming.invertX ? 1.0 - x : x;
+
       // Process strum
-      const event = this.strummer.strum(x, pressure);
+      const event = this.strummer.strum(strumX, pressure);
 
       // Get note repeater configuration
       const noteRepeaterCfg = this.config.noteRepeater;
@@ -1075,12 +1105,19 @@ class StrummerWebSocketServer extends TabletReaderBase {
       console.log(chalk.yellow('⚠ No MIDI input ports available'));
     }
 
+    // Get local IP for LAN access URLs
+    const localIP = getLocalIP();
+
     // Start HTTP server if port configured
     if (this.httpPort) {
       this.httpServer = http.createServer((req, res) => this.handleHttpRequest(req, res));
       this.httpServer.listen(this.httpPort, () => {
         console.log(chalk.green(`✓ HTTP server listening on port ${this.httpPort}`));
         console.log(chalk.cyan(`  Serving: ${this.publicDir}`));
+        console.log(chalk.white(`  Local:   `) + chalk.blue.underline(`http://localhost:${this.httpPort}`));
+        if (localIP) {
+          console.log(chalk.white(`  Network: `) + chalk.blue.underline(`http://${localIP}:${this.httpPort}`));
+        }
       });
     }
 
@@ -1142,6 +1179,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     console.log(chalk.green(`✓ WebSocket server listening on port ${this.wsPort}`));
     console.log(chalk.cyan(`  Throttle: ${this.eventBus.throttleMs}ms`));
+    console.log(chalk.white(`  Local:   `) + chalk.magenta.underline(`ws://localhost:${this.wsPort}`));
+    if (localIP) {
+      console.log(chalk.white(`  Network: `) + chalk.magenta.underline(`ws://${localIP}:${this.wsPort}`));
+    }
 
     // Set up event subscriptions
     this.setupEventSubscriptions();

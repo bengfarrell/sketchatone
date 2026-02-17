@@ -114,14 +114,6 @@ describe('Config Loading Integration Tests', () => {
       expect(strumRelease.velocityMultiplier).toBe(0.8);
     });
 
-    it('should correctly load tabletButtons settings', () => {
-      config = dumpConfig(configPath);
-      const tabletButtons = (config.strummer as Record<string, unknown>).tabletButtons as Record<string, unknown>;
-      expect(tabletButtons.preset).toBe('jazz-standards');
-      expect(tabletButtons.chords).toEqual(['Dm7', 'G7', 'Cmaj7', 'Fmaj7']);
-      expect(tabletButtons.currentIndex).toBe(2);
-    });
-
     it('should correctly load midi settings', () => {
       config = dumpConfig(configPath);
       const midi = config.midi as Record<string, unknown>;
