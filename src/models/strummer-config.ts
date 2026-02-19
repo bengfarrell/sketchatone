@@ -14,12 +14,6 @@ import {
   defaultNoteVelocity,
 } from './parameter-mapping.js';
 import {
-  NoteRepeaterConfig,
-  NoteRepeaterConfigData,
-  TransposeConfig,
-  TransposeConfigData,
-  StylusButtonsConfig,
-  StylusButtonsConfigData,
   StrumReleaseConfig,
   StrumReleaseConfigData,
 } from './strummer-features.js';
@@ -130,9 +124,6 @@ export interface StrummerConfigData {
   pitchBend: ParameterMappingData;
   noteVelocity: ParameterMappingData;
   strumming: StrummingConfigData;
-  noteRepeater: NoteRepeaterConfigData;
-  transpose: TransposeConfigData;
-  stylusButtons: StylusButtonsConfigData;
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
 }
@@ -143,16 +134,17 @@ export interface StrummerConfigData {
  * This follows the midi-strummer configuration format with:
  * - Parameter mappings for note duration, pitch bend, and velocity
  * - Core strumming settings
- * - Optional features (repeater, transpose, stylus buttons, strum release)
+ * - Optional features (strum release)
+ * - Action rules for button-to-action mapping
+ *
+ * Note: Repeater and transpose state is now managed by the Actions class,
+ * not by config. Use action rules to configure these features.
  */
 export class StrummerConfig {
   noteDuration: ParameterMapping;
   pitchBend: ParameterMapping;
   noteVelocity: ParameterMapping;
   strumming: StrummingConfig;
-  noteRepeater: NoteRepeaterConfig;
-  transpose: TransposeConfig;
-  stylusButtons: StylusButtonsConfig;
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
 
@@ -161,9 +153,6 @@ export class StrummerConfig {
     pitchBend?: ParameterMapping;
     noteVelocity?: ParameterMapping;
     strumming?: StrummingConfig;
-    noteRepeater?: NoteRepeaterConfig;
-    transpose?: TransposeConfig;
-    stylusButtons?: StylusButtonsConfig;
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
   } = {}) {
@@ -171,9 +160,6 @@ export class StrummerConfig {
     this.pitchBend = data.pitchBend ?? defaultPitchBend();
     this.noteVelocity = data.noteVelocity ?? defaultNoteVelocity();
     this.strumming = data.strumming ?? new StrummingConfig();
-    this.noteRepeater = data.noteRepeater ?? new NoteRepeaterConfig();
-    this.transpose = data.transpose ?? new TransposeConfig();
-    this.stylusButtons = data.stylusButtons ?? new StylusButtonsConfig();
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
   }
@@ -209,15 +195,13 @@ export class StrummerConfig {
 
   /**
    * Create a StrummerConfig from a dictionary.
+   * Note: note_repeater and transpose fields are ignored as they are now managed by Actions.
    */
   static fromDict(data: Record<string, unknown>): StrummerConfig {
     const noteDurationData = (data.note_duration ?? data.noteDuration ?? {}) as Record<string, unknown>;
     const pitchBendData = (data.pitch_bend ?? data.pitchBend ?? {}) as Record<string, unknown>;
     const noteVelocityData = (data.note_velocity ?? data.noteVelocity ?? {}) as Record<string, unknown>;
     const strummingData = (data.strumming ?? {}) as Record<string, unknown>;
-    const noteRepeaterData = (data.note_repeater ?? data.noteRepeater ?? {}) as Record<string, unknown>;
-    const transposeData = (data.transpose ?? {}) as Record<string, unknown>;
-    const stylusButtonsData = (data.stylus_buttons ?? data.stylusButtons ?? {}) as Record<string, unknown>;
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
 
@@ -234,15 +218,6 @@ export class StrummerConfig {
       strumming: Object.keys(strummingData).length > 0
         ? StrummingConfig.fromDict(strummingData)
         : new StrummingConfig(),
-      noteRepeater: Object.keys(noteRepeaterData).length > 0
-        ? NoteRepeaterConfig.fromDict(noteRepeaterData)
-        : new NoteRepeaterConfig(),
-      transpose: Object.keys(transposeData).length > 0
-        ? TransposeConfig.fromDict(transposeData)
-        : new TransposeConfig(),
-      stylusButtons: Object.keys(stylusButtonsData).length > 0
-        ? StylusButtonsConfig.fromDict(stylusButtonsData)
-        : new StylusButtonsConfig(),
       strumRelease: Object.keys(strumReleaseData).length > 0
         ? StrumReleaseConfig.fromDict(strumReleaseData)
         : new StrumReleaseConfig(),
@@ -270,9 +245,6 @@ export class StrummerConfig {
       pitchBend: this.pitchBend.toDict(),
       noteVelocity: this.noteVelocity.toDict(),
       strumming: this.strumming.toDict(),
-      noteRepeater: this.noteRepeater.toDict(),
-      transpose: this.transpose.toDict(),
-      stylusButtons: this.stylusButtons.toDict(),
       strumRelease: this.strumRelease.toDict(),
       actionRules: this.actionRules.toDict(),
     };

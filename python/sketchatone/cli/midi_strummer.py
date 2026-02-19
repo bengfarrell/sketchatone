@@ -218,8 +218,9 @@ class MidiStrummer(TabletReaderBase):
             'secondaryButtonPressed': False
         }
 
-        # State tracking for tablet hardware buttons (1-8)
-        self.tablet_button_state = {f'button{i}': False for i in range(1, 9)}
+        # State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
+        self.tablet_button_state: Dict[str, bool] = {}
+        self.tablet_button_count: int = 8  # Default, updated when device connects
 
         # State tracking for note repeater
         self.repeater_state = {
@@ -244,6 +245,21 @@ class MidiStrummer(TabletReaderBase):
                 notes.append(Note.parse_notation(note_str))
 
         self.strummer.notes = notes
+
+    def _initialize_tablet_button_state(self) -> None:
+        """Initialize tablet button state based on device capabilities"""
+        capabilities = None
+        if hasattr(self, 'config_data') and self.config_data:
+            capabilities = self.config_data.get_capabilities()
+
+        self.tablet_button_count = capabilities.buttonCount if capabilities else 8
+
+        # Initialize button state for all buttons
+        self.tablet_button_state = {}
+        for i in range(1, self.tablet_button_count + 1):
+            self.tablet_button_state[f'button{i}'] = False
+
+        print(colored(f'  Tablet has {self.tablet_button_count} hardware buttons', Colors.GRAY))
 
     def _get_control_value(self, control: str, events: Dict[str, Any]) -> Optional[float]:
         """
@@ -362,6 +378,9 @@ class MidiStrummer(TabletReaderBase):
         if not self.reader:
             raise RuntimeError('Reader not initialized')
 
+        # Initialize button state based on device capabilities
+        self._initialize_tablet_button_state()
+
         # Start reading
         if hasattr(self.reader, 'start_reading'):
             self.reader.start_reading(lambda data: self.handle_packet(data))
@@ -414,30 +433,31 @@ class MidiStrummer(TabletReaderBase):
             primary_pressed = bool(events.get('primaryButtonPressed', False))
             secondary_pressed = bool(events.get('secondaryButtonPressed', False))
 
-            # Get stylus button configuration
-            stylus_buttons_cfg = self.config.strummer.stylus_buttons
-
+            # Handle stylus button presses via action rules
             # Detect button down events (transition from not pressed to pressed)
-            if stylus_buttons_cfg and stylus_buttons_cfg.active:
-                if primary_pressed and not self.button_state['primaryButtonPressed']:
-                    # Primary button just pressed
-                    action = stylus_buttons_cfg.primary_button_action
-                    self.actions.execute(action, context={'button': 'Primary'})
+            if primary_pressed and not self.button_state['primaryButtonPressed']:
+                # Primary button just pressed
+                self.actions.handle_button_event('button:primary', 'press')
+            if not primary_pressed and self.button_state['primaryButtonPressed']:
+                # Primary button just released
+                self.actions.handle_button_event('button:primary', 'release')
 
-                if secondary_pressed and not self.button_state['secondaryButtonPressed']:
-                    # Secondary button just pressed
-                    action = stylus_buttons_cfg.secondary_button_action
-                    self.actions.execute(action, context={'button': 'Secondary'})
+            if secondary_pressed and not self.button_state['secondaryButtonPressed']:
+                # Secondary button just pressed
+                self.actions.handle_button_event('button:secondary', 'press')
+            if not secondary_pressed and self.button_state['secondaryButtonPressed']:
+                # Secondary button just released
+                self.actions.handle_button_event('button:secondary', 'release')
 
             # Update stylus button states
             self.button_state['primaryButtonPressed'] = primary_pressed
             self.button_state['secondaryButtonPressed'] = secondary_pressed
 
-            # Handle tablet hardware button presses (buttons 1-8) via action rules
-            for i in range(1, 9):
+            # Handle tablet hardware button presses via action rules (dynamic button count)
+            for i in range(1, self.tablet_button_count + 1):
                 button_key = f'button{i}'
                 button_pressed = bool(events.get(button_key, False))
-                was_pressed = self.tablet_button_state[button_key]
+                was_pressed = self.tablet_button_state.get(button_key, False)
 
                 # Detect button down event (transition from not pressed to pressed)
                 if button_pressed and not was_pressed:
@@ -485,11 +505,11 @@ class MidiStrummer(TabletReaderBase):
             # Process strum
             event = self.strummer.strum(strum_x, pressure)
 
-            # Get note repeater configuration
-            note_repeater_cfg = self.config.strummer.note_repeater
-            note_repeater_enabled = note_repeater_cfg.active if note_repeater_cfg else False
-            pressure_multiplier = note_repeater_cfg.pressure_multiplier if note_repeater_cfg else 1.0
-            frequency_multiplier = note_repeater_cfg.frequency_multiplier if note_repeater_cfg else 1.0
+            # Get note repeater state from actions
+            repeater_config = self.actions.get_repeater_config()
+            note_repeater_enabled = repeater_config['active']
+            pressure_multiplier = repeater_config['pressure_multiplier']
+            frequency_multiplier = repeater_config['frequency_multiplier']
 
             # Get transpose state from actions
             transpose_enabled = self.actions.is_transpose_active()

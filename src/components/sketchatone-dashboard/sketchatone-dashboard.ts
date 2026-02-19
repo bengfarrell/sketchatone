@@ -13,11 +13,16 @@ import '@spectrum-web-components/action-button/sp-action-button.js';
 import '@spectrum-web-components/textfield/sp-textfield.js';
 import '@spectrum-web-components/picker/sp-picker.js';
 import '@spectrum-web-components/menu/sp-menu-item.js';
+import '@spectrum-web-components/menu/sp-menu-divider.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-moon.js';
+import '@spectrum-web-components/icons-workflow/icons/sp-icon-edit.js';
+import '@spectrum-web-components/icons-workflow/icons/sp-icon-folder-open.js';
 import '@spectrum-web-components/switch/sp-switch.js';
+import '@spectrum-web-components/dialog/sp-dialog.js';
+import '@spectrum-web-components/dialog/sp-dialog-wrapper.js';
 
 // Blankslate visualizer components
 import 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
@@ -56,6 +61,7 @@ import {
   StrummerWebSocketClient,
   type ServerMidiInputEvent,
   type ServerMidiInputStatus,
+  type ServerActionEvent,
 } from '../../utils/strummer-websocket-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
@@ -117,6 +123,25 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private strummerConfig: ServerConfigData | null = null;
 
+  // Config management state
+  @state()
+  private currentConfigName: string | undefined;
+
+  @state()
+  private availableConfigs: string[] = [];
+
+  @state()
+  private showNewConfigDialog = false;
+
+  @state()
+  private showRenameConfigDialog = false;
+
+  @state()
+  private newConfigName = '';
+
+  // Track saved config state for dirty detection
+  private savedConfigSnapshot: string | null = null;
+
   // Panel visibility state (persisted to localStorage)
   @state()
   private panelVisibility: PanelVisibility = loadPanelVisibility();
@@ -134,6 +159,11 @@ export class SketchatoneDashboard extends LitElement {
   // Version info
   @state()
   private serverVersion: string | null = null;
+
+  // Recently triggered action rule IDs (for status dot display)
+  // Maps rule ID to timestamp when it was triggered
+  @state()
+  private triggeredActions: Map<string, number> = new Map();
 
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
@@ -179,6 +209,13 @@ export class SketchatoneDashboard extends LitElement {
       this.websocketServerInfo = `${config.notes?.length ?? 0} strings`;
       this.strummerConfig = config;
       this.serverVersion = config.serverVersion ?? null;
+      // Update config management state
+      this.currentConfigName = config.currentConfigName;
+      this.availableConfigs = config.availableConfigs ?? [];
+      // Only update snapshot when this is a saved state (after load/save/create), not after updates
+      if (config.isSavedState) {
+        this.savedConfigSnapshot = config.config ? JSON.stringify(config.config) : null;
+      }
     });
 
     this.client.onCombinedEvent((data: CombinedEventData) => {
@@ -196,6 +233,29 @@ export class SketchatoneDashboard extends LitElement {
       this.serverMidiNotes = event.notes.map((n) => Note.parseNotation(n));
       this.lastMidiPortName = event.portName ?? null;
       this.serverMidiConnected = true;
+    });
+
+    // Listen for action events (button presses and their actions)
+    this.client.onActionEvent((event: ServerActionEvent) => {
+      // Track triggered action by rule ID for status dot display
+      if (event.ruleId) {
+        const newMap = new Map(this.triggeredActions);
+        newMap.set(event.ruleId, event.timestamp);
+        this.triggeredActions = newMap;
+
+        // Schedule removal after 1 second (unless it's a startup rule)
+        if (!event.isStartup) {
+          setTimeout(() => {
+            const currentTimestamp = this.triggeredActions.get(event.ruleId!);
+            // Only remove if the timestamp hasn't been updated
+            if (currentTimestamp === event.timestamp) {
+              const newMap = new Map(this.triggeredActions);
+              newMap.delete(event.ruleId!);
+              this.triggeredActions = newMap;
+            }
+          }, 1000);
+        }
+      }
     });
 
   }
@@ -241,16 +301,14 @@ export class SketchatoneDashboard extends LitElement {
       primaryButtonPressed: this.tabletData.primaryButtonPressed,
       secondaryButtonPressed: this.tabletData.secondaryButtonPressed,
       state: data.state,
-      // Include tablet hardware button states
-      button1: data.button1,
-      button2: data.button2,
-      button3: data.button3,
-      button4: data.button4,
-      button5: data.button5,
-      button6: data.button6,
-      button7: data.button7,
-      button8: data.button8,
     };
+    // Dynamically include all tablet hardware button states
+    for (let i = 1; i <= 30; i++) {
+      const buttonKey = `button${i}` as keyof typeof data;
+      if (data[buttonKey] !== undefined) {
+        (event as Record<string, unknown>)[`button${i}`] = data[buttonKey];
+      }
+    }
 
     // Check for strum data in the combined event
     if (data.strum) {
@@ -316,6 +374,58 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
+   * Render config management dialogs (new config, rename config)
+   */
+  private renderConfigDialogs() {
+    return html`
+      ${this.showNewConfigDialog ? html`
+        <sp-dialog-wrapper
+          headline="New Configuration"
+          dismissable
+          underlay
+          open
+          @close=${() => this.showNewConfigDialog = false}>
+          <div style="padding: 16px;">
+            <sp-textfield
+              label="Config Name"
+              placeholder="my-config"
+              value=${this.newConfigName}
+              @input=${(e: Event) => this.newConfigName = (e.target as HTMLInputElement).value}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleCreateConfig(); }}>
+            </sp-textfield>
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+              <sp-button variant="secondary" @click=${() => this.showNewConfigDialog = false}>Cancel</sp-button>
+              <sp-button variant="primary" @click=${this.handleCreateConfig} ?disabled=${!this.newConfigName.trim()}>Create</sp-button>
+            </div>
+          </div>
+        </sp-dialog-wrapper>
+      ` : ''}
+      ${this.showRenameConfigDialog ? html`
+        <sp-dialog-wrapper
+          headline="Rename Configuration"
+          dismissable
+          underlay
+          open
+          @close=${() => this.showRenameConfigDialog = false}>
+          <div style="padding: 16px;">
+            <sp-textfield
+              label="New Name"
+              placeholder="my-config"
+              value=${this.newConfigName}
+              @input=${(e: Event) => this.newConfigName = (e.target as HTMLInputElement).value}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleRenameConfig(); }}>
+            </sp-textfield>
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+              <sp-button variant="secondary" @click=${() => this.showRenameConfigDialog = false}>Cancel</sp-button>
+              <sp-button variant="primary" @click=${this.handleRenameConfig} ?disabled=${!this.newConfigName.trim()}>Rename</sp-button>
+            </div>
+          </div>
+        </sp-dialog-wrapper>
+      ` : ''}
+    `;
+  }
+
+  /**
    * Export configuration as a downloadable JSON file
    */
   private handleExportConfig(): void {
@@ -335,6 +445,58 @@ export class SketchatoneDashboard extends LitElement {
    */
   private handleSaveConfig(): void {
     this.client.saveConfig();
+  }
+
+  /**
+   * Load a config file by name
+   */
+  private handleLoadConfig(configName: string): void {
+    this.client.loadConfig(configName);
+  }
+
+  /**
+   * Create a new config file
+   */
+  private handleCreateConfig(): void {
+    if (!this.newConfigName.trim()) return;
+    this.client.createConfig(this.newConfigName.trim());
+    this.newConfigName = '';
+    this.showNewConfigDialog = false;
+  }
+
+  /**
+   * Rename the current config file
+   */
+  private handleRenameConfig(): void {
+    if (!this.currentConfigName || !this.newConfigName.trim()) return;
+    this.client.renameConfig(this.currentConfigName, this.newConfigName.trim());
+    this.newConfigName = '';
+    this.showRenameConfigDialog = false;
+  }
+
+  /**
+   * Handle file upload for config import
+   */
+  private handleConfigUpload(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        // Use the filename (without extension) as the config name
+        const configName = file.name.replace(/\.json$/i, '') + '.json';
+        this.client.uploadConfig(configName, data);
+      } catch (error) {
+        console.error('[Dashboard] Failed to parse uploaded config:', error);
+        alert('Failed to parse configuration file');
+      }
+    };
+    reader.readAsText(file);
+    // Reset the input so the same file can be uploaded again
+    input.value = '';
   }
 
   /**
@@ -396,6 +558,15 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
+   * Check if the current config has unsaved changes
+   */
+  private get hasUnsavedChanges(): boolean {
+    if (!this.strummerConfig?.config || !this.savedConfigSnapshot) return false;
+    const currentSnapshot = JSON.stringify(this.strummerConfig.config);
+    return currentSnapshot !== this.savedConfigSnapshot;
+  }
+
+  /**
    * Extract pressed tablet hardware buttons from combined event data
    * The server sends button1, button2, etc. as boolean fields
    */
@@ -403,14 +574,10 @@ export class SketchatoneDashboard extends LitElement {
     const pressed = new Set<number>();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = data as any;
-    if (d.button1) pressed.add(1);
-    if (d.button2) pressed.add(2);
-    if (d.button3) pressed.add(3);
-    if (d.button4) pressed.add(4);
-    if (d.button5) pressed.add(5);
-    if (d.button6) pressed.add(6);
-    if (d.button7) pressed.add(7);
-    if (d.button8) pressed.add(8);
+    // Dynamically check all button properties (supports tablets with any number of buttons)
+    for (let i = 1; i <= 30; i++) {
+      if (d[`button${i}`]) pressed.add(i);
+    }
     return pressed;
   }
 
@@ -553,16 +720,45 @@ export class SketchatoneDashboard extends LitElement {
               </div>
             </div>
             <div class="connection-row">
-              <div class="save-button-group">
-                <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.websocketConnected} @click=${this.handleSaveConfig}>
-                  Save Configuration
-                </sp-button>
-                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleExportConfig}>
-                  Export Configuration
-                </sp-button>
-              </div>
               ${this.renderConnectionStatus()}
             </div>
+            <div class="config-header">
+              <span class="config-filename">${this.currentConfigName?.replace(/\.json$/i, '') ?? 'No config loaded'}</span>
+            </div>
+            <div class="config-separator"></div>
+            <div class="config-row">
+              <div class="config-management-group">
+                ${this.availableConfigs.length > 0 ? html`
+                  <sp-picker
+                    size="s"
+                    label="Config"
+                    value=${this.currentConfigName ?? ''}
+                    ?disabled=${!this.websocketConnected}
+                    @change=${(e: Event) => this.handleLoadConfig((e.target as HTMLSelectElement).value)}>
+                    ${this.availableConfigs.map(config => html`
+                      <sp-menu-item value=${config} ?selected=${config === this.currentConfigName}>${config}</sp-menu-item>
+                    `)}
+                  </sp-picker>
+                ` : ''}
+                <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.websocketConnected || !this.hasUnsavedChanges} @click=${this.handleSaveConfig}>
+                  Save
+                </sp-button>
+                <sp-action-button size="s" quiet ?disabled=${!this.websocketConnected} @click=${() => { this.newConfigName = ''; this.showNewConfigDialog = true; }} title="New Config">
+                  <sp-icon-add slot="icon"></sp-icon-add>
+                </sp-action-button>
+                <sp-action-button size="s" quiet ?disabled=${!this.websocketConnected || !this.currentConfigName} @click=${() => { this.newConfigName = this.currentConfigName?.replace(/\.json$/i, '') ?? ''; this.showRenameConfigDialog = true; }} title="Rename Config">
+                  <sp-icon-edit slot="icon"></sp-icon-edit>
+                </sp-action-button>
+                <input type="file" accept=".json" id="config-upload-input" style="display: none" @change=${this.handleConfigUpload}>
+                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.websocketConnected} @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#config-upload-input')?.click()}>
+                  Import
+                </sp-button>
+                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleExportConfig}>
+                  Export
+                </sp-button>
+              </div>
+            </div>
+            ${this.renderConfigDialogs()}
             <div class="version-info">
               <span class="version-label">UI: v${this.uiVersion}</span>
               ${this.serverVersion ? html`<span class="version-label">Server: v${this.serverVersion}</span>` : ''}
@@ -820,6 +1016,7 @@ export class SketchatoneDashboard extends LitElement {
                 mode="actions"
                 .config=${this.getActionRulesConfig()}
                 .pressedButtons=${this.getPressedButtonIds()}
+                .triggeredActions=${this.triggeredActions}
                 .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
                 .hasPrimaryButton=${true}
                 .hasSecondaryButton=${true}
@@ -847,6 +1044,8 @@ export class SketchatoneDashboard extends LitElement {
               ></action-rules-config>
             </dashboard-panel>
           ` : ''}
+
+
         </div>
         `}
       </div>

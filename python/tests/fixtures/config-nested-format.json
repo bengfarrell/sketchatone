@@ -36,31 +36,12 @@
       "upperNoteSpread": 5,
       "lowerNoteSpread": 3
     },
-    "noteRepeater": {
-      "active": false,
-      "pressureMultiplier": 3.0,
-      "frequencyMultiplier": 2.0
-    },
-    "transpose": {
-      "active": false,
-      "semitones": -5
-    },
-    "stylusButtons": {
-      "active": true,
-      "primaryButtonAction": "none",
-      "secondaryButtonAction": "toggle-repeater"
-    },
     "strumRelease": {
       "active": false,
       "midiNote": 36,
       "midiChannel": null,
       "maxDuration": 0.3,
       "velocityMultiplier": 1.2
-    },
-    "tabletButtons": {
-      "preset": "blues-shuffle",
-      "chords": ["A7", "D7", "E7"],
-      "currentIndex": 1
     }
   },
   "midi": {

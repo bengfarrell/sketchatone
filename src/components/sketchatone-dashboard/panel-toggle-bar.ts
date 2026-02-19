@@ -24,6 +24,14 @@ export class PanelToggleBar extends LitElement {
       border-radius: 12px;
       border: 1px solid var(--spectrum-gray-200);
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      justify-content: center;
+    }
+
+    @media (max-width: 640px) {
+      .toggle-bar {
+        gap: 4px;
+        padding: 8px;
+      }
     }
 
     .toggle-item {
@@ -40,6 +48,14 @@ export class PanelToggleBar extends LitElement {
       font-weight: 500;
       color: var(--spectrum-gray-700);
       user-select: none;
+    }
+
+    @media (max-width: 640px) {
+      .toggle-item {
+        padding: 4px 8px;
+        font-size: 0.7rem;
+        gap: 4px;
+      }
     }
 
     .toggle-item:hover {

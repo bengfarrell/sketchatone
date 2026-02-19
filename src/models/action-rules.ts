@@ -420,10 +420,19 @@ export class ActionRulesConfig implements ActionRulesConfigData {
    * Returns the action definition if found, or null if no matching rule
    */
   getActionForButtonEvent(buttonId: ButtonId, trigger: TriggerType): ActionDefinition | null {
+    const result = this.getRuleForButtonEvent(buttonId, trigger);
+    return result?.action ?? null;
+  }
+
+  /**
+   * Get the rule and action for a button press/release/hold event
+   * Returns the action definition and rule ID if found, or null if no matching rule
+   */
+  getRuleForButtonEvent(buttonId: ButtonId, trigger: TriggerType): { action: ActionDefinition; ruleId: string } | null {
     // First check individual rules
     const rule = this.rules.find(r => r.button === buttonId && (r.trigger ?? 'release') === trigger);
     if (rule) {
-      return rule.action;
+      return { action: rule.action, ruleId: rule.id };
     }
 
     // Then check groups - respect the trigger setting on the group rule (defaults to 'release')
@@ -440,7 +449,10 @@ export class ActionRulesConfig implements ActionRulesConfigData {
             // Handle group action based on type
             if (groupRule.action.type === 'chord-progression') {
               // Return a set-chord-in-progression action
-              return ['set-chord-in-progression', groupRule.action.progression, buttonIndex, groupRule.action.octave];
+              return {
+                action: ['set-chord-in-progression', groupRule.action.progression, buttonIndex, groupRule.action.octave],
+                ruleId: groupRule.id
+              };
             }
           }
         }

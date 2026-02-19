@@ -3,8 +3,10 @@ import { css } from 'lit';
 export const styles = css`
     :host {
         display: block;
+        min-width: 0;
+        max-width: 100%;
     }
-    
+
     .panel {
         display: flex;
         flex-direction: column;
@@ -15,6 +17,7 @@ export const styles = css`
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         transition: all 0.2s ease;
         height: 100%;
+        max-width: 100%;
     }
     
     .panel:hover {
@@ -130,5 +133,14 @@ export const styles = css`
         padding: 20px;
         flex: 1;
         overflow: auto;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    @media (max-width: 640px) {
+        .panel-content {
+            padding: 12px;
+        }
     }
 `;

@@ -219,120 +219,104 @@ class TestActionsWithMidiStrummerConfig:
         # These are the exact calls the Actions class makes
         lower = getattr(config, 'lower_spread', 0)
         upper = getattr(config, 'upper_spread', 0)
-        
+
         assert lower == 5
         assert upper == 7
-    
-    def test_note_repeater_accessible(self):
-        """Test that note_repeater is accessible from MidiStrummerConfig."""
-        config = MidiStrummerConfig()
-        config.strummer.note_repeater.active = True
-        
-        # This is how Actions accesses it
-        note_repeater = getattr(config, 'note_repeater', None)
-        
-        assert note_repeater is not None
-        assert note_repeater.active is True
-    
-    def test_transpose_accessible(self):
-        """Test that transpose is accessible from MidiStrummerConfig."""
-        config = MidiStrummerConfig()
-        config.strummer.transpose.active = True
-        config.strummer.transpose.semitones = 7
-        
-        # This is how Actions accesses it
-        transpose = getattr(config, 'transpose', None)
-        
-        assert transpose is not None
-        assert transpose.active is True
-        assert transpose.semitones == 7
+
+    # Note: note_repeater and transpose are now managed by Actions class, not config
 
 
 class TestActionsExecute:
     """Tests for the execute() method."""
-    
+
     def test_execute_string_action(self):
         """Test executing action as string."""
         config = MidiStrummerConfig()
         actions = Actions(config=config)
-        
+
         # toggle-repeater should work
         result = actions.execute('toggle-repeater', {'button': 'Test'})
         assert result is True
-    
+
     def test_execute_array_action(self):
         """Test executing action as array with params."""
         strummer = Strummer()
         config = MidiStrummerConfig()
         actions = Actions(config=config, strummer=strummer)
-        
+
         result = actions.execute(['set-strum-chord', 'Am'], {'button': 'Test'})
         assert result is True
         assert len(strummer.notes) > 0
-    
+
     def test_execute_unknown_action(self):
         """Test executing unknown action returns False."""
         config = MidiStrummerConfig()
         actions = Actions(config=config)
-        
+
         result = actions.execute('unknown-action', {'button': 'Test'})
         assert result is False
-    
+
     def test_execute_none_action(self):
         """Test executing None action returns False."""
         config = MidiStrummerConfig()
         actions = Actions(config=config)
-        
+
         result = actions.execute(None, {'button': 'Test'})
         assert result is False
 
 
 class TestActionsToggleRepeater:
     """Tests for toggle-repeater action."""
-    
+
     def test_toggle_repeater_on(self):
         """Test toggling repeater on."""
         config = MidiStrummerConfig()
-        config.strummer.note_repeater.active = False
-        
         actions = Actions(config=config)
+
+        # Repeater state is now managed internally by Actions
+        assert actions.get_repeater_config()['active'] is False
         actions.execute('toggle-repeater', {'button': 'Test'})
-        
-        assert config.strummer.note_repeater.active is True
-    
+        assert actions.get_repeater_config()['active'] is True
+
     def test_toggle_repeater_off(self):
         """Test toggling repeater off."""
         config = MidiStrummerConfig()
-        config.strummer.note_repeater.active = True
-        
         actions = Actions(config=config)
+
+        # First toggle on
         actions.execute('toggle-repeater', {'button': 'Test'})
-        
-        assert config.strummer.note_repeater.active is False
+        assert actions.get_repeater_config()['active'] is True
+
+        # Then toggle off
+        actions.execute('toggle-repeater', {'button': 'Test'})
+        assert actions.get_repeater_config()['active'] is False
 
 
 class TestActionsToggleTranspose:
     """Tests for toggle-transpose action."""
-    
+
     def test_toggle_transpose_on(self):
         """Test toggling transpose on."""
         config = MidiStrummerConfig()
-        config.strummer.transpose.active = False
-        
         actions = Actions(config=config)
+
+        # Transpose state is now managed internally by Actions
+        assert actions.get_transpose_config()['active'] is False
         actions.execute('toggle-transpose', {'button': 'Test'})
-        
-        assert config.strummer.transpose.active is True
-    
+        assert actions.get_transpose_config()['active'] is True
+
     def test_toggle_transpose_off(self):
         """Test toggling transpose off."""
         config = MidiStrummerConfig()
-        config.strummer.transpose.active = True
-        
         actions = Actions(config=config)
+
+        # First toggle on
         actions.execute('toggle-transpose', {'button': 'Test'})
-        
-        assert config.strummer.transpose.active is False
+        assert actions.get_transpose_config()['active'] is True
+
+        # Then toggle off
+        actions.execute('toggle-transpose', {'button': 'Test'})
+        assert actions.get_transpose_config()['active'] is False
 
 
 class TestActionsChordProgression:

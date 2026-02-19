@@ -106,16 +106,10 @@ class TabletEventData:
     tiltXY: float = 0.0
     primaryButtonPressed: bool = False
     secondaryButtonPressed: bool = False
-    # Tablet hardware buttons
+    # Tablet hardware buttons (dynamic - stored in dict for flexibility)
     tabletButtons: int = 0
-    button1: bool = False
-    button2: bool = False
-    button3: bool = False
-    button4: bool = False
-    button5: bool = False
-    button6: bool = False
-    button7: bool = False
-    button8: bool = False
+    # Dynamic button states - keys are 'button1', 'button2', etc.
+    buttons: Dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -420,9 +414,24 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Store the config path for saving later
         self.strummer_config_path = strummer_config_path
 
-        # Load config
+        # Extract config directory and filename
         if strummer_config_path:
-            self.config = MidiStrummerConfig.from_json_file(strummer_config_path)
+            self.strummer_config_dir = os.path.dirname(os.path.abspath(strummer_config_path))
+            self.current_config_name = os.path.basename(strummer_config_path)
+        else:
+            # Set default config directory when no config file specified
+            self.strummer_config_dir = os.path.join(self.public_dir, 'configs')
+            # Try to load default.json if it exists
+            default_config_path = os.path.join(self.strummer_config_dir, 'default.json')
+            if os.path.exists(default_config_path):
+                self.strummer_config_path = default_config_path
+                self.current_config_name = 'default.json'
+            else:
+                self.current_config_name = None
+
+        # Load config
+        if self.strummer_config_path:
+            self.config = MidiStrummerConfig.from_json_file(self.strummer_config_path)
         else:
             self.config = MidiStrummerConfig()
 
@@ -471,6 +480,9 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Configure action rules so button-to-action mapping works
         self.actions.set_action_rules_config(self.config.strummer.action_rules)
 
+        # Listen for action events to broadcast to clients
+        self.actions.on('action_executed', self._broadcast_action_event)
+
         # Execute any startup rules defined in the config
         self.actions.execute_startup_rules()
 
@@ -480,8 +492,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             'secondaryButtonPressed': False,
         }
 
-        # State tracking for tablet hardware buttons (1-8)
-        self.tablet_button_state = {f'button{i}': False for i in range(1, 9)}
+        # State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
+        self.tablet_button_state: Dict[str, bool] = {}
+        self.tablet_button_count: int = 8  # Default, updated when device connects
 
 
 
@@ -518,6 +531,21 @@ class StrummerWebSocketServer(TabletReaderBase):
         )
 
         self.strummer.notes = notes
+
+    def _initialize_tablet_button_state(self) -> None:
+        """Initialize tablet button state based on device capabilities"""
+        capabilities = None
+        if hasattr(self, 'config_data') and self.config_data:
+            capabilities = self.config_data.get_capabilities()
+
+        self.tablet_button_count = capabilities.buttonCount if capabilities else 8
+
+        # Initialize button state for all buttons
+        self.tablet_button_state = {}
+        for i in range(1, self.tablet_button_count + 1):
+            self.tablet_button_state[f'button{i}'] = False
+
+        print(colored(f'  Tablet has {self.tablet_button_count} hardware buttons', Colors.GRAY))
 
     def _get_control_value(self, control: str, events: Dict[str, Any]) -> Optional[float]:
         """
@@ -854,16 +882,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             message['tiltXY'] = data.tablet.tiltXY
             message['primaryButtonPressed'] = data.tablet.primaryButtonPressed
             message['secondaryButtonPressed'] = data.tablet.secondaryButtonPressed
-            # Tablet hardware buttons
+            # Tablet hardware buttons (dynamic)
             message['tabletButtons'] = data.tablet.tabletButtons
-            message['button1'] = data.tablet.button1
-            message['button2'] = data.tablet.button2
-            message['button3'] = data.tablet.button3
-            message['button4'] = data.tablet.button4
-            message['button5'] = data.tablet.button5
-            message['button6'] = data.tablet.button6
-            message['button7'] = data.tablet.button7
-            message['button8'] = data.tablet.button8
+            # Add all button states dynamically
+            for button_key, button_value in data.tablet.buttons.items():
+                message[button_key] = button_value
 
         if data.strum:
             message['strum'] = {
@@ -955,8 +978,43 @@ class StrummerWebSocketServer(TabletReaderBase):
         }
         self._broadcast(json.dumps(message))
     
-    def _get_config_data(self) -> Dict[str, Any]:
+    def _list_configs(self) -> List[str]:
+        """
+        List all available config files in the config directory.
+        Only returns .json files that are not in subdirectories.
+        """
+        if not self.strummer_config_dir:
+            return []
+
+        try:
+            files = os.listdir(self.strummer_config_dir)
+            return [
+                f for f in files
+                if f.endswith('.json') and os.path.isfile(os.path.join(self.strummer_config_dir, f))
+            ]
+        except Exception as e:
+            print(colored(f'[List Configs] Failed to list configs: {e}', Colors.RED))
+            return []
+
+    def _get_config_data(self, is_saved_state: bool = True) -> Dict[str, Any]:
         """Get config data in the format expected by the webapp"""
+        # Get device capabilities if available
+        device_capabilities = None
+        if hasattr(self, 'config_data') and self.config_data:
+            caps = self.config_data.get_capabilities()
+            if caps:
+                device_capabilities = {
+                    'hasButtons': caps.hasButtons,
+                    'buttonCount': caps.buttonCount,
+                    'hasPressure': caps.hasPressure,
+                    'pressureLevels': caps.pressureLevels,
+                    'hasTilt': caps.hasTilt,
+                    'resolution': {
+                        'x': caps.resolution.x,
+                        'y': caps.resolution.y,
+                    },
+                }
+
         return {
             'throttleMs': self.event_bus.throttle_ms,
             'notes': [
@@ -964,17 +1022,49 @@ class StrummerWebSocketServer(TabletReaderBase):
                 for n in self.strummer.notes
             ],
             'config': self.config.to_dict(),
-            'serverVersion': SKETCHATONE_VERSION
+            'serverVersion': SKETCHATONE_VERSION,
+            'deviceCapabilities': device_capabilities,
+            'currentConfigName': self.current_config_name,
+            'availableConfigs': self._list_configs(),
+            'isSavedState': is_saved_state,
         }
 
-    def broadcast_config(self) -> None:
-        """Broadcast current config to all clients"""
+    def broadcast_config(self, is_saved_state: bool = False) -> None:
+        """
+        Broadcast current config to all clients.
+
+        Args:
+            is_saved_state: True when config represents the saved state (after load/save),
+                           False for updates (default)
+        """
         message = {
             'type': 'config',
-            'data': self._get_config_data()
+            'data': self._get_config_data(is_saved_state)
         }
         self._broadcast(json.dumps(message))
-    
+
+    def _broadcast_action_event(self, event: Dict[str, Any]) -> None:
+        """
+        Broadcast action executed event to all connected clients.
+        Used for UI feedback (e.g., status dots on action rules).
+
+        Args:
+            event: Action event data containing action, params, button, trigger,
+                   timestamp, rule_id, and is_startup
+        """
+        # Convert Python snake_case to JavaScript camelCase for the WebSocket message
+        message = {
+            'type': 'action-event',
+            'action': event.get('action'),
+            'params': event.get('params', []),
+            'button': event.get('button'),
+            'trigger': event.get('trigger'),
+            'timestamp': event.get('timestamp'),
+            'ruleId': event.get('rule_id'),
+            'isStartup': event.get('is_startup', False),
+        }
+        self._broadcast(json.dumps(message))
+
     async def _handle_client(self, websocket: WebSocketServerProtocol) -> None:
         """Handle a WebSocket client connection"""
         self.clients.add(websocket)
@@ -985,10 +1075,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         if len(self.clients) == 1:
             self.event_bus.resume()
         
-        # Send initial config
+        # Send initial config (is_saved_state=True since this is the saved state on connection)
         await websocket.send(json.dumps({
             'type': 'config',
-            'data': self._get_config_data()
+            'data': self._get_config_data(is_saved_state=True)
         }))
         
         # Send initial status (matching Node.js format)
@@ -1052,6 +1142,38 @@ class StrummerWebSocketServer(TabletReaderBase):
             elif msg_type == 'save-config':
                 # Save the current configuration to the config file
                 self._handle_save_config()
+
+            elif msg_type == 'load-config':
+                # Load a different config file
+                config_name = data.get('configName')
+                if config_name:
+                    self._handle_load_config(config_name)
+
+            elif msg_type == 'create-config':
+                # Create a new config file
+                config_name = data.get('configName')
+                if config_name:
+                    self._handle_create_config(config_name)
+
+            elif msg_type == 'rename-config':
+                # Rename a config file
+                old_name = data.get('oldName')
+                new_name = data.get('newName')
+                if old_name and new_name:
+                    self._handle_rename_config(old_name, new_name)
+
+            elif msg_type == 'upload-config':
+                # Upload/import a config file
+                config_name = data.get('configName')
+                config_data = data.get('configData')
+                if config_name and config_data:
+                    self._handle_upload_config(config_name, config_data)
+
+            elif msg_type == 'delete-config':
+                # Delete a config file
+                config_name = data.get('configName')
+                if config_name:
+                    self._handle_delete_config(config_name)
 
             else:
                 print(colored(f'Unknown message type: {msg_type}', Colors.YELLOW))
@@ -1153,8 +1275,221 @@ class StrummerWebSocketServer(TabletReaderBase):
                 os.chown(self.strummer_config_path, original_uid, original_gid)
 
             print(colored(f'[Save Config] Configuration saved to {self.strummer_config_path}', Colors.GREEN))
+
+            # Broadcast with is_saved_state=True so clients know config matches file
+            self.broadcast_config(is_saved_state=True)
         except Exception as e:
             print(colored(f'[Save Config] Failed to save configuration: {e}', Colors.RED))
+
+    def _handle_load_config(self, config_name: str) -> None:
+        """Load a config file by name."""
+        if not self.strummer_config_dir:
+            print(colored('[Load Config] No config directory set', Colors.RED))
+            return
+
+        config_path = os.path.join(self.strummer_config_dir, config_name)
+
+        # Security check: ensure the resolved path is within the config directory
+        resolved_path = os.path.abspath(config_path)
+        resolved_dir = os.path.abspath(self.strummer_config_dir)
+        if not resolved_path.startswith(resolved_dir):
+            print(colored('[Load Config] Invalid config path - path traversal detected', Colors.RED))
+            return
+
+        if not os.path.exists(config_path):
+            print(colored(f'[Load Config] Config file not found: {config_name}', Colors.RED))
+            return
+
+        try:
+            self.config = MidiStrummerConfig.from_json_file(config_path)
+            self.strummer_config_path = config_path
+            self.current_config_name = config_name
+
+            # Re-apply strummer settings
+            self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+            self._setup_notes()
+            self.actions.set_action_rules_config(self.config.strummer.action_rules)
+            self.actions.execute_startup_rules()
+
+            print(colored(f'[Load Config] Loaded config: {config_name}', Colors.GREEN))
+
+            # Broadcast with is_saved_state=True since we just loaded from file
+            self.broadcast_config(is_saved_state=True)
+        except Exception as e:
+            print(colored(f'[Load Config] Failed to load config: {e}', Colors.RED))
+
+    def _handle_create_config(self, config_name: str) -> None:
+        """Create a new config file with default values."""
+        if not self.strummer_config_dir:
+            print(colored('[Create Config] No config directory set', Colors.RED))
+            return
+
+        # Ensure the name ends with .json
+        if not config_name.endswith('.json'):
+            config_name = config_name + '.json'
+
+        config_path = os.path.join(self.strummer_config_dir, config_name)
+
+        # Security check: ensure the resolved path is within the config directory
+        resolved_path = os.path.abspath(config_path)
+        resolved_dir = os.path.abspath(self.strummer_config_dir)
+        if not resolved_path.startswith(resolved_dir):
+            print(colored('[Create Config] Invalid config path - path traversal detected', Colors.RED))
+            return
+
+        if os.path.exists(config_path):
+            print(colored(f'[Create Config] Config file already exists: {config_name}', Colors.RED))
+            return
+
+        try:
+            new_config = MidiStrummerConfig()
+            config_dict = new_config.to_dict()
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2)
+
+            # Set permissions to 0o666 to allow editing when created as root
+            if os.geteuid() == 0:
+                os.chmod(config_path, 0o666)
+
+            print(colored(f'[Create Config] Created new config: {config_name}', Colors.GREEN))
+
+            # Switch to the newly created config
+            self.strummer_config_path = config_path
+            self.current_config_name = config_name
+            self.config = new_config
+
+            # Broadcast with is_saved_state=True since we just created/saved the file
+            self.broadcast_config(is_saved_state=True)
+        except Exception as e:
+            print(colored(f'[Create Config] Failed to create config: {e}', Colors.RED))
+
+    def _handle_rename_config(self, old_name: str, new_name: str) -> None:
+        """Rename a config file."""
+        if not self.strummer_config_dir:
+            print(colored('[Rename Config] No config directory set', Colors.RED))
+            return
+
+        # Ensure names end with .json
+        if not old_name.endswith('.json'):
+            old_name = old_name + '.json'
+        if not new_name.endswith('.json'):
+            new_name = new_name + '.json'
+
+        old_path = os.path.join(self.strummer_config_dir, old_name)
+        new_path = os.path.join(self.strummer_config_dir, new_name)
+
+        # Security check: ensure paths are within the config directory
+        resolved_old_path = os.path.abspath(old_path)
+        resolved_new_path = os.path.abspath(new_path)
+        resolved_dir = os.path.abspath(self.strummer_config_dir)
+        if not resolved_old_path.startswith(resolved_dir) or not resolved_new_path.startswith(resolved_dir):
+            print(colored('[Rename Config] Invalid config path - path traversal detected', Colors.RED))
+            return
+
+        if not os.path.exists(old_path):
+            print(colored(f'[Rename Config] Config file not found: {old_name}', Colors.RED))
+            return
+
+        if os.path.exists(new_path):
+            print(colored(f'[Rename Config] Config file already exists: {new_name}', Colors.RED))
+            return
+
+        try:
+            os.rename(old_path, new_path)
+
+            # Update current config path if we renamed the current config
+            if self.current_config_name == old_name:
+                self.strummer_config_path = new_path
+                self.current_config_name = new_name
+
+            print(colored(f'[Rename Config] Renamed {old_name} to {new_name}', Colors.GREEN))
+
+            # Broadcast updated config list to all clients
+            self.broadcast_config(is_saved_state=True)
+        except Exception as e:
+            print(colored(f'[Rename Config] Failed to rename config: {e}', Colors.RED))
+
+    def _handle_upload_config(self, config_name: str, config_data: Any) -> None:
+        """Upload a config file (save uploaded data as a new config) and switch to it."""
+        if not self.strummer_config_dir:
+            print(colored('[Upload Config] No config directory set', Colors.RED))
+            return
+
+        # Ensure the name ends with .json
+        if not config_name.endswith('.json'):
+            config_name = config_name + '.json'
+
+        config_path = os.path.join(self.strummer_config_dir, config_name)
+
+        # Security check: ensure the resolved path is within the config directory
+        resolved_path = os.path.abspath(config_path)
+        resolved_dir = os.path.abspath(self.strummer_config_dir)
+        if not resolved_path.startswith(resolved_dir):
+            print(colored('[Upload Config] Invalid config path - path traversal detected', Colors.RED))
+            return
+
+        try:
+            # Parse and validate the config data
+            parsed_config = MidiStrummerConfig.from_dict(config_data)
+
+            # Write the config file
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2)
+
+            # Set permissions to 0o666 to allow editing when created as root
+            if os.geteuid() == 0:
+                os.chmod(config_path, 0o666)
+
+            print(colored(f'[Upload Config] Uploaded config: {config_name}', Colors.GREEN))
+
+            # Switch to the uploaded config
+            self.strummer_config_path = config_path
+            self.current_config_name = config_name
+            self.config = parsed_config
+
+            # Re-apply settings from the new config
+            self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+            self._setup_notes()
+            self.actions.set_action_rules_config(self.config.strummer.action_rules)
+            self.actions.execute_startup_rules()
+
+            # Broadcast with is_saved_state=True since we just saved the file
+            self.broadcast_config(is_saved_state=True)
+        except Exception as e:
+            print(colored(f'[Upload Config] Failed to upload config: {e}', Colors.RED))
+
+    def _handle_delete_config(self, config_name: str) -> None:
+        """Delete a config file."""
+        if not self.strummer_config_dir:
+            print(colored('[Delete Config] No config directory set', Colors.RED))
+            return
+
+        # Don't allow deleting the currently loaded config
+        if self.current_config_name == config_name:
+            print(colored('[Delete Config] Cannot delete the currently loaded config', Colors.RED))
+            return
+
+        config_path = os.path.join(self.strummer_config_dir, config_name)
+
+        # Security check: ensure the resolved path is within the config directory
+        resolved_path = os.path.abspath(config_path)
+        resolved_dir = os.path.abspath(self.strummer_config_dir)
+        if not resolved_path.startswith(resolved_dir):
+            print(colored('[Delete Config] Invalid config path - path traversal detected', Colors.RED))
+            return
+
+        if not os.path.exists(config_path):
+            print(colored(f'[Delete Config] Config file not found: {config_name}', Colors.RED))
+            return
+
+        try:
+            os.remove(config_path)
+            print(colored(f'[Delete Config] Deleted config: {config_name}', Colors.GREEN))
+
+            # Broadcast updated config list to all clients
+            self.broadcast_config(is_saved_state=True)
+        except Exception as e:
+            print(colored(f'[Delete Config] Failed to delete config: {e}', Colors.RED))
 
     def _set_config_value(self, path: str, value: Any) -> None:
         """
@@ -1222,17 +1557,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             The converted config object, or the original dict if no conversion needed
         """
         from ..models.action_rules import ActionRulesConfig
-        from ..models.strummer_features import (
-            NoteRepeaterConfig, TransposeConfig, StylusButtonsConfig, StrumReleaseConfig
-        )
+        from ..models.strummer_features import StrumReleaseConfig
         from ..models.strummer_config import StrummingConfig
         from ..models.parameter_mapping import ParameterMapping
 
         converters = {
             'action_rules': ActionRulesConfig.from_dict,
-            'note_repeater': NoteRepeaterConfig.from_dict,
-            'transpose': TransposeConfig.from_dict,
-            'stylus_buttons': StylusButtonsConfig.from_dict,
             'strum_release': StrumReleaseConfig.from_dict,
             'strumming': StrummingConfig.from_dict,
             'note_duration': ParameterMapping.from_dict,
@@ -1264,30 +1594,31 @@ class StrummerWebSocketServer(TabletReaderBase):
             primary_button = bool(events.get('primaryButton') or events.get('primaryButtonPressed'))
             secondary_button = bool(events.get('secondaryButton') or events.get('secondaryButtonPressed'))
 
-            # Handle stylus button presses
-            stylus_buttons_cfg = self.config.strummer.stylus_buttons
-
+            # Handle stylus button presses via action rules
             # Detect button down events (transition from not pressed to pressed)
-            if stylus_buttons_cfg and stylus_buttons_cfg.active:
-                if primary_button and not self.button_state['primaryButtonPressed']:
-                    # Primary button just pressed
-                    action = stylus_buttons_cfg.primary_button_action
-                    self.actions.execute(action, context={'button': 'Primary'})
+            if primary_button and not self.button_state['primaryButtonPressed']:
+                # Primary button just pressed
+                self.actions.handle_button_event('button:primary', 'press')
+            if not primary_button and self.button_state['primaryButtonPressed']:
+                # Primary button just released
+                self.actions.handle_button_event('button:primary', 'release')
 
-                if secondary_button and not self.button_state['secondaryButtonPressed']:
-                    # Secondary button just pressed
-                    action = stylus_buttons_cfg.secondary_button_action
-                    self.actions.execute(action, context={'button': 'Secondary'})
+            if secondary_button and not self.button_state['secondaryButtonPressed']:
+                # Secondary button just pressed
+                self.actions.handle_button_event('button:secondary', 'press')
+            if not secondary_button and self.button_state['secondaryButtonPressed']:
+                # Secondary button just released
+                self.actions.handle_button_event('button:secondary', 'release')
 
             # Update stylus button states
             self.button_state['primaryButtonPressed'] = primary_button
             self.button_state['secondaryButtonPressed'] = secondary_button
 
-            # Handle tablet hardware button presses (buttons 1-8) via action rules
-            for i in range(1, 9):
+            # Handle tablet hardware button presses via action rules (dynamic button count)
+            for i in range(1, self.tablet_button_count + 1):
                 button_key = f'button{i}'
                 button_pressed = bool(events.get(button_key, False))
-                was_pressed = self.tablet_button_state[button_key]
+                was_pressed = self.tablet_button_state.get(button_key, False)
 
                 # Detect button down event (transition from not pressed to pressed)
                 if button_pressed and not was_pressed:
@@ -1342,16 +1673,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Get note velocity configuration for applying curve
             note_velocity_cfg = self.config.strummer.note_velocity
 
-            # Extract tablet hardware buttons
+            # Extract tablet hardware buttons (dynamic based on device capabilities)
             tablet_buttons = int(events.get('tabletButtons', 0))
-            button1 = bool(events.get('button1'))
-            button2 = bool(events.get('button2'))
-            button3 = bool(events.get('button3'))
-            button4 = bool(events.get('button4'))
-            button5 = bool(events.get('button5'))
-            button6 = bool(events.get('button6'))
-            button7 = bool(events.get('button7'))
-            button8 = bool(events.get('button8'))
+            buttons_dict: Dict[str, bool] = {}
+            for i in range(1, self.tablet_button_count + 1):
+                button_key = f'button{i}'
+                buttons_dict[button_key] = bool(events.get(button_key, False))
 
             # Create tablet event data
             tablet_data = TabletEventData(
@@ -1360,8 +1687,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                 primaryButtonPressed=primary_button,
                 secondaryButtonPressed=secondary_button,
                 tabletButtons=tablet_buttons,
-                button1=button1, button2=button2, button3=button3, button4=button4,
-                button5=button5, button6=button6, button7=button7, button8=button8
+                buttons=buttons_dict
             )
             self.event_bus.emit_tablet_event(tablet_data)
 
@@ -1374,11 +1700,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Process strum
             event = self.strummer.strum(strum_x, pressure)
 
-            # Get note repeater configuration
-            note_repeater_cfg = self.config.strummer.note_repeater
-            note_repeater_enabled = note_repeater_cfg.active if note_repeater_cfg else False
-            pressure_multiplier = note_repeater_cfg.pressure_multiplier if note_repeater_cfg else 1.0
-            frequency_multiplier = note_repeater_cfg.frequency_multiplier if note_repeater_cfg else 1.0
+            # Get note repeater state from actions
+            repeater_config = self.actions.get_repeater_config()
+            note_repeater_enabled = repeater_config['active']
+            pressure_multiplier = repeater_config['pressure_multiplier']
+            frequency_multiplier = repeater_config['frequency_multiplier']
 
             # Get transpose state from actions
             transpose_enabled = self.actions.is_transpose_active()
@@ -1557,6 +1883,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                     self.reconnect()
                     if self.is_running:
                         print(colored('Device reconnected!', Colors.GREEN))
+                        self._initialize_tablet_button_state()
                         self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
                         break
             except Exception as e:
@@ -1665,6 +1992,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             if not self.reader:
                 raise RuntimeError('Reader not initialized')
 
+            # Initialize button state based on device capabilities
+            self._initialize_tablet_button_state()
+
             # Start reading data
             if hasattr(self.reader, 'start_reading'):
                 self.reader.start_reading(lambda data: self.handle_packet(data))
@@ -1700,6 +2030,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                     # Initialize the tablet reader with the found config
                     TabletReaderBase.__init__(self, found_config)
                     self._tablet_initialized = True
+                    self._initialize_tablet_button_state()
                     self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
                     print(colored('Tablet reader initialized successfully', Colors.GREEN))
                     return

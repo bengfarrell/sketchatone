@@ -11,12 +11,7 @@ import json
 import os
 
 from .parameter_mapping import ParameterMapping, default_note_duration, default_pitch_bend, default_note_velocity
-from .strummer_features import (
-    NoteRepeaterConfig,
-    TransposeConfig,
-    StylusButtonsConfig,
-    StrumReleaseConfig,
-)
+from .strummer_features import StrumReleaseConfig
 from .action_rules import ActionRulesConfig
 
 
@@ -80,25 +75,24 @@ class StrummerConfig:
     This follows the midi-strummer configuration format with:
     - Parameter mappings for note duration, pitch bend, and velocity
     - Core strumming settings
-    - Optional features (repeater, transpose, stylus buttons, strum release)
+    - Optional features (strum release)
+    - Action rules for button-to-action mapping
+
+    Note: Repeater and transpose state is now managed by the Actions class,
+    not by config. Use action rules to configure these features.
 
     Attributes:
         note_duration: Parameter mapping for note duration
         pitch_bend: Parameter mapping for pitch bend
         note_velocity: Parameter mapping for note velocity
         strumming: Core strumming configuration
-        note_repeater: Note repeater feature configuration
-        transpose: Transpose feature configuration
-        stylus_buttons: Stylus button configuration
         strum_release: Strum release feature configuration
+        action_rules: Action rules for button-to-action mapping
     """
     note_duration: ParameterMapping = field(default_factory=default_note_duration)
     pitch_bend: ParameterMapping = field(default_factory=default_pitch_bend)
     note_velocity: ParameterMapping = field(default_factory=default_note_velocity)
     strumming: StrummingConfig = field(default_factory=StrummingConfig)
-    note_repeater: NoteRepeaterConfig = field(default_factory=NoteRepeaterConfig)
-    transpose: TransposeConfig = field(default_factory=TransposeConfig)
-    stylus_buttons: StylusButtonsConfig = field(default_factory=StylusButtonsConfig)
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
     action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
 
@@ -135,14 +129,12 @@ class StrummerConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'StrummerConfig':
         """
         Create a StrummerConfig from a dictionary.
+        Note: note_repeater and transpose fields are ignored as they are now managed by Actions.
         """
         note_duration_data = data.get('note_duration', data.get('noteDuration', {}))
         pitch_bend_data = data.get('pitch_bend', data.get('pitchBend', {}))
         note_velocity_data = data.get('note_velocity', data.get('noteVelocity', {}))
         strumming_data = data.get('strumming', {})
-        note_repeater_data = data.get('note_repeater', data.get('noteRepeater', {}))
-        transpose_data = data.get('transpose', {})
-        stylus_buttons_data = data.get('stylus_buttons', data.get('stylusButtons', {}))
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
         action_rules_data = data.get('action_rules', data.get('actionRules', {}))
 
@@ -151,9 +143,6 @@ class StrummerConfig:
             pitch_bend=ParameterMapping.from_dict(pitch_bend_data) if pitch_bend_data else default_pitch_bend(),
             note_velocity=ParameterMapping.from_dict(note_velocity_data) if note_velocity_data else default_note_velocity(),
             strumming=StrummingConfig.from_dict(strumming_data) if strumming_data else StrummingConfig(),
-            note_repeater=NoteRepeaterConfig.from_dict(note_repeater_data) if note_repeater_data else NoteRepeaterConfig(),
-            transpose=TransposeConfig.from_dict(transpose_data) if transpose_data else TransposeConfig(),
-            stylus_buttons=StylusButtonsConfig.from_dict(stylus_buttons_data) if stylus_buttons_data else StylusButtonsConfig(),
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
             action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig()
         )
@@ -172,9 +161,6 @@ class StrummerConfig:
             'pitchBend': self.pitch_bend.to_dict(),
             'noteVelocity': self.note_velocity.to_dict(),
             'strumming': self.strumming.to_dict(),
-            'noteRepeater': self.note_repeater.to_dict(),
-            'transpose': self.transpose.to_dict(),
-            'stylusButtons': self.stylus_buttons.to_dict(),
             'strumRelease': self.strum_release.to_dict(),
             'actionRules': self.action_rules.to_dict()
         }

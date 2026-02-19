@@ -4,6 +4,8 @@ export const styles = css`
   :host {
     display: block;
     width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .dashboard {
@@ -12,6 +14,15 @@ export const styles = css`
     gap: 16px;
     padding: 16px;
     background: var(--spectrum-gray-50);
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 640px) {
+    .dashboard {
+      padding: 8px;
+      gap: 12px;
+    }
   }
 
   /* Header */
@@ -25,14 +36,35 @@ export const styles = css`
     align-items: center;
   }
 
+  @media (max-width: 640px) {
+    .dashboard-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      padding: 12px;
+    }
+  }
+
   .header-logo-container {
     display: flex;
     align-items: center;
     flex-shrink: 0;
   }
 
+  @media (max-width: 640px) {
+    .header-logo-container {
+      justify-content: center;
+    }
+  }
+
   .header-logo {
-    height: 100px;
+    height: 130px;
+  }
+
+  @media (max-width: 640px) {
+    .header-logo {
+      height: 80px;
+    }
   }
 
   /* Theme-adaptive logo colors */
@@ -57,6 +89,7 @@ export const styles = css`
     flex-direction: column;
     gap: 8px;
     flex: 1;
+    min-width: 0;
   }
 
   .header-row {
@@ -65,18 +98,39 @@ export const styles = css`
     align-items: center;
   }
 
+  @media (max-width: 640px) {
+    .header-row {
+      justify-content: center;
+    }
+  }
+
   .header-controls {
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 640px) {
+    .header-controls {
+      justify-content: center;
+    }
   }
 
   /* Connection UI */
   .connection-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 640px) {
+    .connection-row {
+      justify-content: center;
+      gap: 8px;
+    }
   }
 
   .connection-group {
@@ -89,6 +143,43 @@ export const styles = css`
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Config Header */
+  .config-header {
+    display: flex;
+    align-items: center;
+    margin-top: 12px;
+  }
+
+  .config-filename {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--spectrum-gray-900);
+  }
+
+  .config-separator {
+    border-top: 1px solid var(--spectrum-gray-200);
+    margin-top: 8px;
+  }
+
+  /* Config Management Row */
+  .config-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-top: 8px;
+  }
+
+  .config-management-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .config-management-group sp-picker {
+    min-width: 150px;
   }
 
   .status-badge {
@@ -156,6 +247,8 @@ export const styles = css`
     grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     margin-top: 16px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   @media (max-width: 1024px) {
@@ -167,6 +260,8 @@ export const styles = css`
   @media (max-width: 640px) {
     .panels-grid {
       grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 12px;
     }
   }
 
@@ -549,4 +644,5 @@ export const styles = css`
     background: var(--spectrum-green-200);
     border-left: 3px solid var(--spectrum-blue-700);
   }
+
 `;

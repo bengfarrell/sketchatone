@@ -15,12 +15,24 @@ import type { TabletEventData as BlankslateTabletEventData } from 'blankslate/cl
  * Button fields are made optional here because not all code paths provide them
  * (e.g., mock mode, websocket client). The normalizeTabletEvent function in
  * blankslate always provides them, so they'll be present for real device data.
+ *
+ * Note: Supports dynamic button counts beyond button1-8. Access additional buttons
+ * by casting to Record<string, unknown> or using type assertion.
  */
-export interface TabletEventData extends Omit<BlankslateTabletEventData, 'state' | 'tabletButtons' | 'button1' | 'button2' | 'button3' | 'button4' | 'button5' | 'button6' | 'button7' | 'button8'> {
+export interface TabletEventData {
   state: 'hover' | 'contact' | 'out-of-range';
   timestamp: number;
+  x: number;
+  y: number;
+  pressure: number;
+  tiltX: number;
+  tiltY: number;
+  tiltXY: number;
+  primaryButtonPressed: boolean;
+  secondaryButtonPressed: boolean;
   // Tablet hardware buttons - optional because not all sources provide them
   tabletButtons?: number;
+  // Explicit button properties for backward compatibility (optional)
   button1?: boolean;
   button2?: boolean;
   button3?: boolean;
@@ -29,6 +41,8 @@ export interface TabletEventData extends Omit<BlankslateTabletEventData, 'state'
   button6?: boolean;
   button7?: boolean;
   button8?: boolean;
+  // Additional buttons (button9, button10, etc.) are accessed dynamically
+  // Use (data as Record<string, unknown>)[`button${n}`] for buttons > 8
 }
 
 /**

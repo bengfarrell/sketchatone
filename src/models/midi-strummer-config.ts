@@ -17,12 +17,7 @@ import {
   defaultPitchBend,
   defaultNoteVelocity,
 } from './parameter-mapping.js';
-import {
-  NoteRepeaterConfig,
-  TransposeConfig,
-  StylusButtonsConfig,
-  StrumReleaseConfig,
-} from './strummer-features.js';
+import { StrumReleaseConfig } from './strummer-features.js';
 
 /**
  * Server configuration data
@@ -230,17 +225,7 @@ export class MidiStrummerConfig {
     return this._strummer.strumming;
   }
 
-  get noteRepeater(): NoteRepeaterConfig {
-    return this._strummer.noteRepeater;
-  }
-
-  get transpose(): TransposeConfig {
-    return this._strummer.transpose;
-  }
-
-  get stylusButtons(): StylusButtonsConfig {
-    return this._strummer.stylusButtons;
-  }
+  // Note: noteRepeater and transpose are now managed by Actions class, not config
 
   get strumRelease(): StrumReleaseConfig {
     return this._strummer.strumRelease;

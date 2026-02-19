@@ -579,17 +579,7 @@ describe('Config Path Navigation', () => {
       expect(config.strummer.strumming.initialNotes).toEqual(['D4', 'F#4', 'A4']);
     });
 
-    it('should update strummer.transpose.active', () => {
-      const configObj = config as unknown as Record<string, unknown>;
-      setConfigValue(configObj, 'strummer.transpose.active', true);
-      expect(config.strummer.transpose.active).toBe(true);
-    });
-
-    it('should update strummer.noteRepeater.active', () => {
-      const configObj = config as unknown as Record<string, unknown>;
-      setConfigValue(configObj, 'strummer.noteRepeater.active', true);
-      expect(config.strummer.noteRepeater.active).toBe(true);
-    });
+    // Note: strummer.transpose and strummer.noteRepeater are now managed by Actions class
 
     it('should update midi.channel', () => {
       const configObj = config as unknown as Record<string, unknown>;
@@ -721,7 +711,7 @@ describe('Update-Config Message Format', () => {
 
     const booleanUpdate = {
       type: 'update-config',
-      path: 'strummer.transpose.active',
+      path: 'strummer.strumRelease.active',
       value: true,
     };
     expect(typeof booleanUpdate.value).toBe('boolean');

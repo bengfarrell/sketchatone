@@ -418,12 +418,20 @@ class ActionRulesConfig:
         Get the action for a button press/release/hold event.
         Returns the action definition if found, or None if no matching rule.
         """
+        result = self.get_rule_for_button_event(button_id, trigger)
+        return result['action'] if result else None
+
+    def get_rule_for_button_event(self, button_id: ButtonId, trigger: TriggerType) -> Optional[Dict[str, Any]]:
+        """
+        Get the rule and action for a button press/release/hold event.
+        Returns a dict with 'action' and 'rule_id' if found, or None if no matching rule.
+        """
         # First check individual rules
         for rule in self.rules:
             rule_trigger = rule.trigger or 'release'
             if rule.button == button_id and rule_trigger == trigger:
-                return rule.action
-        
+                return {'action': rule.action, 'rule_id': rule.id}
+
         # Then check groups - respect the trigger setting on the group rule (defaults to 'release')
         group = self.get_group_for_button(button_id)
         if group:
@@ -431,7 +439,7 @@ class ActionRulesConfig:
                 button_index = group.buttons.index(button_id)
             except ValueError:
                 button_index = -1
-            
+
             if button_index >= 0:
                 # Find the group rule for this group
                 group_rule = self.get_group_rule_for_group(group.id)
@@ -442,8 +450,11 @@ class ActionRulesConfig:
                         # Handle group action based on type
                         if group_rule.action.type == 'chord-progression':
                             # Return a set-chord-in-progression action
-                            return ['set-chord-in-progression', group_rule.action.progression, button_index, group_rule.action.octave]
-        
+                            return {
+                                'action': ['set-chord-in-progression', group_rule.action.progression, button_index, group_rule.action.octave],
+                                'rule_id': group_rule.id
+                            }
+
         return None
 
 

@@ -150,17 +150,9 @@ class TestSetConfigValue:
         """Test setting note duration control via path."""
         self._set_config_value('strummer.noteDuration.control', 'pressure')
         assert self.config.strummer.note_duration.control == 'pressure'
-    
-    def test_set_transpose_active(self):
-        """Test setting transpose active via path."""
-        self._set_config_value('strummer.transpose.active', True)
-        assert self.config.strummer.transpose.active is True
-    
-    def test_set_transpose_semitones(self):
-        """Test setting transpose semitones via path."""
-        self._set_config_value('strummer.transpose.semitones', 7)
-        assert self.config.strummer.transpose.semitones == 7
-    
+
+    # Note: strummer.transpose is now managed by Actions class, not config
+
     def test_invalid_path_raises_error(self):
         """Test that invalid path raises ValueError."""
         with pytest.raises(ValueError, match="Invalid path"):

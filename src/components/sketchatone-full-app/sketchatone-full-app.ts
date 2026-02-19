@@ -393,16 +393,14 @@ export class SketchatoneFullApp extends LitElement {
       primaryButtonPressed: this.tabletData.primaryButtonPressed,
       secondaryButtonPressed: this.tabletData.secondaryButtonPressed,
       state: processed.state as string | undefined,
-      // Include tablet hardware button states
-      button1: Boolean(processed.button1),
-      button2: Boolean(processed.button2),
-      button3: Boolean(processed.button3),
-      button4: Boolean(processed.button4),
-      button5: Boolean(processed.button5),
-      button6: Boolean(processed.button6),
-      button7: Boolean(processed.button7),
-      button8: Boolean(processed.button8),
     };
+    // Dynamically include all tablet hardware button states
+    for (let i = 1; i <= 30; i++) {
+      const buttonKey = `button${i}` as keyof typeof processed;
+      if (processed[buttonKey] !== undefined) {
+        (event as Record<string, unknown>)[`button${i}`] = Boolean(processed[buttonKey]);
+      }
+    }
 
     if (this.lastStrumEvent) {
       // Convert StrumNoteData to StrumNoteEventData (add midiNote)
@@ -548,7 +546,9 @@ export class SketchatoneFullApp extends LitElement {
 
   private extractButtonsFromData(data: Record<string, unknown>): Set<number> {
     const pressed = new Set<number>();
-    for (let i = 1; i <= 8; i++) {
+    // Use button count from tablet config capabilities, default to 8
+    const buttonCount = this.tabletConfig?.getCapabilities()?.buttonCount ?? 8;
+    for (let i = 1; i <= buttonCount; i++) {
       if (data[`button${i}`]) pressed.add(i);
     }
     return pressed;

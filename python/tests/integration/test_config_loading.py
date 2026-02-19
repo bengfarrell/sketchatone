@@ -85,24 +85,9 @@ class TestFlatFormatConfig:
         assert strumming["chord"] == "Dm"
         assert strumming["upperNoteSpread"] == 4
         assert strumming["lowerNoteSpread"] == 2
-    
-    def test_note_repeater_settings(self, config):
-        note_repeater = config["strummer"]["noteRepeater"]
-        assert note_repeater["active"] is True
-        assert note_repeater["pressureMultiplier"] == 2.0
-        assert note_repeater["frequencyMultiplier"] == 1.5
-    
-    def test_transpose_settings(self, config):
-        transpose = config["strummer"]["transpose"]
-        assert transpose["active"] is True
-        assert transpose["semitones"] == 7
-    
-    def test_stylus_buttons_settings(self, config):
-        stylus_buttons = config["strummer"]["stylusButtons"]
-        assert stylus_buttons["active"] is False
-        assert stylus_buttons["primaryButtonAction"] == "toggle-repeater"
-        assert stylus_buttons["secondaryButtonAction"] == "toggle-transpose"
-    
+
+    # Note: note_repeater and transpose are now managed by Actions class, not config
+
     def test_strum_release_settings(self, config):
         strum_release = config["strummer"]["strumRelease"]
         assert strum_release["active"] is True
@@ -160,24 +145,9 @@ class TestNestedFormatConfig:
         assert note_duration["curve"] == 1.5
         assert note_duration["spread"] == "direct"
         assert note_duration["control"] == "pressure"
-    
-    def test_note_repeater_settings(self, config):
-        note_repeater = config["strummer"]["noteRepeater"]
-        assert note_repeater["active"] is False
-        assert note_repeater["pressureMultiplier"] == 3.0
-        assert note_repeater["frequencyMultiplier"] == 2.0
-    
-    def test_transpose_settings(self, config):
-        transpose = config["strummer"]["transpose"]
-        assert transpose["active"] is False
-        assert transpose["semitones"] == -5
-    
-    def test_stylus_buttons_settings(self, config):
-        stylus_buttons = config["strummer"]["stylusButtons"]
-        assert stylus_buttons["active"] is True
-        assert stylus_buttons["primaryButtonAction"] == "none"
-        assert stylus_buttons["secondaryButtonAction"] == "toggle-repeater"
-    
+
+    # Note: note_repeater and transpose are now managed by Actions class, not config
+
     def test_midi_settings(self, config):
         midi = config["midi"]
         # Python MidiConfig has different fields than Node.js

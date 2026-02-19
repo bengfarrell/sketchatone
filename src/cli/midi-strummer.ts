@@ -78,17 +78,9 @@ class MidiStrummer extends TabletReaderBase {
     secondaryButtonPressed: false,
   };
 
-  // State tracking for tablet hardware buttons (1-8)
-  private tabletButtonState: Record<string, boolean> = {
-    button1: false,
-    button2: false,
-    button3: false,
-    button4: false,
-    button5: false,
-    button6: false,
-    button7: false,
-    button8: false,
-  };
+  // State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
+  private tabletButtonState: Record<string, boolean> = {};
+  private tabletButtonCount: number = 8; // Default, updated when device connects
 
   // State tracking for note repeater
   private repeaterState = {
@@ -267,34 +259,36 @@ class MidiStrummer extends TabletReaderBase {
       const normalized = normalizeTabletEvent(events);
       const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
 
-      // Handle stylus button presses
-      const stylusButtonsCfg = this.config.stylusButtons;
-
+      // Handle stylus button presses via action rules
       // Detect button down events (transition from not pressed to pressed)
-      if (stylusButtonsCfg?.active) {
-        if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
-          // Primary button just pressed
-          const action = stylusButtonsCfg.primaryButtonAction;
-          this.actions.execute(action, { button: 'Primary' });
-        }
+      if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
+        // Primary button just pressed
+        this.actions.handleButtonEvent('button:primary', 'press');
+      }
+      if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
+        // Primary button just released
+        this.actions.handleButtonEvent('button:primary', 'release');
+      }
 
-        if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
-          // Secondary button just pressed
-          const action = stylusButtonsCfg.secondaryButtonAction;
-          this.actions.execute(action, { button: 'Secondary' });
-        }
+      if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
+        // Secondary button just pressed
+        this.actions.handleButtonEvent('button:secondary', 'press');
+      }
+      if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
+        // Secondary button just released
+        this.actions.handleButtonEvent('button:secondary', 'release');
       }
 
       // Update stylus button states
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses (buttons 1-8) via action rules
-      for (let i = 1; i <= 8; i++) {
+      // Handle tablet hardware button presses via action rules (dynamic button count)
+      for (let i = 1; i <= this.tabletButtonCount; i++) {
         const buttonKey = `button${i}` as keyof typeof normalized;
         const buttonPressed = Boolean(normalized[buttonKey]);
         const stateKey = `button${i}`;
-        const wasPressed = this.tabletButtonState[stateKey];
+        const wasPressed = this.tabletButtonState[stateKey] ?? false;
 
         // Detect button down event (transition from not pressed to pressed)
         if (buttonPressed && !wasPressed) {
@@ -373,11 +367,11 @@ class MidiStrummer extends TabletReaderBase {
       // Process strum
       const event = this.strummer.strum(strumX, pressure);
 
-      // Get note repeater configuration
-      const noteRepeaterCfg = this.config.noteRepeater;
-      const noteRepeaterEnabled = noteRepeaterCfg?.active ?? false;
-      const pressureMultiplier = noteRepeaterCfg?.pressureMultiplier ?? 1.0;
-      const frequencyMultiplier = noteRepeaterCfg?.frequencyMultiplier ?? 1.0;
+      // Get note repeater state from actions
+      const repeaterConfig = this.actions.getRepeaterConfig();
+      const noteRepeaterEnabled = repeaterConfig.active;
+      const pressureMultiplier = repeaterConfig.pressureMultiplier;
+      const frequencyMultiplier = repeaterConfig.frequencyMultiplier;
 
       // Get transpose state from actions
       const transposeEnabled = this.actions.isTransposeActive();
@@ -655,6 +649,22 @@ class MidiStrummer extends TabletReaderBase {
     process.stdout.write(HIDE_CURSOR + MOVE_HOME + content);
   }
 
+  /**
+   * Initialize tablet button state based on device capabilities
+   */
+  private initializeTabletButtonState(): void {
+    const capabilities = this.configData?.getCapabilities();
+    this.tabletButtonCount = capabilities?.buttonCount ?? 8;
+
+    // Initialize button state for all buttons
+    this.tabletButtonState = {};
+    for (let i = 1; i <= this.tabletButtonCount; i++) {
+      this.tabletButtonState[`button${i}`] = false;
+    }
+
+    console.log(chalk.gray(`  Tablet has ${this.tabletButtonCount} hardware buttons`));
+  }
+
   async start(): Promise<void> {
     this.printHeader('MIDI Strummer');
     this.printConfigInfo();
@@ -673,6 +683,9 @@ class MidiStrummer extends TabletReaderBase {
     if (!this.reader) {
       throw new Error('Reader not initialized');
     }
+
+    // Initialize button state based on device capabilities
+    this.initializeTabletButtonState();
 
     // Start reading
     this.reader.startReading((data) => {

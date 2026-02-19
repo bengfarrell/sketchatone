@@ -89,18 +89,18 @@ class ChordProgressionState:
 class Actions(EventEmitter):
     """
     Handles various user actions that can be triggered by stylus buttons or other inputs.
-    
+
     Actions are executed through the execute() method by passing an action definition.
     Actions can be specified as:
     - A string: "toggle-repeater"
     - An array: ["transpose", 12] where first item is action name, rest are parameters
     - Nested arrays: ["set-strum-notes", ["C4", "E4", "G4"]] for complex parameters
     - Chord notation: ["set-strum-chord", "Cmaj7", 3] for chord-based note setting
-    
+
     Events emitted:
         - 'config_changed': When an action modifies the configuration
     """
-    
+
     def __init__(self, config: Any, strummer: Any = None):
         """
         Initialize Actions with a configuration instance.
@@ -129,6 +129,17 @@ class Actions(EventEmitter):
 
         # Action rules configuration (set via set_action_rules_config)
         self._action_rules_config: Optional['ActionRulesConfig'] = None
+
+        # Internal state for repeater and transpose (managed by actions, not config)
+        self._repeater_state = {
+            'active': False,
+            'pressure_multiplier': 1.0,
+            'frequency_multiplier': 1.0,
+        }
+        self._transpose_state = {
+            'active': False,
+            'semitones': 0,
+        }
 
     @property
     def action_rules_config(self) -> Optional['ActionRulesConfig']:
@@ -159,9 +170,13 @@ class Actions(EventEmitter):
             print('[ACTIONS] No action rules config set, cannot handle button event')
             return False
 
-        action = self._action_rules_config.get_action_for_button_event(button_id, trigger)
-        if action:
-            return self.execute(action, context={'button': button_id, 'trigger': trigger})
+        result = self._action_rules_config.get_rule_for_button_event(button_id, trigger)
+        if result:
+            return self.execute(result['action'], context={
+                'button': button_id,
+                'trigger': trigger,
+                'rule_id': result['rule_id']
+            })
 
         return False
 
@@ -175,12 +190,17 @@ class Actions(EventEmitter):
 
         for rule in self._action_rules_config.startup_rules:
             print(f"[ACTIONS] Executing startup rule: {rule.name}")
-            self.execute(rule.action, context={'startup': True, 'rule_id': rule.id})
-    
+            self.execute(rule.action, context={
+                'button': 'startup',
+                'rule_name': rule.name,
+                'rule_id': rule.id,
+                'is_startup': True
+            })
+
     def execute(self, action_def: Union[str, List, None], context: Optional[Dict[str, Any]] = None) -> bool:
         """
         Execute an action by definition.
-        
+
         Args:
             action_def: Action definition - can be:
                        - String: "toggle-repeater"
@@ -188,13 +208,15 @@ class Actions(EventEmitter):
                        - Nested list: ["set-strum-notes", ["C4", "E4", "G4"]]
                        - None/empty: no action
             context: Optional context data for the action (e.g., which button triggered it)
-            
+
         Returns:
             True if action was executed successfully, False if action not found or invalid
         """
         if action_def is None or action_def == 'none' or action_def == '':
             return False
-        
+
+        context = context or {}
+
         # Parse action definition
         if isinstance(action_def, str):
             action_name = action_def
@@ -205,11 +227,24 @@ class Actions(EventEmitter):
         else:
             print(f"[ACTIONS] Warning: Invalid action definition: {action_def}")
             return False
-        
+
         # Execute the action
         handler = self._action_handlers.get(action_name)
         if handler:
-            handler(params, context or {})
+            handler(params, context)
+
+            # Emit action_executed event for UI feedback
+            import time
+            self.emit('action_executed', {
+                'action': action_name,
+                'params': params,
+                'button': context.get('button'),
+                'trigger': context.get('trigger'),
+                'timestamp': int(time.time() * 1000),  # milliseconds
+                'rule_id': context.get('rule_id'),
+                'is_startup': context.get('is_startup', False),
+            })
+
             return True
         else:
             print(f"[ACTIONS] Warning: Unknown action '{action_name}'")
@@ -218,97 +253,61 @@ class Actions(EventEmitter):
     def toggle_repeater(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
         Toggle the note repeater feature on/off.
-        
+
         Args:
-            params: Optional parameters (not used for this action)
+            params: Optional parameters:
+                   - params[0]: pressureMultiplier (float, default 1.0) - Multiplier for note velocity on repeats
+                   - params[1]: frequencyMultiplier (float, default 1.0) - Multiplier for repeat frequency (higher = faster)
             context: Context data (e.g., which button triggered the action)
         """
-        # Get current state from config
-        note_repeater = getattr(self.config, 'note_repeater', None)
-        if note_repeater is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                note_repeater = self.config.get('note_repeater') or self.config.get('noteRepeater')
-            else:
-                note_repeater_cfg = getattr(self.config, 'get', lambda k, d: d)('noteRepeater', {})
-                note_repeater = note_repeater_cfg if isinstance(note_repeater_cfg, dict) else None
+        new_state = not self._repeater_state['active']
 
-        # Get current active state
-        if note_repeater is None:
-            current_active = False
-        elif isinstance(note_repeater, dict):
-            current_active = note_repeater.get('active', False)
-        else:
-            current_active = note_repeater.active
+        # Parse optional parameters
+        pressure_multiplier = float(params[0]) if len(params) > 0 and isinstance(params[0], (int, float)) else 1.0
+        frequency_multiplier = float(params[1]) if len(params) > 1 and isinstance(params[1], (int, float)) else 1.0
 
-        new_state = not current_active
+        # Update internal state
+        self._repeater_state['active'] = new_state
+        if new_state:
+            # Only update multipliers when turning on
+            self._repeater_state['pressure_multiplier'] = pressure_multiplier
+            self._repeater_state['frequency_multiplier'] = frequency_multiplier
 
-        # Update config
-        if note_repeater is not None and hasattr(note_repeater, 'active'):
-            # Direct object with active attribute
-            note_repeater.active = new_state
-        elif isinstance(self.config, dict):
-            # Dictionary config - update the note_repeater object directly
-            if 'note_repeater' in self.config and hasattr(self.config['note_repeater'], 'active'):
-                self.config['note_repeater'].active = new_state
-            elif 'noteRepeater' in self.config and hasattr(self.config['noteRepeater'], 'active'):
-                self.config['noteRepeater'].active = new_state
-        elif hasattr(self.config, 'set'):
-            self.config.set('noteRepeater.active', new_state)
-        
         # Log which button triggered the action if available
         button = context.get('button', 'Unknown')
-        print(f"[ACTIONS] {button} button toggled repeater: {'ON' if new_state else 'OFF'}")
-        
+        if new_state:
+            print(f"[ACTIONS] {button} button enabled repeater: pressure={pressure_multiplier}x, frequency={frequency_multiplier}x")
+        else:
+            print(f"[ACTIONS] {button} button disabled repeater")
+
         # Emit config changed event
         self.emit('config_changed')
 
     def toggle_transpose(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
-        Toggle transpose on/off using the configured semitones value.
-        Unlike the 'transpose' action which requires a semitones parameter,
-        this action uses the semitones value already configured in transpose.semitones.
+        Toggle transpose on/off.
 
         Args:
-            params: Optional parameters (not used for this action)
+            params: Optional parameters:
+                   - params[0]: semitones (int, default 12) - Number of semitones to transpose
             context: Context data (e.g., which button triggered the action)
         """
-        # Get current state from config
-        transpose_cfg = getattr(self.config, 'transpose', None)
-        if transpose_cfg is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                transpose_cfg = self.config.get('transpose')
-            else:
-                transpose_dict = getattr(self.config, 'get', lambda k, d: d)('transpose', {})
-                transpose_cfg = transpose_dict if isinstance(transpose_dict, dict) else None
+        new_state = not self._transpose_state['active']
 
-        # Get current values
-        if transpose_cfg is None:
-            current_active = False
-            configured_semitones = 12
-        elif isinstance(transpose_cfg, dict):
-            current_active = transpose_cfg.get('active', False)
-            configured_semitones = transpose_cfg.get('semitones', 12)
-        else:
-            current_active = transpose_cfg.active
-            configured_semitones = transpose_cfg.semitones
+        # Parse optional semitones parameter
+        semitones = int(params[0]) if len(params) > 0 and isinstance(params[0], (int, float)) else 12
 
-        new_state = not current_active
-
-        # Update config - keep the semitones value, just toggle active
-        if transpose_cfg is not None and hasattr(transpose_cfg, 'active'):
-            transpose_cfg.active = new_state
-        elif isinstance(self.config, dict) and 'transpose' in self.config and hasattr(self.config['transpose'], 'active'):
-            self.config['transpose'].active = new_state
-        elif hasattr(self.config, 'set'):
-            self.config.set('transpose.active', new_state)
+        # Update internal state
+        self._transpose_state['active'] = new_state
+        if new_state:
+            # Only update semitones when turning on
+            self._transpose_state['semitones'] = semitones
 
         # Log which button triggered the action if available
         button = context.get('button', 'Unknown')
         if new_state:
-            sign = '+' if configured_semitones > 0 else ''
-            print(f"[ACTIONS] {button} button enabled transpose: {sign}{configured_semitones} semitones")
+            sign = '+' if semitones > 0 else ''
+            print(f"[ACTIONS] {button} button enabled transpose: {sign}{semitones} semitones")
         else:
             print(f"[ACTIONS] {button} button disabled transpose")
 
@@ -317,70 +316,36 @@ class Actions(EventEmitter):
 
     def transpose(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
-        Toggle transpose on/off with specified semitones.
+        Add semitones to the current transpose value (cumulative).
+        Each press adds the specified semitones to the current transpose amount.
+        Transpose is automatically enabled when non-zero, disabled when zero.
 
         Args:
             params: Required parameters:
-                   - params[0] (int): Semitones to transpose (e.g., 12 for one octave up)
+                   - params[0] (int): Semitones to add (can be negative)
             context: Context data (e.g., which button triggered the action)
         """
         if len(params) == 0 or not isinstance(params[0], (int, float)):
             print(f"[ACTIONS] Error: transpose action requires semitones parameter")
             return
 
-        semitones = int(params[0])
+        semitones_to_add = int(params[0])
         button = context.get('button', 'Unknown')
 
-        # Get current transpose state
-        transpose_cfg = getattr(self.config, 'transpose', None)
-        if transpose_cfg is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                transpose_cfg = self.config.get('transpose')
-            else:
-                transpose_dict = getattr(self.config, 'get', lambda k, d: d)('transpose', {})
-                transpose_cfg = transpose_dict if isinstance(transpose_dict, dict) else None
+        # Add to current semitones (cumulative)
+        new_semitones = self._transpose_state['semitones'] + semitones_to_add
+        self._transpose_state['semitones'] = new_semitones
+        # Active when non-zero
+        self._transpose_state['active'] = new_semitones != 0
 
-        # Get current values
-        if transpose_cfg is None:
-            current_active = False
-            current_semitones = 0
-        elif isinstance(transpose_cfg, dict):
-            current_active = transpose_cfg.get('active', False)
-            current_semitones = transpose_cfg.get('semitones', 0)
+        if new_semitones == 0:
+            print(f"[ACTIONS] {button} button reset transpose to 0")
         else:
-            current_active = transpose_cfg.active
-            current_semitones = transpose_cfg.semitones
-
-        # Toggle: if currently active with same semitones, turn off; otherwise turn on with new semitones
-        if current_active and current_semitones == semitones:
-            # Turn off
-            if transpose_cfg is not None and hasattr(transpose_cfg, 'active'):
-                transpose_cfg.active = False
-                transpose_cfg.semitones = 0
-            elif isinstance(self.config, dict) and 'transpose' in self.config and hasattr(self.config['transpose'], 'active'):
-                self.config['transpose'].active = False
-                self.config['transpose'].semitones = 0
-            elif hasattr(self.config, 'set'):
-                self.config.set('transpose.active', False)
-                self.config.set('transpose.semitones', 0)
-            print(f"[ACTIONS] {button} button disabled transpose")
-        else:
-            # Turn on with specified semitones
-            if transpose_cfg is not None and hasattr(transpose_cfg, 'active'):
-                transpose_cfg.active = True
-                transpose_cfg.semitones = semitones
-            elif isinstance(self.config, dict) and 'transpose' in self.config and hasattr(self.config['transpose'], 'active'):
-                self.config['transpose'].active = True
-                self.config['transpose'].semitones = semitones
-            elif hasattr(self.config, 'set'):
-                self.config.set('transpose.active', True)
-                self.config.set('transpose.semitones', semitones)
-            print(f"[ACTIONS] {button} button enabled transpose: {semitones:+d} semitones")
+            print(f"[ACTIONS] {button} button transposed {semitones_to_add:+d} → total: {new_semitones:+d} semitones")
 
         # Emit config changed event
         self.emit('config_changed')
-    
+
     def get_transpose_semitones(self) -> int:
         """
         Get the current transpose semitones.
@@ -388,25 +353,7 @@ class Actions(EventEmitter):
         Returns:
             Current transpose semitones (0 if transpose is not active)
         """
-        transpose_cfg = getattr(self.config, 'transpose', None)
-        if transpose_cfg is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                transpose_cfg = self.config.get('transpose')
-            else:
-                transpose_dict = getattr(self.config, 'get', lambda k, d: d)('transpose', {})
-                transpose_cfg = transpose_dict if isinstance(transpose_dict, dict) else None
-
-        if transpose_cfg is None:
-            return 0
-        elif isinstance(transpose_cfg, dict):
-            if transpose_cfg.get('active', False):
-                return transpose_cfg.get('semitones', 0)
-            return 0
-
-        if transpose_cfg.active:
-            return transpose_cfg.semitones
-        return 0
+        return self._transpose_state['semitones'] if self._transpose_state['active'] else 0
 
     def is_transpose_active(self) -> bool:
         """
@@ -415,21 +362,20 @@ class Actions(EventEmitter):
         Returns:
             True if transpose is active, False otherwise
         """
-        transpose_cfg = getattr(self.config, 'transpose', None)
-        if transpose_cfg is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                transpose_cfg = self.config.get('transpose')
-            else:
-                transpose_dict = getattr(self.config, 'get', lambda k, d: d)('transpose', {})
-                transpose_cfg = transpose_dict if isinstance(transpose_dict, dict) else None
+        return self._transpose_state['active']
 
-        if transpose_cfg is None:
-            return False
-        elif isinstance(transpose_cfg, dict):
-            return transpose_cfg.get('active', False)
-        return transpose_cfg.active
-    
+    def get_transpose_config(self) -> Dict[str, Any]:
+        """
+        Get the transpose configuration.
+
+        Returns:
+            Dictionary with active, semitones
+        """
+        return {
+            'active': self._transpose_state['active'],
+            'semitones': self._transpose_state['semitones'],
+        }
+
     def is_repeater_active(self) -> bool:
         """
         Check if note repeater is currently active.
@@ -437,52 +383,21 @@ class Actions(EventEmitter):
         Returns:
             True if repeater is active, False otherwise
         """
-        note_repeater = getattr(self.config, 'note_repeater', None)
-        if note_repeater is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                note_repeater = self.config.get('note_repeater') or self.config.get('noteRepeater')
-            else:
-                note_repeater_cfg = getattr(self.config, 'get', lambda k, d: d)('noteRepeater', {})
-                note_repeater = note_repeater_cfg if isinstance(note_repeater_cfg, dict) else None
+        return self._repeater_state['active']
 
-        if note_repeater is None:
-            return False
-        elif isinstance(note_repeater, dict):
-            return note_repeater.get('active', False)
-        return note_repeater.active
-    
     def get_repeater_config(self) -> Dict[str, Any]:
         """
         Get the note repeater configuration.
 
         Returns:
-            Dictionary with active, pressureMultiplier, frequencyMultiplier
+            Dictionary with active, pressure_multiplier, frequency_multiplier
         """
-        note_repeater = getattr(self.config, 'note_repeater', None)
-        if note_repeater is None:
-            # Try dictionary-style access (supports both snake_case and camelCase keys)
-            if isinstance(self.config, dict):
-                note_repeater = self.config.get('note_repeater') or self.config.get('noteRepeater')
-            else:
-                note_repeater_cfg = getattr(self.config, 'get', lambda k, d: d)('noteRepeater', {})
-                note_repeater = note_repeater_cfg if isinstance(note_repeater_cfg, dict) else None
-
-        if note_repeater is None:
-            return {'active': False, 'pressureMultiplier': 1.0, 'frequencyMultiplier': 1.0}
-        elif isinstance(note_repeater, dict):
-            return {
-                'active': note_repeater.get('active', False),
-                'pressureMultiplier': note_repeater.get('pressureMultiplier', note_repeater.get('pressure_multiplier', 1.0)),
-                'frequencyMultiplier': note_repeater.get('frequencyMultiplier', note_repeater.get('frequency_multiplier', 1.0))
-            }
-
         return {
-            'active': note_repeater.active,
-            'pressureMultiplier': note_repeater.pressure_multiplier,
-            'frequencyMultiplier': note_repeater.frequency_multiplier
+            'active': self._repeater_state['active'],
+            'pressure_multiplier': self._repeater_state['pressure_multiplier'],
+            'frequency_multiplier': self._repeater_state['frequency_multiplier'],
         }
-    
+
     def set_strum_notes(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
         Set the strumming notes to a specific set of notes.

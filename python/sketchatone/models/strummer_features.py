@@ -3,125 +3,19 @@ Strummer Feature Config Models
 
 Configuration models for optional strummer features.
 Based on midi-strummer's feature configuration system.
+
+Note: NoteRepeaterConfig and TransposeConfig have been removed.
+Repeater and transpose state is now managed by the Actions class.
+Use action rules to configure these features.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Literal, List
+from typing import Optional, Dict, Any, List, Union
 
-
-# Stylus button actions (string-only for type hints)
-StylusButtonAction = Literal[
-    "toggle-transpose",
-    "toggle-repeater",
-    "momentary-transpose",
-    "momentary-repeater",
-    "octave-up",
-    "octave-down",
-    "none"
-]
 
 # General button action - can be a string, list with params, or None
 # Examples: "toggle-repeater", ["transpose", 12], ["set-strum-chord", "C", 4]
-from typing import Union
 ButtonAction = Union[str, List[Any], None]
-
-
-@dataclass
-class NoteRepeaterConfig:
-    """
-    Configuration for the note repeater feature.
-
-    When active, notes are repeated at a frequency controlled by pressure.
-
-    Attributes:
-        active: Whether the repeater is enabled
-        pressure_multiplier: Scale factor for pressure-to-frequency mapping
-        frequency_multiplier: Base frequency multiplier
-    """
-    active: bool = False
-    pressure_multiplier: float = 1.0
-    frequency_multiplier: float = 1.0
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'NoteRepeaterConfig':
-        """Create from dictionary (supports both snake_case and camelCase)"""
-        return cls(
-            active=data.get('active', False),
-            pressure_multiplier=data.get('pressure_multiplier', data.get('pressureMultiplier', 1.0)),
-            frequency_multiplier=data.get('frequency_multiplier', data.get('frequencyMultiplier', 1.0))
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
-        return {
-            'active': self.active,
-            'pressureMultiplier': self.pressure_multiplier,
-            'frequencyMultiplier': self.frequency_multiplier
-        }
-
-
-@dataclass
-class TransposeConfig:
-    """
-    Configuration for the transpose feature.
-
-    When active, all notes are transposed by the specified number of semitones.
-
-    Attributes:
-        active: Whether transpose is enabled
-        semitones: Number of semitones to transpose (positive=up, negative=down)
-    """
-    active: bool = False
-    semitones: int = 12
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TransposeConfig':
-        """Create from dictionary"""
-        return cls(
-            active=data.get('active', False),
-            semitones=data.get('semitones', 12)
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
-        return {
-            'active': self.active,
-            'semitones': self.semitones
-        }
-
-
-@dataclass
-class StylusButtonsConfig:
-    """
-    Configuration for stylus button actions.
-
-    Maps the primary and secondary stylus buttons to actions.
-
-    Attributes:
-        active: Whether stylus button handling is enabled
-        primary_button_action: Action for primary button
-        secondary_button_action: Action for secondary button
-    """
-    active: bool = True
-    primary_button_action: ButtonAction = "toggle-transpose"
-    secondary_button_action: ButtonAction = "toggle-repeater"
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'StylusButtonsConfig':
-        """Create from dictionary (supports both snake_case and camelCase)"""
-        return cls(
-            active=data.get('active', True),
-            primary_button_action=data.get('primary_button_action', data.get('primaryButtonAction', 'toggle-transpose')),
-            secondary_button_action=data.get('secondary_button_action', data.get('secondaryButtonAction', 'toggle-repeater'))
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
-        return {
-            'active': self.active,
-            'primaryButtonAction': self.primary_button_action,
-            'secondaryButtonAction': self.secondary_button_action
-        }
 
 
 @dataclass

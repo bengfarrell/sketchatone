@@ -35,9 +35,9 @@ describe('StrummerEventBus', () => {
   });
 
   describe('constructor', () => {
-    it('should create with default throttle of 150ms', () => {
+    it('should create with default throttle of 0 (no throttling)', () => {
       const bus = new StrummerEventBus();
-      expect(bus.throttleMs).toBe(150);
+      expect(bus.throttleMs).toBe(0);
       bus.cleanup();
     });
 

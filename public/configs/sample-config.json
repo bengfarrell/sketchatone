@@ -45,11 +45,6 @@
     "active": false,
     "semitones": 12
   },
-  "stylus_buttons": {
-    "active": true,
-    "primary_button_action": "toggle-transpose",
-    "secondary_button_action": "toggle-repeater"
-  },
   "strum_release": {
     "active": false,
     "midi_note": 38,
@@ -59,12 +54,29 @@
   },
   "action_rules": {
     "button_names": {
+      "button:primary": "Primary Stylus",
+      "button:secondary": "Secondary Stylus",
       "button:1": "Button 1",
       "button:2": "Button 2",
       "button:3": "Button 3",
       "button:4": "Button 4"
     },
-    "rules": [],
+    "rules": [
+      {
+        "id": "stylus-primary-transpose",
+        "name": "Toggle Transpose",
+        "button": "button:primary",
+        "action": "toggle-transpose",
+        "trigger": "press"
+      },
+      {
+        "id": "stylus-secondary-repeater",
+        "name": "Toggle Repeater",
+        "button": "button:secondary",
+        "action": "toggle-repeater",
+        "trigger": "press"
+      }
+    ],
     "groups": [
       {
         "id": "chord-buttons",

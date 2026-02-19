@@ -87,10 +87,7 @@ describe('StrummerConfig', () => {
       expect(config.noteDuration.control).toBe('tiltXY');
       expect(config.pitchBend.control).toBe('yaxis');
       expect(config.noteVelocity.control).toBe('pressure');
-      // Check feature defaults
-      expect(config.noteRepeater.active).toBe(false);
-      expect(config.transpose.active).toBe(false);
-      expect(config.stylusButtons.active).toBe(true);
+      // Check feature defaults (note: noteRepeater and transpose are now managed by Actions)
       expect(config.strumRelease.active).toBe(false);
     });
 
@@ -106,10 +103,6 @@ describe('StrummerConfig', () => {
           max: 2.0,
           control: 'pressure',
         },
-        noteRepeater: {
-          active: true,
-          pressureMultiplier: 2.0,
-        },
       });
       expect(config.strumming.pressureThreshold).toBe(0.2);
       expect(config.strumming.initialNotes).toEqual(['D4', 'F#4', 'A4']);
@@ -117,8 +110,6 @@ describe('StrummerConfig', () => {
       expect(config.noteDuration.min).toBe(0.1);
       expect(config.noteDuration.max).toBe(2.0);
       expect(config.noteDuration.control).toBe('pressure');
-      expect(config.noteRepeater.active).toBe(true);
-      expect(config.noteRepeater.pressureMultiplier).toBe(2.0);
     });
 
     it('should convert to dictionary', () => {
@@ -128,10 +119,9 @@ describe('StrummerConfig', () => {
       expect(dict.noteDuration).toBeDefined();
       expect(dict.pitchBend).toBeDefined();
       expect(dict.noteVelocity).toBeDefined();
-      expect(dict.noteRepeater).toBeDefined();
-      expect(dict.transpose).toBeDefined();
-      expect(dict.stylusButtons).toBeDefined();
+      // Note: noteRepeater and transpose are no longer in config
       expect(dict.strumRelease).toBeDefined();
+      expect(dict.actionRules).toBeDefined();
     });
   });
 

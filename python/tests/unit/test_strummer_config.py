@@ -97,12 +97,9 @@ class TestStrummerConfigNewFormat:
         assert config.note_velocity.control == 'pressure'
         # Check strumming defaults
         assert config.strumming.pressure_threshold == 0.1
-        # Check feature defaults
-        assert config.note_repeater.active is False
-        assert config.transpose.active is False
-        assert config.stylus_buttons.active is True
+        # Check feature defaults (note: note_repeater and transpose are now managed by Actions)
         assert config.strum_release.active is False
-    
+
     def test_from_dict_new_format(self):
         """Test creating from new nested format."""
         data = {
@@ -124,13 +121,6 @@ class TestStrummerConfigNewFormat:
             'strumming': {
                 'chord': 'Dm',
                 'pressure_threshold': 0.15
-            },
-            'note_repeater': {
-                'active': True
-            },
-            'transpose': {
-                'active': True,
-                'semitones': 7
             }
         }
         config = StrummerConfig.from_dict(data)
@@ -140,10 +130,7 @@ class TestStrummerConfigNewFormat:
         assert config.note_velocity.max == 120
         assert config.strumming.chord == 'Dm'
         assert config.strumming.pressure_threshold == 0.15
-        assert config.note_repeater.active is True
-        assert config.transpose.active is True
-        assert config.transpose.semitones == 7
-    
+
     def test_to_dict(self):
         """Test converting to dictionary (camelCase for webapp)."""
         config = StrummerConfig()
@@ -152,10 +139,9 @@ class TestStrummerConfigNewFormat:
         assert 'pitchBend' in d
         assert 'noteVelocity' in d
         assert 'strumming' in d
-        assert 'noteRepeater' in d
-        assert 'transpose' in d
-        assert 'stylusButtons' in d
+        # Note: noteRepeater and transpose are no longer in config
         assert 'strumRelease' in d
+        assert 'actionRules' in d
 
 
 class TestStrummerConfigBackwardCompatibility:

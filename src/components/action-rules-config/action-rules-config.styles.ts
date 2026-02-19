@@ -88,6 +88,26 @@ export const styles = css`
     background: var(--spectrum-gray-100);
   }
 
+  /* Status dot for triggered actions */
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--spectrum-gray-300);
+    flex-shrink: 0;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease, opacity 1s ease;
+  }
+
+  .status-dot.active {
+    background: var(--spectrum-green-500);
+    box-shadow: 0 0 6px var(--spectrum-green-500);
+  }
+
+  .status-dot.permanent {
+    /* Startup rules stay lit permanently - no fade transition */
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
   .rule-button-id {
     min-width: 80px;
     font-weight: 500;
@@ -197,11 +217,33 @@ export const styles = css`
     border-radius: 4px;
     font-size: 0.8em;
     color: var(--spectrum-gray-800);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }
 
+  /* Legacy class for backwards compatibility (used in group list display) */
   .button-chip.pressed {
     background: var(--spectrum-blue-400);
     color: white;
+  }
+
+  /* Selected state (button is in the group) */
+  .button-chip.selected {
+    background: var(--spectrum-blue-400);
+    color: white;
+  }
+
+  /* Detected state (button is currently pressed on device) */
+  .button-chip.detected {
+    background: var(--spectrum-orange-400);
+    color: white;
+    box-shadow: 0 0 8px var(--spectrum-orange-400);
+  }
+
+  /* Both selected and detected */
+  .button-chip.selected.detected {
+    background: var(--spectrum-green-500);
+    color: white;
+    box-shadow: 0 0 8px var(--spectrum-green-500);
   }
 
   .startup-icon {
@@ -227,7 +269,8 @@ export const styles = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    /* Use z-index below Spectrum's overlay base (1000) so picker dropdowns appear above */
+    z-index: 999;
   }
 
   .form-dialog {
@@ -239,6 +282,8 @@ export const styles = css`
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    /* Prevent scroll events from interfering with picker dropdowns */
+    overscroll-behavior: contain;
   }
 
   .form-title {
@@ -292,5 +337,61 @@ export const styles = css`
 
   sp-action-button {
     --spectrum-actionbutton-m-min-width: 28px;
+  }
+
+  /* Native select styling to match Spectrum picker */
+  .native-select {
+    width: 100%;
+    box-sizing: border-box;
+    height: var(--spectrum-component-height-100, 32px);
+    padding-inline-start: var(--spectrum-component-edge-to-text-100, 12px);
+    padding-inline-end: 28px; /* Space for dropdown arrow */
+    font-family: var(--spectrum-sans-font-family-stack, adobe-clean, 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-size: var(--spectrum-font-size-100, 14px);
+    font-weight: var(--spectrum-regular-font-weight, 400);
+    line-height: var(--spectrum-line-height-100, 1.3);
+    border: 1px solid var(--spectrum-gray-400, #b3b3b3);
+    border-radius: var(--spectrum-corner-radius-100, 4px);
+    background-color: var(--spectrum-gray-75, #ffffff);
+    color: var(--spectrum-gray-800, #4b4b4b);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%236e6e6e' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    transition: border-color 130ms ease-in-out, box-shadow 130ms ease-in-out, background-color 130ms ease-in-out;
+  }
+
+  .native-select:hover {
+    border-color: var(--spectrum-gray-500, #959595);
+    background-color: var(--spectrum-gray-100, #f5f5f5);
+  }
+
+  .native-select:focus {
+    outline: none;
+    border-color: var(--spectrum-blue-900, #0054b6);
+    box-shadow: 0 0 0 1px var(--spectrum-blue-900, #0054b6);
+  }
+
+  .native-select:focus-visible {
+    outline: 2px solid var(--spectrum-focus-indicator-color, #0054b6);
+    outline-offset: 2px;
+  }
+
+  /* Dark mode support */
+  @media (prefers-color-scheme: dark) {
+    .native-select {
+      background-color: var(--spectrum-gray-100, #323232);
+      border-color: var(--spectrum-gray-400, #5c5c5c);
+      color: var(--spectrum-gray-800, #e1e1e1);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23b3b3b3' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+    }
+
+    .native-select:hover {
+      background-color: var(--spectrum-gray-200, #3e3e3e);
+      border-color: var(--spectrum-gray-500, #6e6e6e);
+    }
   }
 `;

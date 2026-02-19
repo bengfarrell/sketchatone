@@ -27,6 +27,10 @@ const DEFAULT_CONFIG_DIR = './public/configs/devices';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
+import { ActionRulesConfig } from '../models/action-rules.js';
+import { StrumReleaseConfig } from '../models/strummer-features.js';
+import { StrummingConfig } from '../models/strummer-config.js';
+import { ParameterMapping } from '../models/parameter-mapping.js';
 import { Note, type NoteObject } from '../models/note.js';
 import { RtMidiBackend } from '../midi/rtmidi-backend.js';
 import { MidiStrummerBridge } from '../midi/bridge.js';
@@ -46,6 +50,19 @@ import {
  */
 interface TabletWebSocketEvent extends CombinedEventData {
   type: 'tablet-data';
+}
+
+/**
+ * Action executed event data
+ */
+interface ActionExecutedEvent {
+  action: string;
+  params: unknown[];
+  button?: string;
+  trigger?: string;
+  timestamp: number;
+  ruleId?: string;
+  isStartup?: boolean;
 }
 
 /**
@@ -91,6 +108,12 @@ interface ServerConfigData {
   config: MidiStrummerConfigData;
   /** Device capabilities from blankslate tablet configuration */
   deviceCapabilities?: DeviceCapabilities;
+  /** Current config file name (without path) */
+  currentConfigName?: string;
+  /** List of available config files in the config directory */
+  availableConfigs?: string[];
+  /** True when config represents the saved state (after load/save), false for updates */
+  isSavedState?: boolean;
 }
 
 /**
@@ -147,17 +170,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     secondaryButtonPressed: false,
   };
 
-  // State tracking for tablet hardware buttons (1-8)
-  private tabletButtonState: Record<string, boolean> = {
-    button1: false,
-    button2: false,
-    button3: false,
-    button4: false,
-    button5: false,
-    button6: false,
-    button7: false,
-    button8: false,
-  };
+  // State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
+  private tabletButtonState: Record<string, boolean> = {};
+  private tabletButtonCount: number = 8; // Default, updated when device connects
 
   // State tracking for note repeater
   private repeaterState = {
@@ -171,6 +186,12 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
   // Path to the strummer config file (for saving)
   private strummerConfigPath: string | undefined;
+
+  // Directory containing strummer config files
+  private strummerConfigDir: string | undefined;
+
+  // Current config file name (without path)
+  private currentConfigName: string | undefined;
 
   constructor(
     tabletConfigPath: string,
@@ -190,9 +211,26 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Store the config path for saving later
     this.strummerConfigPath = options.strummerConfigPath;
 
-    // Load combined config from file or use defaults
+    // Extract config directory and filename
     if (options.strummerConfigPath) {
-      this.config = MidiStrummerConfig.fromJsonFile(options.strummerConfigPath);
+      this.strummerConfigDir = path.dirname(options.strummerConfigPath);
+      this.currentConfigName = path.basename(options.strummerConfigPath);
+    } else {
+      // Set default config directory when no config file specified
+      this.strummerConfigDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/configs');
+      // Try to load default.json if it exists
+      const defaultConfigPath = path.join(this.strummerConfigDir, 'default.json');
+      if (fs.existsSync(defaultConfigPath)) {
+        this.strummerConfigPath = defaultConfigPath;
+        this.currentConfigName = 'default.json';
+      } else {
+        this.currentConfigName = undefined;
+      }
+    }
+
+    // Load combined config from file or use defaults
+    if (this.strummerConfigPath) {
+      this.config = MidiStrummerConfig.fromJsonFile(this.strummerConfigPath);
     } else {
       this.config = new MidiStrummerConfig();
     }
@@ -232,6 +270,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Configure action rules so button-to-action mapping works
     this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+
+    // Listen for action events to broadcast to clients
+    this.actions.on('action_executed', (event: ActionExecutedEvent) => {
+      this.broadcastActionEvent(event);
+    });
 
     // Execute any startup rules defined in the config
     this.actions.executeStartupRules();
@@ -484,6 +527,25 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Broadcast action event to all connected clients
+   */
+  private broadcastActionEvent(event: ActionExecutedEvent): void {
+    if (!this.wss) return;
+
+    const actionMessage = {
+      type: 'action-event',
+      ...event,
+    };
+
+    const data = JSON.stringify(actionMessage);
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+
+  /**
    * Send MIDI input status to a specific client
    */
   private sendMidiInputStatus(client: WebSocket): void {
@@ -567,7 +629,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
   /**
    * Send config to a specific client
    */
-  private sendConfig(client: WebSocket): void {
+  private sendConfig(client: WebSocket, isSavedState = true): void {
     const configData: ServerConfigData = {
       throttleMs: this.eventBus.throttleMs,
       notes: this.strummer.notes.map((n) => ({
@@ -576,6 +638,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
       })),
       config: this.config.toDict(),
       deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
+      currentConfigName: this.currentConfigName,
+      availableConfigs: this.listConfigs(),
+      isSavedState,
     };
 
     client.send(
@@ -604,7 +669,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
   /**
    * Broadcast config to all connected clients
    */
-  private broadcastConfig(): void {
+  private broadcastConfig(isSavedState = false): void {
     if (!this.wss) return;
 
     const configData: ServerConfigData = {
@@ -615,6 +680,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
       })),
       config: this.config.toDict(),
       deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
+      currentConfigName: this.currentConfigName,
+      availableConfigs: this.listConfigs(),
+      isSavedState,
     };
 
     const message = JSON.stringify({
@@ -665,6 +733,22 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Initialize tablet button state based on device capabilities
+   */
+  private initializeTabletButtonState(): void {
+    const capabilities = this.configData?.getCapabilities();
+    this.tabletButtonCount = capabilities?.buttonCount ?? 8;
+
+    // Initialize button state for all buttons
+    this.tabletButtonState = {};
+    for (let i = 1; i <= this.tabletButtonCount; i++) {
+      this.tabletButtonState[`button${i}`] = false;
+    }
+
+    console.log(chalk.gray(`  Tablet has ${this.tabletButtonCount} hardware buttons`));
+  }
+
+  /**
    * Override attemptReconnect to notify clients on success
    */
   protected async attemptReconnect(): Promise<void> {
@@ -675,6 +759,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // If reconnection succeeded (attempts reset to 0 and reader exists)
     if (this.reconnectAttempts === 0 && previousAttempts > 0 && this.reader) {
       this.deviceConnected = true;
+      this.initializeTabletButtonState();
       this.broadcastStatus('connected', 'Tablet reconnected successfully');
     }
   }
@@ -725,10 +810,279 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     try {
       const configJson = JSON.stringify(this.config.toDict(), null, 2);
-      fs.writeFileSync(this.strummerConfigPath, configJson, 'utf-8');
+      fs.writeFileSync(this.strummerConfigPath, configJson, { encoding: 'utf-8' });
+      // Set permissions explicitly (bypasses umask)
+      fs.chmodSync(this.strummerConfigPath, 0o666);
       console.log(chalk.green(`[Save Config] Configuration saved to ${this.strummerConfigPath}`));
+      // Broadcast with isSavedState=true so clients know config is now saved
+      this.broadcastConfig(true);
     } catch (e) {
       console.error(chalk.red(`[Save Config] Failed to save configuration:`), e);
+    }
+  }
+
+  /**
+   * List all available config files in the config directory
+   * Only returns .json files that are not in subdirectories
+   */
+  private listConfigs(): string[] {
+    if (!this.strummerConfigDir) {
+      return [];
+    }
+
+    try {
+      const files = fs.readdirSync(this.strummerConfigDir);
+      return files.filter((file) => {
+        // Only include .json files
+        if (!file.endsWith('.json')) return false;
+        // Make sure it's a file, not a directory
+        const fullPath = path.join(this.strummerConfigDir!, file);
+        return fs.statSync(fullPath).isFile();
+      });
+    } catch (e) {
+      console.error(chalk.red('[List Configs] Failed to list configs:'), e);
+      return [];
+    }
+  }
+
+  /**
+   * Load a config file by name
+   */
+  private handleLoadConfig(configName: string): void {
+    if (!this.strummerConfigDir) {
+      console.log(chalk.red('[Load Config] No config directory set'));
+      return;
+    }
+
+    const configPath = path.join(this.strummerConfigDir, configName);
+
+    // Security check: ensure the resolved path is within the config directory
+    const resolvedPath = path.resolve(configPath);
+    const resolvedDir = path.resolve(this.strummerConfigDir);
+    if (!resolvedPath.startsWith(resolvedDir)) {
+      console.log(chalk.red('[Load Config] Invalid config path - path traversal detected'));
+      return;
+    }
+
+    if (!fs.existsSync(configPath)) {
+      console.log(chalk.red(`[Load Config] Config file not found: ${configName}`));
+      return;
+    }
+
+    try {
+      this.config = MidiStrummerConfig.fromJsonFile(configPath);
+      this.strummerConfigPath = configPath;
+      this.currentConfigName = configName;
+
+      // Re-apply strummer settings
+      this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+      this.setupNotes();
+      this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+
+      console.log(chalk.green(`[Load Config] Loaded config: ${configName}`));
+
+      // Broadcast the new config to all clients (isSavedState=true since we just loaded from file)
+      this.broadcastConfig(true);
+    } catch (e) {
+      console.error(chalk.red(`[Load Config] Failed to load config:`), e);
+    }
+  }
+
+  /**
+   * Create a new config file with default values
+   */
+  private handleCreateConfig(configName: string): void {
+    if (!this.strummerConfigDir) {
+      console.log(chalk.red('[Create Config] No config directory set'));
+      return;
+    }
+
+    // Ensure the name ends with .json
+    if (!configName.endsWith('.json')) {
+      configName = configName + '.json';
+    }
+
+    const configPath = path.join(this.strummerConfigDir, configName);
+
+    // Security check: ensure the resolved path is within the config directory
+    const resolvedPath = path.resolve(configPath);
+    const resolvedDir = path.resolve(this.strummerConfigDir);
+    if (!resolvedPath.startsWith(resolvedDir)) {
+      console.log(chalk.red('[Create Config] Invalid config path - path traversal detected'));
+      return;
+    }
+
+    if (fs.existsSync(configPath)) {
+      console.log(chalk.red(`[Create Config] Config file already exists: ${configName}`));
+      return;
+    }
+
+    try {
+      // Create a new config with defaults
+      const newConfig = new MidiStrummerConfig();
+      const configJson = JSON.stringify(newConfig.toDict(), null, 2);
+      fs.writeFileSync(configPath, configJson, { encoding: 'utf-8' });
+      // Set permissions explicitly (bypasses umask)
+      fs.chmodSync(configPath, 0o666);
+
+      console.log(chalk.green(`[Create Config] Created new config: ${configName}`));
+
+      // Switch to the newly created config
+      this.strummerConfigPath = configPath;
+      this.currentConfigName = configName;
+      this.config = newConfig;
+
+      // Broadcast updated config to all clients (isSavedState=true since we just created/saved the file)
+      this.broadcastConfig(true);
+    } catch (e) {
+      console.error(chalk.red(`[Create Config] Failed to create config:`), e);
+    }
+  }
+
+  /**
+   * Rename a config file
+   */
+  private handleRenameConfig(oldName: string, newName: string): void {
+    if (!this.strummerConfigDir) {
+      console.log(chalk.red('[Rename Config] No config directory set'));
+      return;
+    }
+
+    // Ensure names end with .json
+    if (!oldName.endsWith('.json')) oldName = oldName + '.json';
+    if (!newName.endsWith('.json')) newName = newName + '.json';
+
+    const oldPath = path.join(this.strummerConfigDir, oldName);
+    const newPath = path.join(this.strummerConfigDir, newName);
+
+    // Security check: ensure paths are within the config directory
+    const resolvedOldPath = path.resolve(oldPath);
+    const resolvedNewPath = path.resolve(newPath);
+    const resolvedDir = path.resolve(this.strummerConfigDir);
+    if (!resolvedOldPath.startsWith(resolvedDir) || !resolvedNewPath.startsWith(resolvedDir)) {
+      console.log(chalk.red('[Rename Config] Invalid config path - path traversal detected'));
+      return;
+    }
+
+    if (!fs.existsSync(oldPath)) {
+      console.log(chalk.red(`[Rename Config] Config file not found: ${oldName}`));
+      return;
+    }
+
+    if (fs.existsSync(newPath)) {
+      console.log(chalk.red(`[Rename Config] Target config file already exists: ${newName}`));
+      return;
+    }
+
+    try {
+      fs.renameSync(oldPath, newPath);
+
+      // Update current config path if we renamed the current config
+      if (this.currentConfigName === oldName) {
+        this.strummerConfigPath = newPath;
+        this.currentConfigName = newName;
+      }
+
+      console.log(chalk.green(`[Rename Config] Renamed ${oldName} to ${newName}`));
+
+      // Broadcast updated config list to all clients
+      this.broadcastConfig();
+    } catch (e) {
+      console.error(chalk.red(`[Rename Config] Failed to rename config:`), e);
+    }
+  }
+
+  /**
+   * Upload a config file (save uploaded data as a new config) and switch to it
+   */
+  private handleUploadConfig(configName: string, configData: unknown): void {
+    if (!this.strummerConfigDir) {
+      console.log(chalk.red('[Upload Config] No config directory set'));
+      return;
+    }
+
+    // Ensure the name ends with .json
+    if (!configName.endsWith('.json')) {
+      configName = configName + '.json';
+    }
+
+    const configPath = path.join(this.strummerConfigDir, configName);
+
+    // Security check: ensure the resolved path is within the config directory
+    const resolvedPath = path.resolve(configPath);
+    const resolvedDir = path.resolve(this.strummerConfigDir);
+    if (!resolvedPath.startsWith(resolvedDir)) {
+      console.log(chalk.red('[Upload Config] Invalid config path - path traversal detected'));
+      return;
+    }
+
+    try {
+      // Validate the config data by trying to parse it
+      const parsedConfig = MidiStrummerConfig.fromDict(configData as Record<string, unknown>);
+
+      // Save the validated config
+      const configJson = JSON.stringify(parsedConfig.toDict(), null, 2);
+      fs.writeFileSync(configPath, configJson, { encoding: 'utf-8' });
+      // Set permissions explicitly (bypasses umask)
+      fs.chmodSync(configPath, 0o666);
+
+      console.log(chalk.green(`[Upload Config] Uploaded config: ${configName}`));
+
+      // Switch to the uploaded config
+      this.strummerConfigPath = configPath;
+      this.currentConfigName = configName;
+      this.config = parsedConfig;
+
+      // Re-apply settings from the new config
+      this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+      this.setupNotes();
+      this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+
+      // Broadcast updated config to all clients (isSavedState=true since we just saved the file)
+      this.broadcastConfig(true);
+    } catch (e) {
+      console.error(chalk.red(`[Upload Config] Failed to upload config:`), e);
+    }
+  }
+
+  /**
+   * Delete a config file
+   */
+  private handleDeleteConfig(configName: string): void {
+    if (!this.strummerConfigDir) {
+      console.log(chalk.red('[Delete Config] No config directory set'));
+      return;
+    }
+
+    // Don't allow deleting the currently loaded config
+    if (this.currentConfigName === configName) {
+      console.log(chalk.red('[Delete Config] Cannot delete the currently loaded config'));
+      return;
+    }
+
+    const configPath = path.join(this.strummerConfigDir, configName);
+
+    // Security check: ensure the resolved path is within the config directory
+    const resolvedPath = path.resolve(configPath);
+    const resolvedDir = path.resolve(this.strummerConfigDir);
+    if (!resolvedPath.startsWith(resolvedDir)) {
+      console.log(chalk.red('[Delete Config] Invalid config path - path traversal detected'));
+      return;
+    }
+
+    if (!fs.existsSync(configPath)) {
+      console.log(chalk.red(`[Delete Config] Config file not found: ${configName}`));
+      return;
+    }
+
+    try {
+      fs.unlinkSync(configPath);
+      console.log(chalk.green(`[Delete Config] Deleted config: ${configName}`));
+
+      // Broadcast updated config list to all clients
+      this.broadcastConfig();
+    } catch (e) {
+      console.error(chalk.red(`[Delete Config] Failed to delete config:`), e);
     }
   }
 
@@ -766,11 +1120,37 @@ class StrummerWebSocketServer extends TabletReaderBase {
     const lastPart = parts[parts.length - 1];
     const camelLastPart = this.snakeToCamel(lastPart);
 
-    if (camelLastPart in current || !(lastPart in current)) {
-      current[camelLastPart] = value;
-    } else {
-      current[lastPart] = value;
+    // Convert dict values to proper config objects for known complex types
+    let convertedValue = value;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      convertedValue = this.convertDictToConfig(camelLastPart, value as Record<string, unknown>);
     }
+
+    if (camelLastPart in current || !(lastPart in current)) {
+      current[camelLastPart] = convertedValue;
+    } else {
+      current[lastPart] = convertedValue;
+    }
+  }
+
+  /**
+   * Convert a dict value to the appropriate config object based on attribute name.
+   */
+  private convertDictToConfig(attrName: string, value: Record<string, unknown>): unknown {
+    const converters: Record<string, (data: Record<string, unknown>) => unknown> = {
+      actionRules: ActionRulesConfig.fromDict,
+      strumRelease: StrumReleaseConfig.fromDict,
+      strumming: StrummingConfig.fromDict,
+      noteDuration: ParameterMapping.fromDict,
+      pitchBend: ParameterMapping.fromDict,
+      noteVelocity: ParameterMapping.fromDict,
+    };
+
+    const converter = converters[attrName];
+    if (converter) {
+      return converter(value);
+    }
+    return value;
   }
 
   /**
@@ -799,34 +1179,36 @@ class StrummerWebSocketServer extends TabletReaderBase {
       const normalized = normalizeTabletEvent(events);
       const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
 
-      // Handle stylus button presses
-      const stylusButtonsCfg = this.config.stylusButtons;
-
+      // Handle stylus button presses via action rules
       // Detect button down events (transition from not pressed to pressed)
-      if (stylusButtonsCfg?.active) {
-        if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
-          // Primary button just pressed
-          const action = stylusButtonsCfg.primaryButtonAction;
-          this.actions.execute(action, { button: 'Primary' });
-        }
+      if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
+        // Primary button just pressed
+        this.actions.handleButtonEvent('button:primary', 'press');
+      }
+      if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
+        // Primary button just released
+        this.actions.handleButtonEvent('button:primary', 'release');
+      }
 
-        if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
-          // Secondary button just pressed
-          const action = stylusButtonsCfg.secondaryButtonAction;
-          this.actions.execute(action, { button: 'Secondary' });
-        }
+      if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
+        // Secondary button just pressed
+        this.actions.handleButtonEvent('button:secondary', 'press');
+      }
+      if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
+        // Secondary button just released
+        this.actions.handleButtonEvent('button:secondary', 'release');
       }
 
       // Update stylus button states
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses (buttons 1-8) via action rules
-      for (let i = 1; i <= 8; i++) {
+      // Handle tablet hardware button presses via action rules (dynamic button count)
+      for (let i = 1; i <= this.tabletButtonCount; i++) {
         const buttonKey = `button${i}` as keyof typeof normalized;
         const buttonPressed = Boolean(normalized[buttonKey]);
         const stateKey = `button${i}`;
-        const wasPressed = this.tabletButtonState[stateKey];
+        const wasPressed = this.tabletButtonState[stateKey] ?? false;
 
         // Detect button down event (transition from not pressed to pressed)
         if (buttonPressed && !wasPressed) {
@@ -882,7 +1264,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
       const noteVelocityCfg = this.config.noteVelocity;
 
       // Emit tablet event to event bus
-      const tabletEventData: TabletEventData = {
+      // Use Record type for dynamic button assignment, then cast to TabletEventData
+      const tabletEventData: Record<string, unknown> = {
         x,
         y,
         pressure,
@@ -895,16 +1278,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
         timestamp: Date.now(),
         // Tablet hardware buttons
         tabletButtons: normalized.tabletButtons,
-        button1: normalized.button1,
-        button2: normalized.button2,
-        button3: normalized.button3,
-        button4: normalized.button4,
-        button5: normalized.button5,
-        button6: normalized.button6,
-        button7: normalized.button7,
-        button8: normalized.button8,
       };
-      this.eventBus.emitTabletEvent(tabletEventData);
+      // Dynamically add all button states based on device capabilities
+      for (let i = 1; i <= this.tabletButtonCount; i++) {
+        const buttonKey = `button${i}`;
+        tabletEventData[buttonKey] = Boolean((normalized as Record<string, unknown>)[buttonKey]);
+      }
+      this.eventBus.emitTabletEvent(tabletEventData as unknown as TabletEventData);
 
       // Update strummer bounds
       this.strummer.updateBounds(1.0, 1.0);
@@ -915,11 +1295,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Process strum
       const event = this.strummer.strum(strumX, pressure);
 
-      // Get note repeater configuration
-      const noteRepeaterCfg = this.config.noteRepeater;
-      const noteRepeaterEnabled = noteRepeaterCfg?.active ?? false;
-      const pressureMultiplier = noteRepeaterCfg?.pressureMultiplier ?? 1.0;
-      const frequencyMultiplier = noteRepeaterCfg?.frequencyMultiplier ?? 1.0;
+      // Get note repeater state from actions
+      const repeaterConfig = this.actions.getRepeaterConfig();
+      const noteRepeaterEnabled = repeaterConfig.active;
+      const pressureMultiplier = repeaterConfig.pressureMultiplier;
+      const frequencyMultiplier = repeaterConfig.frequencyMultiplier;
 
       // Get transpose state from actions
       const transposeEnabled = this.actions.isTransposeActive();
@@ -1158,10 +1538,21 @@ class StrummerWebSocketServer extends TabletReaderBase {
           } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
             this.handleConfigUpdate(parsed.path, parsed.value);
           } else if (parsed.type === 'save-config') {
+            console.log(chalk.cyan('[WebSocket] Received save-config request'));
             this.handleSaveConfig();
+          } else if (parsed.type === 'load-config' && typeof parsed.configName === 'string') {
+            this.handleLoadConfig(parsed.configName);
+          } else if (parsed.type === 'create-config' && typeof parsed.configName === 'string') {
+            this.handleCreateConfig(parsed.configName);
+          } else if (parsed.type === 'rename-config' && typeof parsed.oldName === 'string' && typeof parsed.newName === 'string') {
+            this.handleRenameConfig(parsed.oldName, parsed.newName);
+          } else if (parsed.type === 'upload-config' && typeof parsed.configName === 'string' && parsed.configData) {
+            this.handleUploadConfig(parsed.configName, parsed.configData);
+          } else if (parsed.type === 'delete-config' && typeof parsed.configName === 'string') {
+            this.handleDeleteConfig(parsed.configName);
           }
         } catch (e) {
-          // Ignore invalid messages
+          console.error(chalk.red('[WebSocket] Error processing message:'), e);
         }
       });
 
@@ -1194,6 +1585,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       if (this.reader) {
         this.deviceConnected = true;
+        this.initializeTabletButtonState();
 
         // Start reading
         this.reader.startReading((data, reportId, interfaceType) => {

@@ -5,27 +5,38 @@ description: Map pen buttons to actions
 
 # Stylus Buttons
 
-Most graphics tablet pens have one or two buttons on the barrel. Sketchatone can map these to various actions.
+Most graphics tablet pens have one or two buttons on the barrel. Sketchatone can map these to various actions using the **Action Rules** system.
 
 ## Configuration
 
+Stylus buttons are configured through the `action_rules` section. The primary and secondary stylus buttons are identified as `button:primary` and `button:secondary`:
+
 ```json
 {
-  "stylus_buttons": {
-    "active": true,
-    "primary_button_action": "toggle-transpose",
-    "secondary_button_action": "toggle-repeater"
+  "action_rules": {
+    "button_names": {
+      "button:primary": "Primary Stylus",
+      "button:secondary": "Secondary Stylus"
+    },
+    "rules": [
+      {
+        "id": "stylus-primary-transpose",
+        "name": "Toggle Transpose",
+        "button": "button:primary",
+        "action": "toggle-transpose",
+        "trigger": "press"
+      },
+      {
+        "id": "stylus-secondary-repeater",
+        "name": "Toggle Repeater",
+        "button": "button:secondary",
+        "action": "toggle-repeater",
+        "trigger": "press"
+      }
+    ]
   }
 }
 ```
-
-## Properties
-
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `active` | boolean | true | Enable stylus button handling |
-| `primary_button_action` | string | "toggle-transpose" | Action for primary button |
-| `secondary_button_action` | string | "toggle-repeater" | Action for secondary button |
 
 ## Available Actions
 
@@ -37,52 +48,34 @@ Most graphics tablet pens have one or two buttons on the barrel. Sketchatone can
 | `"momentary-repeater"` | Repeater while button held |
 | `"octave-up"` | Shift transpose up 12 semitones |
 | `"octave-down"` | Shift transpose down 12 semitones |
-| `"none"` | No action |
 
-## Example Configurations
+## Trigger Types
 
-### Performance Setup
+| Trigger | Description |
+|---------|-------------|
+| `"press"` | Action fires when button is pressed |
+| `"release"` | Action fires when button is released |
+| `"hold"` | Action fires while button is held (for momentary actions) |
 
-Quick access to transpose and repeater:
+## Example: Momentary Actions
 
-```json
-{
-  "stylus_buttons": {
-    "active": true,
-    "primary_button_action": "momentary-transpose",
-    "secondary_button_action": "momentary-repeater"
-  }
-}
-```
-
-### Octave Navigation
-
-Jump between octaves:
+For actions that should only be active while the button is held:
 
 ```json
 {
-  "stylus_buttons": {
-    "active": true,
-    "primary_button_action": "octave-up",
-    "secondary_button_action": "octave-down"
-  }
-}
-```
-
-### Disabled
-
-Turn off button handling:
-
-```json
-{
-  "stylus_buttons": {
-    "active": false
-  }
+  "rules": [
+    {
+      "id": "stylus-primary-momentary",
+      "button": "button:primary",
+      "action": "momentary-transpose",
+      "trigger": "press"
+    }
+  ]
 }
 ```
 
 ## See Also
 
-- **[Actions Reference](/about/actions-reference/)** - Complete action list
+- **[Action Rules](/about/action-rules/)** - Complete action rules documentation
 - **[Transpose](/about/transpose/)** - Transpose configuration
 - **[Note Repeater](/about/note-repeater/)** - Repeater configuration

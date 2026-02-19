@@ -88,6 +88,9 @@ export type ActionDefinition = string | [string, ...unknown[]] | null;
  */
 export interface ActionContext {
   button?: string;
+  trigger?: string;
+  ruleId?: string;
+  isStartup?: boolean;
   [key: string]: unknown;
 }
 
@@ -128,12 +131,40 @@ export interface ActionsConfig {
  * Events emitted:
  *   - 'config_changed': When an action modifies the configuration
  */
+/**
+ * State for the note repeater feature.
+ */
+interface RepeaterState {
+  active: boolean;
+  pressureMultiplier: number;
+  frequencyMultiplier: number;
+}
+
+/**
+ * State for the transpose feature.
+ */
+interface TransposeState {
+  active: boolean;
+  semitones: number;
+}
+
 export class Actions extends EventEmitter {
   private config: ActionsConfig;
   private strummer: Strummer | null;
   private actionHandlers: Map<string, ActionHandler>;
   progressionState: ChordProgressionState;
   private actionRulesConfig: ActionRulesConfig | null = null;
+
+  // Internal state for repeater and transpose (managed by actions, not config)
+  private repeaterState: RepeaterState = {
+    active: false,
+    pressureMultiplier: 1.0,
+    frequencyMultiplier: 1.0,
+  };
+  private transposeState: TransposeState = {
+    active: false,
+    semitones: 0,
+  };
 
   /**
    * Initialize Actions with a configuration instance.
@@ -196,7 +227,7 @@ export class Actions extends EventEmitter {
     console.log(`[ACTIONS] Executing ${startupRules.length} startup rule(s)`);
     for (const rule of startupRules) {
       console.log(`[ACTIONS] Executing startup rule: ${rule.name}`);
-      this.execute(rule.action, { button: 'startup', ruleName: rule.name });
+      this.execute(rule.action, { button: 'startup', ruleName: rule.name, ruleId: rule.id, isStartup: true });
     }
   }
 
@@ -213,9 +244,9 @@ export class Actions extends EventEmitter {
       return false;
     }
 
-    const action = this.actionRulesConfig.getActionForButtonEvent(buttonId, trigger);
-    if (action) {
-      return this.execute(action, { button: buttonId, trigger });
+    const result = this.actionRulesConfig.getRuleForButtonEvent(buttonId, trigger);
+    if (result) {
+      return this.execute(result.action, { button: buttonId, trigger, ruleId: result.ruleId });
     }
 
     return false;
@@ -256,6 +287,18 @@ export class Actions extends EventEmitter {
     const handler = this.actionHandlers.get(actionName);
     if (handler) {
       handler(params, context);
+
+      // Emit action_executed event for UI feedback
+      this.emit('action_executed', {
+        action: actionName,
+        params,
+        button: context.button,
+        trigger: context.trigger,
+        timestamp: Date.now(),
+        ruleId: context.ruleId,
+        isStartup: context.isStartup,
+      });
+
       return true;
     } else {
       console.log(`[ACTIONS] Warning: Unknown action '${actionName}'`);
@@ -265,66 +308,63 @@ export class Actions extends EventEmitter {
 
   /**
    * Toggle the note repeater feature on/off.
+   *
+   * @param params - Optional parameters:
+   *   - params[0]: pressureMultiplier (number, default 1.0) - Multiplier for note velocity on repeats
+   *   - params[1]: frequencyMultiplier (number, default 1.0) - Multiplier for repeat frequency (higher = faster)
+   * @param context - Context data (e.g., which button triggered the action)
    */
   toggleRepeater(params: unknown[], context: ActionContext): void {
-    // Get current state from config
-    let currentActive = false;
-    if (this.config.noteRepeater) {
-      currentActive = this.config.noteRepeater.active;
-    } else if (this.config.get) {
-      const noteRepeaterCfg = this.config.get('noteRepeater', {}) as Record<string, unknown>;
-      currentActive = (noteRepeaterCfg?.active as boolean) ?? false;
-    }
+    const newState = !this.repeaterState.active;
 
-    const newState = !currentActive;
+    // Parse optional parameters
+    const pressureMultiplier = typeof params[0] === 'number' ? params[0] : 1.0;
+    const frequencyMultiplier = typeof params[1] === 'number' ? params[1] : 1.0;
 
-    // Update config
-    if (this.config.noteRepeater) {
-      this.config.noteRepeater.active = newState;
-    } else if (this.config.set) {
-      this.config.set('noteRepeater.active', newState);
+    // Update internal state
+    this.repeaterState.active = newState;
+    if (newState) {
+      // Only update multipliers when turning on
+      this.repeaterState.pressureMultiplier = pressureMultiplier;
+      this.repeaterState.frequencyMultiplier = frequencyMultiplier;
     }
 
     // Log which button triggered the action if available
     const button = context.button ?? 'Unknown';
-    console.log(`[ACTIONS] ${button} button toggled repeater: ${newState ? 'ON' : 'OFF'}`);
+    if (newState) {
+      console.log(`[ACTIONS] ${button} button enabled repeater: pressure=${pressureMultiplier}x, frequency=${frequencyMultiplier}x`);
+    } else {
+      console.log(`[ACTIONS] ${button} button disabled repeater`);
+    }
 
     // Emit config changed event
     this.emit('config_changed');
   }
 
   /**
-   * Toggle transpose on/off using the configured semitones value.
-   * Unlike the 'transpose' action which requires a semitones parameter,
-   * this action uses the semitones value already configured in transpose.semitones.
+   * Toggle transpose on/off.
+   *
+   * @param params - Optional parameters:
+   *   - params[0]: semitones (number, default 12) - Number of semitones to transpose
+   * @param context - Context data (e.g., which button triggered the action)
    */
   toggleTranspose(params: unknown[], context: ActionContext): void {
-    // Get current state from config
-    let currentActive = false;
-    let configuredSemitones = 12; // Default
+    const newState = !this.transposeState.active;
 
-    if (this.config.transpose) {
-      currentActive = this.config.transpose.active;
-      configuredSemitones = this.config.transpose.semitones;
-    } else if (this.config.get) {
-      const transposeCfg = this.config.get('transpose', {}) as Record<string, unknown>;
-      currentActive = (transposeCfg?.active as boolean) ?? false;
-      configuredSemitones = (transposeCfg?.semitones as number) ?? 12;
-    }
+    // Parse optional semitones parameter
+    const semitones = typeof params[0] === 'number' ? Math.floor(params[0]) : 12;
 
-    const newState = !currentActive;
-
-    // Update config - keep the semitones value, just toggle active
-    if (this.config.transpose) {
-      this.config.transpose.active = newState;
-    } else if (this.config.set) {
-      this.config.set('transpose.active', newState);
+    // Update internal state
+    this.transposeState.active = newState;
+    if (newState) {
+      // Only update semitones when turning on
+      this.transposeState.semitones = semitones;
     }
 
     // Log which button triggered the action if available
     const button = context.button ?? 'Unknown';
     if (newState) {
-      console.log(`[ACTIONS] ${button} button enabled transpose: ${configuredSemitones > 0 ? '+' : ''}${configuredSemitones} semitones`);
+      console.log(`[ACTIONS] ${button} button enabled transpose: ${semitones > 0 ? '+' : ''}${semitones} semitones`);
     } else {
       console.log(`[ACTIONS] ${button} button disabled transpose`);
     }
@@ -334,7 +374,13 @@ export class Actions extends EventEmitter {
   }
 
   /**
-   * Toggle transpose on/off with specified semitones.
+   * Add semitones to the current transpose value (cumulative).
+   * Each press adds the specified semitones to the current transpose amount.
+   * Transpose is automatically enabled when non-zero, disabled when zero.
+   *
+   * @param params - Required parameters:
+   *   - params[0]: semitones (number) - Number of semitones to add (can be negative)
+   * @param context - Context data (e.g., which button triggered the action)
    */
   transpose(params: unknown[], context: ActionContext): void {
     if (params.length === 0 || typeof params[0] !== 'number') {
@@ -342,43 +388,19 @@ export class Actions extends EventEmitter {
       return;
     }
 
-    const semitones = Math.floor(params[0] as number);
+    const semitonesToAdd = Math.floor(params[0] as number);
     const button = context.button ?? 'Unknown';
 
-    // Get current transpose state
-    let currentActive = false;
-    let currentSemitones = 0;
+    // Add to current semitones (cumulative)
+    const newSemitones = this.transposeState.semitones + semitonesToAdd;
+    this.transposeState.semitones = newSemitones;
+    // Active when non-zero
+    this.transposeState.active = newSemitones !== 0;
 
-    if (this.config.transpose) {
-      currentActive = this.config.transpose.active;
-      currentSemitones = this.config.transpose.semitones;
-    } else if (this.config.get) {
-      const transposeCfg = this.config.get('transpose', {}) as Record<string, unknown>;
-      currentActive = (transposeCfg?.active as boolean) ?? false;
-      currentSemitones = (transposeCfg?.semitones as number) ?? 0;
-    }
-
-    // Toggle: if currently active with same semitones, turn off; otherwise turn on with new semitones
-    if (currentActive && currentSemitones === semitones) {
-      // Turn off
-      if (this.config.transpose) {
-        this.config.transpose.active = false;
-        this.config.transpose.semitones = 0;
-      } else if (this.config.set) {
-        this.config.set('transpose.active', false);
-        this.config.set('transpose.semitones', 0);
-      }
-      console.log(`[ACTIONS] ${button} button disabled transpose`);
+    if (newSemitones === 0) {
+      console.log(`[ACTIONS] ${button} button reset transpose to 0`);
     } else {
-      // Turn on with specified semitones
-      if (this.config.transpose) {
-        this.config.transpose.active = true;
-        this.config.transpose.semitones = semitones;
-      } else if (this.config.set) {
-        this.config.set('transpose.active', true);
-        this.config.set('transpose.semitones', semitones);
-      }
-      console.log(`[ACTIONS] ${button} button enabled transpose: ${semitones > 0 ? '+' : ''}${semitones} semitones`);
+      console.log(`[ACTIONS] ${button} button transposed ${semitonesToAdd > 0 ? '+' : ''}${semitonesToAdd} → total: ${newSemitones > 0 ? '+' : ''}${newSemitones} semitones`);
     }
 
     // Emit config changed event
@@ -391,66 +413,35 @@ export class Actions extends EventEmitter {
    * @returns Current transpose semitones (0 if transpose is not active)
    */
   getTransposeSemitones(): number {
-    if (this.config.transpose) {
-      return this.config.transpose.active ? this.config.transpose.semitones : 0;
-    }
-    if (this.config.get) {
-      const transposeCfg = this.config.get('transpose', {}) as Record<string, unknown>;
-      if (transposeCfg?.active) {
-        return (transposeCfg.semitones as number) ?? 0;
-      }
-    }
-    return 0;
+    return this.transposeState.active ? this.transposeState.semitones : 0;
   }
 
   /**
    * Check if transpose is currently active.
    */
   isTransposeActive(): boolean {
-    if (this.config.transpose) {
-      return this.config.transpose.active;
-    }
-    if (this.config.get) {
-      const transposeCfg = this.config.get('transpose', {}) as Record<string, unknown>;
-      return (transposeCfg?.active as boolean) ?? false;
-    }
-    return false;
+    return this.transposeState.active;
+  }
+
+  /**
+   * Get the transpose configuration.
+   */
+  getTransposeConfig(): { active: boolean; semitones: number } {
+    return { ...this.transposeState };
   }
 
   /**
    * Check if note repeater is currently active.
    */
   isRepeaterActive(): boolean {
-    if (this.config.noteRepeater) {
-      return this.config.noteRepeater.active;
-    }
-    if (this.config.get) {
-      const noteRepeaterCfg = this.config.get('noteRepeater', {}) as Record<string, unknown>;
-      return (noteRepeaterCfg?.active as boolean) ?? false;
-    }
-    return false;
+    return this.repeaterState.active;
   }
 
   /**
    * Get the note repeater configuration.
    */
   getRepeaterConfig(): { active: boolean; pressureMultiplier: number; frequencyMultiplier: number } {
-    if (this.config.noteRepeater) {
-      return {
-        active: this.config.noteRepeater.active,
-        pressureMultiplier: this.config.noteRepeater.pressureMultiplier,
-        frequencyMultiplier: this.config.noteRepeater.frequencyMultiplier,
-      };
-    }
-    if (this.config.get) {
-      const noteRepeaterCfg = this.config.get('noteRepeater', {}) as Record<string, unknown>;
-      return {
-        active: (noteRepeaterCfg?.active as boolean) ?? false,
-        pressureMultiplier: (noteRepeaterCfg?.pressureMultiplier as number) ?? 1.0,
-        frequencyMultiplier: (noteRepeaterCfg?.frequencyMultiplier as number) ?? 1.0,
-      };
-    }
-    return { active: false, pressureMultiplier: 1.0, frequencyMultiplier: 1.0 };
+    return { ...this.repeaterState };
   }
 
   /**

@@ -9,8 +9,11 @@
  * - Button detection for easy setup
  */
 
-import { LitElement, html, PropertyValues } from 'lit';
+import { LitElement, html, PropertyValues, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
+import { cache } from 'lit/directives/cache.js';
+import { repeat } from 'lit/directives/repeat.js';
 import { styles } from './action-rules-config.styles.js';
 import {
   ActionRulesConfig,
@@ -93,6 +96,10 @@ export class ActionRulesConfigComponent extends LitElement {
   @property({ type: Boolean })
   hasSecondaryButton: boolean = true;
 
+  /** Map of triggered action rule IDs to timestamps (for status dot display) */
+  @property({ type: Object })
+  triggeredActions: Map<string, number> = new Map();
+
   @state()
   private formMode: FormMode = 'none';
 
@@ -101,6 +108,9 @@ export class ActionRulesConfigComponent extends LitElement {
 
   @state()
   private detecting: boolean = false;
+
+  // Track if mousedown started on overlay (for click-outside-to-close)
+  private overlayMouseDownTarget: EventTarget | null = null;
 
   // Unified action form state
   @state()
@@ -144,11 +154,25 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private formGroupButtons: ButtonId[] = [];
 
+  // Cache progression names to avoid recalculating on each render
+  private readonly progressionNames = getChordProgressionPresetNames();
+
   // Available actions
   private readonly actions: ActionDef[] = [
     { value: 'none', label: 'None' },
-    { value: 'toggle-repeater', label: 'Toggle Note Repeater' },
-    { value: 'toggle-transpose', label: 'Toggle Transpose' },
+    {
+      value: 'toggle-repeater',
+      label: 'Toggle Note Repeater',
+      params: [
+        { key: 'pressureMultiplier', label: 'Pressure Multiplier', type: 'number', min: 0.1, max: 10, step: 0.1, defaultValue: 2.0 },
+        { key: 'frequencyMultiplier', label: 'Frequency Multiplier', type: 'number', min: 0.1, max: 10, step: 0.1, defaultValue: 1.5 },
+      ],
+    },
+    {
+      value: 'toggle-transpose',
+      label: 'Toggle Transpose',
+      params: [{ key: 'semitones', label: 'Semitones', type: 'number', min: -24, max: 24, step: 1, defaultValue: 12 }],
+    },
     {
       value: 'transpose',
       label: 'Transpose',
@@ -319,6 +343,27 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formMode = 'none';
     this.editingId = null;
     this.detecting = false;
+  }
+
+  // Track mousedown on overlay to prevent closing when text selection drifts outside
+  private handleOverlayMouseDown(e: MouseEvent) {
+    this.overlayMouseDownTarget = e.target;
+  }
+
+  private handleOverlayMouseUp(e: MouseEvent) {
+    // Only close if BOTH mousedown AND mouseup occurred on the overlay itself
+    // This prevents closing when selecting text and the mouse drifts outside the dialog
+    // Also check that no Spectrum overlay (picker dropdown, etc.) is currently open
+    const spectrumOverlayOpen = document.querySelector('sp-overlay[open]');
+    if (spectrumOverlayOpen) {
+      // Don't close if a Spectrum overlay (like a picker dropdown) is open
+      this.overlayMouseDownTarget = null;
+      return;
+    }
+    if (e.target === e.currentTarget && this.overlayMouseDownTarget === e.currentTarget) {
+      this.closeForm();
+    }
+    this.overlayMouseDownTarget = null;
   }
 
   private startDetecting() {
@@ -501,6 +546,11 @@ export class ActionRulesConfigComponent extends LitElement {
     this.openAddGroupForm();
   }
 
+  // Helper to check if a rule is currently triggered (for status dot)
+  private isRuleTriggered(ruleId: string): boolean {
+    return this.triggeredActions.has(ruleId);
+  }
+
   // Render methods
   private renderActionsListContent() {
     const rules = this.config?.rules ?? [];
@@ -518,6 +568,7 @@ export class ActionRulesConfigComponent extends LitElement {
               ${rules.map(
                 (rule) => html`
                   <div class="rule-item">
+                    <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
                     <span class="rule-type-badge button">Button</span>
                     <span class="rule-button-id">${getButtonLabel(rule.button, this.config?.buttonNames)}</span>
                     <span class="rule-arrow">→</span>
@@ -539,6 +590,7 @@ export class ActionRulesConfigComponent extends LitElement {
                 const group = groups.find((g) => g.id === rule.groupId);
                 return html`
                   <div class="rule-item">
+                    <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
                     <span class="rule-type-badge group">Group</span>
                     <span class="rule-button-id">${group?.name ?? 'Unknown Group'}</span>
                     <span class="rule-arrow">→</span>
@@ -558,6 +610,7 @@ export class ActionRulesConfigComponent extends LitElement {
               ${startupRules.map(
                 (rule) => html`
                   <div class="rule-item">
+                    <span class="status-dot active permanent"></span>
                     <span class="rule-type-badge startup">Startup</span>
                     <span class="startup-icon">⚡</span>
                     <span class="rule-action">${rule.name}: ${this.formatAction(rule.action)}</span>
@@ -701,7 +754,6 @@ export class ActionRulesConfigComponent extends LitElement {
     const isEdit = this.formMode === 'edit-action';
     const availableButtons = this.getAvailableButtons();
     const groups = this.config?.groups ?? [];
-    const progressionNames = getChordProgressionPresetNames();
 
     // Determine title based on target type and mode
     const getTitle = () => {
@@ -716,8 +768,8 @@ export class ActionRulesConfigComponent extends LitElement {
     };
 
     return html`
-      <div class="form-overlay" @click=${(e: Event) => e.target === e.currentTarget && this.closeForm()}>
-        <div class="form-dialog">
+      <div class="form-overlay" @mousedown=${this.handleOverlayMouseDown} @mouseup=${this.handleOverlayMouseUp}>
+        <div class="form-dialog" @scroll=${(e: Event) => e.stopPropagation()}>
           <div class="form-title">${getTitle()}</div>
 
           <!-- Target Type Selector (only show when adding, not editing) -->
@@ -783,9 +835,15 @@ export class ActionRulesConfigComponent extends LitElement {
 
             <div class="form-field">
               <sp-field-label>Chord Progression</sp-field-label>
-              <sp-picker value="${this.formGroupProgression}" @change=${(e: Event) => (this.formGroupProgression = (e.target as HTMLSelectElement).value)}>
-                ${progressionNames.map((name) => html`<sp-menu-item value="${name}">${name}</sp-menu-item>`)}
-              </sp-picker>
+              <select
+                class="native-select"
+                .value=${live(this.formGroupProgression)}
+                @change=${(e: Event) => {
+                  this.formGroupProgression = (e.target as HTMLSelectElement).value;
+                }}
+              >
+                ${this.progressionNames.map((name) => html`<option value="${name}" ?selected=${name === this.formGroupProgression}>${name}</option>`)}
+              </select>
             </div>
 
             <div class="form-field">
@@ -835,7 +893,7 @@ export class ActionRulesConfigComponent extends LitElement {
     const availableButtons = this.getAvailableButtons();
 
     return html`
-      <div class="form-overlay" @click=${(e: Event) => e.target === e.currentTarget && this.closeForm()}>
+      <div class="form-overlay" @mousedown=${this.handleOverlayMouseDown} @mouseup=${this.handleOverlayMouseUp}>
         <div class="form-dialog">
           <div class="form-title">${isEdit ? 'Edit Group' : 'Add Group'}</div>
 
@@ -845,12 +903,13 @@ export class ActionRulesConfigComponent extends LitElement {
           </div>
 
           <div class="form-field">
-            <sp-field-label>Buttons (click to toggle)</sp-field-label>
+            <sp-field-label>Buttons (click to toggle, or press on device)</sp-field-label>
             <div class="group-buttons">
               ${availableButtons.map((btn) => {
                 const isSelected = this.formGroupButtons.includes(btn);
+                const isDetected = this.pressedButtons.has(btn);
                 return html`
-                  <span class="button-chip ${isSelected ? 'pressed' : ''}" @click=${() => this.toggleGroupButton(btn)} style="cursor: pointer">
+                  <span class="button-chip ${isSelected ? 'selected' : ''} ${isDetected ? 'detected' : ''}" @click=${() => this.toggleGroupButton(btn)} style="cursor: pointer">
                     ${getButtonLabel(btn, this.config?.buttonNames)}
                   </span>
                 `;

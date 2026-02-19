@@ -81,28 +81,7 @@ describe('Config Loading Integration Tests', () => {
       expect(strumming.lowerNoteSpread).toBe(2);
     });
 
-    it('should correctly load noteRepeater settings', () => {
-      config = dumpConfig(configPath);
-      const noteRepeater = (config.strummer as Record<string, unknown>).noteRepeater as Record<string, unknown>;
-      expect(noteRepeater.active).toBe(true);
-      expect(noteRepeater.pressureMultiplier).toBe(2);
-      expect(noteRepeater.frequencyMultiplier).toBe(1.5);
-    });
-
-    it('should correctly load transpose settings', () => {
-      config = dumpConfig(configPath);
-      const transpose = (config.strummer as Record<string, unknown>).transpose as Record<string, unknown>;
-      expect(transpose.active).toBe(true);
-      expect(transpose.semitones).toBe(7);
-    });
-
-    it('should correctly load stylusButtons settings', () => {
-      config = dumpConfig(configPath);
-      const stylusButtons = (config.strummer as Record<string, unknown>).stylusButtons as Record<string, unknown>;
-      expect(stylusButtons.active).toBe(false);
-      expect(stylusButtons.primaryButtonAction).toBe('toggle-repeater');
-      expect(stylusButtons.secondaryButtonAction).toBe('toggle-transpose');
-    });
+    // Note: noteRepeater and transpose are now managed by Actions class, not config
 
     it('should correctly load strumRelease settings', () => {
       config = dumpConfig(configPath);
@@ -153,28 +132,7 @@ describe('Config Loading Integration Tests', () => {
       expect(noteDuration.control).toBe('pressure');
     });
 
-    it('should correctly load noteRepeater settings', () => {
-      config = dumpConfig(configPath);
-      const noteRepeater = (config.strummer as Record<string, unknown>).noteRepeater as Record<string, unknown>;
-      expect(noteRepeater.active).toBe(false);
-      expect(noteRepeater.pressureMultiplier).toBe(3);
-      expect(noteRepeater.frequencyMultiplier).toBe(2);
-    });
-
-    it('should correctly load transpose settings', () => {
-      config = dumpConfig(configPath);
-      const transpose = (config.strummer as Record<string, unknown>).transpose as Record<string, unknown>;
-      expect(transpose.active).toBe(false);
-      expect(transpose.semitones).toBe(-5);
-    });
-
-    it('should correctly load stylusButtons settings', () => {
-      config = dumpConfig(configPath);
-      const stylusButtons = (config.strummer as Record<string, unknown>).stylusButtons as Record<string, unknown>;
-      expect(stylusButtons.active).toBe(true);
-      expect(stylusButtons.primaryButtonAction).toBe('none');
-      expect(stylusButtons.secondaryButtonAction).toBe('toggle-repeater');
-    });
+    // Note: noteRepeater and transpose are now managed by Actions class, not config
 
     it('should correctly load midi settings', () => {
       config = dumpConfig(configPath);

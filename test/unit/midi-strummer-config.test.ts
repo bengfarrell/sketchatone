@@ -243,9 +243,7 @@ describe('MidiStrummerConfig', () => {
             pressureThreshold: 0.15,
             initialNotes: ['E4', 'G4', 'B4'],
           },
-          noteRepeater: {
-            active: true,
-          },
+          // Note: noteRepeater and transpose are now managed by Actions class
         },
         midi: {
           outputPort: 'IAC Driver',
@@ -254,7 +252,6 @@ describe('MidiStrummerConfig', () => {
       });
       expect(config.strummer.strumming.pressureThreshold).toBe(0.15);
       expect(config.strummer.strumming.initialNotes).toEqual(['E4', 'G4', 'B4']);
-      expect(config.strummer.noteRepeater.active).toBe(true);
       expect(config.midi.outputPort).toBe('IAC Driver');
       expect(config.midi.channel).toBe(3);
     });

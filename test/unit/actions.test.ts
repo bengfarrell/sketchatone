@@ -79,9 +79,9 @@ describe('ChordProgressionState', () => {
 
 describe('Actions with plain object config', () => {
   /**
-   * Note: Plain object configs work for noteRepeater and transpose because
-   * they are objects (passed by reference), but lowerSpread and upperSpread
-   * are primitives (passed by value) so they won't update dynamically.
+   * Note: lowerSpread and upperSpread are primitives (passed by value)
+   * so they won't update dynamically. Repeater and transpose state is
+   * now managed internally by the Actions class.
    */
   describe('setStrumChord', () => {
     it('should set chord with no spread', () => {
@@ -196,23 +196,7 @@ describe('Actions with MidiStrummerConfig', () => {
       expect(config.upperSpread).toBe(7);
     });
 
-    it('should have noteRepeater accessible', () => {
-      const config = new MidiStrummerConfig();
-      config.strummer.noteRepeater.active = true;
-
-      expect(config.noteRepeater).not.toBeNull();
-      expect(config.noteRepeater.active).toBe(true);
-    });
-
-    it('should have transpose accessible', () => {
-      const config = new MidiStrummerConfig();
-      config.strummer.transpose.active = true;
-      config.strummer.transpose.semitones = 7;
-
-      expect(config.transpose).not.toBeNull();
-      expect(config.transpose.active).toBe(true);
-      expect(config.transpose.semitones).toBe(7);
-    });
+    // Note: noteRepeater and transpose are now managed by Actions class, not config
   });
 });
 
@@ -255,44 +239,50 @@ describe('Actions execute', () => {
 describe('Actions toggle-repeater', () => {
   it('should toggle repeater on', () => {
     const config = new MidiStrummerConfig();
-    config.strummer.noteRepeater.active = false;
-
     const actions = new Actions(config);
-    actions.execute('toggle-repeater', { button: 'Test' });
 
-    expect(config.strummer.noteRepeater.active).toBe(true);
+    // Repeater state is now managed internally by Actions
+    expect(actions.getRepeaterConfig().active).toBe(false);
+    actions.execute('toggle-repeater', { button: 'Test' });
+    expect(actions.getRepeaterConfig().active).toBe(true);
   });
 
   it('should toggle repeater off', () => {
     const config = new MidiStrummerConfig();
-    config.strummer.noteRepeater.active = true;
-
     const actions = new Actions(config);
-    actions.execute('toggle-repeater', { button: 'Test' });
 
-    expect(config.strummer.noteRepeater.active).toBe(false);
+    // First toggle on
+    actions.execute('toggle-repeater', { button: 'Test' });
+    expect(actions.getRepeaterConfig().active).toBe(true);
+
+    // Then toggle off
+    actions.execute('toggle-repeater', { button: 'Test' });
+    expect(actions.getRepeaterConfig().active).toBe(false);
   });
 });
 
 describe('Actions toggle-transpose', () => {
   it('should toggle transpose on', () => {
     const config = new MidiStrummerConfig();
-    config.strummer.transpose.active = false;
-
     const actions = new Actions(config);
-    actions.execute('toggle-transpose', { button: 'Test' });
 
-    expect(config.strummer.transpose.active).toBe(true);
+    // Transpose state is now managed internally by Actions
+    expect(actions.getTransposeConfig().active).toBe(false);
+    actions.execute('toggle-transpose', { button: 'Test' });
+    expect(actions.getTransposeConfig().active).toBe(true);
   });
 
   it('should toggle transpose off', () => {
     const config = new MidiStrummerConfig();
-    config.strummer.transpose.active = true;
-
     const actions = new Actions(config);
-    actions.execute('toggle-transpose', { button: 'Test' });
 
-    expect(config.strummer.transpose.active).toBe(false);
+    // First toggle on
+    actions.execute('toggle-transpose', { button: 'Test' });
+    expect(actions.getTransposeConfig().active).toBe(true);
+
+    // Then toggle off
+    actions.execute('toggle-transpose', { button: 'Test' });
+    expect(actions.getTransposeConfig().active).toBe(false);
   });
 });
 

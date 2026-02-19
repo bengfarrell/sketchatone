@@ -70,10 +70,7 @@ class TestMidiStrummerConfigNewFormat:
                 'chord': 'Em',
                 'pressure_threshold': 0.15
             },
-            'transpose': {
-                'active': True,
-                'semitones': 12
-            },
+            # Note: transpose and note_repeater are now managed by Actions class
             'midi': {
                 'midi_output_backend': 'jack',
                 'jack_client_name': 'my_strummer'
@@ -82,7 +79,6 @@ class TestMidiStrummerConfigNewFormat:
         config = MidiStrummerConfig.from_dict(data)
         assert config.strummer.note_duration.min == 0.1
         assert config.strummer.strumming.chord == 'Em'
-        assert config.strummer.transpose.active is True
         assert config.midi.midi_output_backend == 'jack'
         assert config.midi.jack_client_name == 'my_strummer'
     
@@ -224,20 +220,7 @@ class TestMidiStrummerConfigRoundtrip:
                 'upper_note_spread': 3,
                 'lower_note_spread': 3
             },
-            'note_repeater': {
-                'active': False,
-                'pressure_multiplier': 1.0,
-                'frequency_multiplier': 1.0
-            },
-            'transpose': {
-                'active': False,
-                'semitones': 12
-            },
-            'stylus_buttons': {
-                'active': True,
-                'primary_button_action': 'toggle-transpose',
-                'secondary_button_action': 'toggle-repeater'
-            },
+            # Note: note_repeater, transpose, and stylus_buttons are now managed by Actions class
             'strum_release': {
                 'active': False,
                 'midi_note': 38,

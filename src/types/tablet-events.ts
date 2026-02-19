@@ -22,6 +22,7 @@ export interface TabletEventData {
   timestamp: number;
   // Tablet hardware button states
   tabletButtons?: number;
+  // Explicit button properties for backward compatibility (optional)
   button1?: boolean;
   button2?: boolean;
   button3?: boolean;
@@ -30,6 +31,8 @@ export interface TabletEventData {
   button6?: boolean;
   button7?: boolean;
   button8?: boolean;
+  // Additional buttons (button9, button10, etc.) are accessed dynamically
+  // Use (data as Record<string, unknown>)[`button${n}`] for buttons > 8
 }
 
 /**
@@ -113,6 +116,12 @@ export interface ServerConfigData {
   serverVersion?: string;
   /** Device capabilities from blankslate tablet configuration */
   deviceCapabilities?: DeviceCapabilities;
+  /** Current config file name (without path) */
+  currentConfigName?: string;
+  /** List of available config files in the config directory */
+  availableConfigs?: string[];
+  /** True when config represents the saved state (after load/save), false for updates */
+  isSavedState?: boolean;
 }
 
 /**
@@ -153,7 +162,7 @@ export interface StatusMessage {
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config';
 
 /**
  * Set throttle client message
@@ -192,9 +201,56 @@ export interface SaveConfigMessage {
 }
 
 /**
+ * Load config client message
+ * Tells the server to load a specific config file
+ */
+export interface LoadConfigMessage {
+  type: 'load-config';
+  configName: string;
+}
+
+/**
+ * Create config client message
+ * Tells the server to create a new config file with defaults
+ */
+export interface CreateConfigMessage {
+  type: 'create-config';
+  configName: string;
+}
+
+/**
+ * Rename config client message
+ * Tells the server to rename a config file
+ */
+export interface RenameConfigMessage {
+  type: 'rename-config';
+  oldName: string;
+  newName: string;
+}
+
+/**
+ * Upload config client message
+ * Tells the server to save uploaded config data as a new file
+ */
+export interface UploadConfigMessage {
+  type: 'upload-config';
+  configName: string;
+  configData: unknown;
+}
+
+/**
+ * Delete config client message
+ * Tells the server to delete a config file
+ */
+export interface DeleteConfigMessage {
+  type: 'delete-config';
+  configName: string;
+}
+
+/**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage;
 
 /**
  * Tablet data for visualization components

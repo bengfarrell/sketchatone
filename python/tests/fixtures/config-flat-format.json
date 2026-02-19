@@ -35,20 +35,6 @@
     "upper_note_spread": 4,
     "lower_note_spread": 2
   },
-  "note_repeater": {
-    "active": true,
-    "pressure_multiplier": 2.0,
-    "frequency_multiplier": 1.5
-  },
-  "transpose": {
-    "active": true,
-    "semitones": 7
-  },
-  "stylus_buttons": {
-    "active": false,
-    "primary_button_action": "toggle-repeater",
-    "secondary_button_action": "toggle-transpose"
-  },
   "strum_release": {
     "active": true,
     "midi_note": 42,

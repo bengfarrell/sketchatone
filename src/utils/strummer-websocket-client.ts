@@ -41,6 +41,17 @@ export interface ServerMidiInputStatus {
   currentNotes: string[];
 }
 
+/** Action event from server */
+export interface ServerActionEvent {
+  action: string;
+  params: unknown[];
+  button?: string;
+  trigger?: string;
+  timestamp: number;
+  ruleId?: string;
+  isStartup?: boolean;
+}
+
 /**
  * Connection state
  */
@@ -58,6 +69,7 @@ export interface StrummerWebSocketClientEvents {
   'config': ServerConfigData;
   'midi-input': ServerMidiInputEvent;
   'midi-input-status': ServerMidiInputStatus;
+  'action-event': ServerActionEvent;
   'error': Error;
 }
 
@@ -248,6 +260,41 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Load a config file by name
+   */
+  loadConfig(configName: string): void {
+    this.send({ type: 'load-config', configName });
+  }
+
+  /**
+   * Create a new config file with default values
+   */
+  createConfig(configName: string): void {
+    this.send({ type: 'create-config', configName });
+  }
+
+  /**
+   * Rename a config file
+   */
+  renameConfig(oldName: string, newName: string): void {
+    this.send({ type: 'rename-config', oldName, newName });
+  }
+
+  /**
+   * Upload a config file (save uploaded data as a new config)
+   */
+  uploadConfig(configName: string, configData: unknown): void {
+    this.send({ type: 'upload-config', configName, configData });
+  }
+
+  /**
+   * Delete a config file
+   */
+  deleteConfig(configName: string): void {
+    this.send({ type: 'delete-config', configName });
+  }
+
+  /**
    * Subscribe to combined events (tablet + optional strum merged)
    */
   onCombinedEvent(callback: (data: CombinedEventData) => void): () => void {
@@ -317,6 +364,14 @@ export class StrummerWebSocketClient extends EventEmitter {
   onMidiInputStatus(callback: (status: ServerMidiInputStatus) => void): () => void {
     this.on<ServerMidiInputStatus>('midi-input-status', callback);
     return () => this.off('midi-input-status', callback as any);
+  }
+
+  /**
+   * Subscribe to action events from server
+   */
+  onActionEvent(callback: (event: ServerActionEvent) => void): () => void {
+    this.on<ServerActionEvent>('action-event', callback);
+    return () => this.off('action-event', callback as any);
   }
 
   private setConnectionState(state: ConnectionState): void {
@@ -392,6 +447,18 @@ export class StrummerWebSocketClient extends EventEmitter {
             availablePorts: message.availablePorts ?? [],
             connectedPort: message.connectedPort ?? null,
             currentNotes: message.currentNotes ?? [],
+          });
+          break;
+        case 'action-event':
+          // Action event from server (button pressed, action executed)
+          this.emit<ServerActionEvent>('action-event', {
+            action: message.action ?? '',
+            params: message.params ?? [],
+            button: message.button,
+            trigger: message.trigger,
+            timestamp: message.timestamp ?? Date.now(),
+            ruleId: message.ruleId,
+            isStartup: message.isStartup,
           });
           break;
       }
