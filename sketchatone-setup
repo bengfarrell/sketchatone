@@ -291,7 +291,7 @@ show_status() {
     echo "Sketchatone Configuration Status"
     echo "=========================================="
     echo ""
-    
+
     # Check installation
     if [ -d "$INSTALL_DIR" ]; then
         print_success "Installation: Found at $INSTALL_DIR"
@@ -299,26 +299,38 @@ show_status() {
         print_error "Installation: NOT FOUND"
         return
     fi
-    
+
+    # Check install mode (ALSA vs Zynthian)
+    if [ -f "$INSTALL_DIR/.install-mode" ]; then
+        local install_mode=$(cat "$INSTALL_DIR/.install-mode")
+        if [ "$install_mode" = "zynthian" ]; then
+            print_success "Install mode: Zynthian (JACK)"
+        else
+            print_success "Install mode: Standard Pi (ALSA)"
+        fi
+    else
+        print_warning "Install mode: Unknown (legacy install?)"
+    fi
+
     # Check config
     if [ -f "$CONFIG_DIR/config.json" ]; then
         print_success "Config: $CONFIG_DIR/config.json"
     else
         print_warning "Config: Not found (using defaults)"
     fi
-    
+
     # Check device configs
     local device_count=0
     while IFS=: read -r vendor product name; do
         [ -n "$vendor" ] && device_count=$((device_count + 1))
     done < <(get_device_ids "$DEVICES_DIR")
-    
+
     if [ $device_count -gt 0 ]; then
         print_success "Device configs: $device_count found"
     else
         print_warning "Device configs: None found"
     fi
-    
+
     # Check service status
     echo ""
     if systemctl is-enabled --quiet sketchatone 2>/dev/null; then
@@ -326,13 +338,13 @@ show_status() {
     else
         print_info "Service: Disabled (manual start)"
     fi
-    
+
     if systemctl is-active --quiet sketchatone 2>/dev/null; then
         print_success "Service: Running"
     else
         print_info "Service: Stopped"
     fi
-    
+
     # Check udev rules
     echo ""
     if [ -f "$UDEV_RULES_FILE" ]; then
@@ -344,7 +356,7 @@ show_status() {
     else
         print_info "Mode: No udev rules configured"
     fi
-    
+
     echo ""
 }
 

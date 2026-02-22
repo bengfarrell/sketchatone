@@ -47,14 +47,20 @@ export class RtMidiBackend implements MidiBackendProtocol {
   private _useVirtualPorts: boolean;
   private _virtualPortName: string;
   private _currentOutputName: string | null = null;
+  private _interMessageDelay: number;
 
   // Track active note timers for cleanup
   private _activeNoteTimers: Map<string, NoteTimer> = new Map();
+
+  // State Guard: Track active notes to prevent "Note Shadowing"
+  private _activeNotes: Set<number> = new Set();
+  private _lastSendTime: number = 0;
 
   constructor(options: MidiBackendOptions = {}) {
     this._channel = options.channel ?? 0;
     this._useVirtualPorts = options.useVirtualPorts ?? false;
     this._virtualPortName = options.virtualPortName ?? 'Sketchatone';
+    this._interMessageDelay = options.interMessageDelay ?? 0;
   }
 
   get isConnected(): boolean {
@@ -162,10 +168,11 @@ export class RtMidiBackend implements MidiBackendProtocol {
    */
   disconnect(): void {
     // Cancel all active note timers
-    for (const [, timerInfo] of this._activeNoteTimers) {
+    for (const [, timerInfo] of Array.from(this._activeNoteTimers)) {
       clearTimeout(timerInfo.timer);
     }
     this._activeNoteTimers.clear();
+    this._activeNotes.clear();
 
     if (this._midiOut) {
       this._midiOut.closePort();
@@ -200,9 +207,32 @@ export class RtMidiBackend implements MidiBackendProtocol {
   }
 
   /**
-   * Send a MIDI note-on message
+   * Send a MIDI message with optional inter-message delay throttling.
+   * This helps prevent buffer overflow on some hardware synths during busy strumming.
    */
-  sendNoteOn(note: NoteObject, velocity: number, channel?: number): void {
+  private async _send(message: number[]): Promise<void> {
+    if (!this._midiOut) {
+      return;
+    }
+
+    if (this._interMessageDelay > 0) {
+      const now = Date.now();
+      const wait = (this._lastSendTime + this._interMessageDelay * 1000) - now;
+      if (wait > 0) {
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
+    }
+
+    this._midiOut.sendMessage(message);
+    this._lastSendTime = Date.now();
+  }
+
+  /**
+   * Send a MIDI note-on message with State Guard protection.
+   *
+   * If the note is already on, kills it first to prevent "Note Shadowing".
+   */
+  async sendNoteOn(note: NoteObject, velocity: number, channel?: number): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
@@ -210,16 +240,26 @@ export class RtMidiBackend implements MidiBackendProtocol {
     const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
     const channels = this._getChannels(channel);
 
-    for (const ch of channels) {
-      // Note On: 0x90 + channel, note, velocity
-      this._midiOut.sendMessage([0x90 + ch, midiNote, velocity]);
+    // If the note is already on, kill it first
+    if (this._activeNotes.has(midiNote)) {
+      for (const ch of channels) {
+        await this._send([0x90 + ch, midiNote, 0]);
+      }
     }
+
+    // Now play the new note
+    for (const ch of channels) {
+      await this._send([0x90 + ch, midiNote, velocity]);
+    }
+    this._activeNotes.add(midiNote);
   }
 
   /**
-   * Send a MIDI note-off message
+   * Send a MIDI note-off message with State Guard protection.
+   *
+   * Only sends Note Off if the note is actually active.
    */
-  sendNoteOff(note: NoteObject, channel?: number): void {
+  async sendNoteOff(note: NoteObject, channel?: number): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
@@ -227,16 +267,21 @@ export class RtMidiBackend implements MidiBackendProtocol {
     const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
     const channels = this._getChannels(channel);
 
-    for (const ch of channels) {
-      // Note Off: 0x80 + channel, note, velocity (usually 64)
-      this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+    if (this._activeNotes.has(midiNote)) {
+      for (const ch of channels) {
+        // Send 0x90 velocity 0 (Note ON with velocity 0)
+        await this._send([0x90 + ch, midiNote, 0]);
+      }
+      this._activeNotes.delete(midiNote);
     }
   }
 
   /**
-   * Send a MIDI note with automatic note-off after duration
+   * Send a MIDI note with automatic note-off after duration.
+   *
+   * Uses State Guard to prevent Note Shadowing during rapid strumming.
    */
-  sendNote(note: NoteObject, velocity: number, duration = 1.5, channel?: number): void {
+  async sendNote(note: NoteObject, velocity: number, duration = 1.5, channel?: number): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
@@ -252,16 +297,28 @@ export class RtMidiBackend implements MidiBackendProtocol {
       this._activeNoteTimers.delete(noteKey);
     }
 
-    // Send note-on
-    for (const ch of channels) {
-      this._midiOut.sendMessage([0x90 + ch, midiNote, velocity]);
+    // Send note-on with State Guard protection
+    // If the note is already on, kill it first (prevents orphaned notes)
+    if (this._activeNotes.has(midiNote)) {
+      for (const ch of channels) {
+        await this._send([0x90 + ch, midiNote, 0]);
+      }
     }
 
+    // Now play the new note
+    for (const ch of channels) {
+      await this._send([0x90 + ch, midiNote, velocity]);
+    }
+    this._activeNotes.add(midiNote);
+
     // Schedule note-off
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (this._isConnected && this._midiOut) {
-        for (const ch of channels) {
-          this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+        if (this._activeNotes.has(midiNote)) {
+          for (const ch of channels) {
+            await this._send([0x90 + ch, midiNote, 0]);
+          }
+          this._activeNotes.delete(midiNote);
         }
       }
       this._activeNoteTimers.delete(noteKey);
@@ -275,12 +332,14 @@ export class RtMidiBackend implements MidiBackendProtocol {
    * Used for features like strum release where we need to send a specific
    * MIDI note number rather than a NoteObject.
    *
+   * Uses State Guard to prevent Note Shadowing during rapid strumming.
+   *
    * @param midiNote - MIDI note number (0-127)
    * @param velocity - MIDI velocity (0-127)
    * @param duration - Duration in seconds before note-off
    * @param channel - MIDI channel (0-15), or undefined to use default
    */
-  sendRawNote(midiNote: number, velocity: number, duration = 1.5, channel?: number): void {
+  async sendRawNote(midiNote: number, velocity: number, duration = 1.5, channel?: number): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
@@ -295,16 +354,28 @@ export class RtMidiBackend implements MidiBackendProtocol {
       this._activeNoteTimers.delete(noteKey);
     }
 
-    // Send note-on
-    for (const ch of channels) {
-      this._midiOut.sendMessage([0x90 + ch, midiNote, velocity]);
+    // Send note-on with State Guard protection
+    // If the note is already on, kill it first (prevents orphaned notes)
+    if (this._activeNotes.has(midiNote)) {
+      for (const ch of channels) {
+        await this._send([0x90 + ch, midiNote, 0]);
+      }
     }
 
+    // Now play the new note
+    for (const ch of channels) {
+      await this._send([0x90 + ch, midiNote, velocity]);
+    }
+    this._activeNotes.add(midiNote);
+
     // Schedule note-off
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (this._isConnected && this._midiOut) {
-        for (const ch of channels) {
-          this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+        if (this._activeNotes.has(midiNote)) {
+          for (const ch of channels) {
+            await this._send([0x90 + ch, midiNote, 0]);
+          }
+          this._activeNotes.delete(midiNote);
         }
       }
       this._activeNoteTimers.delete(noteKey);
@@ -314,9 +385,9 @@ export class RtMidiBackend implements MidiBackendProtocol {
   }
 
   /**
-   * Immediately release specific notes
+   * Immediately release specific notes with State Guard protection.
    */
-  releaseNotes(notes: NoteObject[]): void {
+  async releaseNotes(notes: NoteObject[]): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
@@ -325,14 +396,17 @@ export class RtMidiBackend implements MidiBackendProtocol {
       const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
 
       // Cancel any pending timer for this note
-      for (const [key, timerInfo] of this._activeNoteTimers) {
+      for (const [key, timerInfo] of Array.from(this._activeNoteTimers)) {
         if (key.startsWith(`${midiNote}:`)) {
           clearTimeout(timerInfo.timer);
           this._activeNoteTimers.delete(key);
 
-          // Send note-off for all channels this note was playing on
-          for (const ch of timerInfo.channels) {
-            this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+          // Send note-off only if note is active
+          if (this._activeNotes.has(midiNote)) {
+            for (const ch of timerInfo.channels) {
+              await this._send([0x90 + ch, midiNote, 0]);
+            }
+            this._activeNotes.delete(midiNote);
           }
         }
       }
@@ -340,20 +414,23 @@ export class RtMidiBackend implements MidiBackendProtocol {
   }
 
   /**
-   * Release all currently playing notes
+   * Release all currently playing notes with State Guard protection.
    */
-  releaseAll(): void {
+  async releaseAll(): Promise<void> {
     if (!this._isConnected || !this._midiOut) {
       return;
     }
 
-    // Cancel all timers and send note-off for each
-    for (const [key, timerInfo] of this._activeNoteTimers) {
+    // Cancel all timers and send note-off for each active note
+    for (const [key, timerInfo] of Array.from(this._activeNoteTimers)) {
       clearTimeout(timerInfo.timer);
       const midiNote = parseInt(key.split(':')[0], 10);
 
-      for (const ch of timerInfo.channels) {
-        this._midiOut.sendMessage([0x80 + ch, midiNote, 0x40]);
+      if (this._activeNotes.has(midiNote)) {
+        for (const ch of timerInfo.channels) {
+          await this._send([0x90 + ch, midiNote, 0]);
+        }
+        this._activeNotes.delete(midiNote);
       }
     }
     this._activeNoteTimers.clear();

@@ -407,6 +407,8 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.clients: Set[WebSocketServerProtocol] = set()
         self.server: Optional[websockets.WebSocketServer] = None
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._http_server = None
+        self._ws_server = None
 
         # Create event bus
         self.event_bus = StrummerEventBus(throttle_ms)
@@ -584,16 +586,24 @@ class StrummerWebSocketServer(TabletReaderBase):
     def _setup_midi(self) -> bool:
         """Initialize MIDI backend and bridge"""
         try:
+            # Get inter-message delay with backward compatibility
+            delay = getattr(self.config.midi, 'midi_inter_message_delay', None)
+            if delay is None:
+                # Backward compatibility: check old name
+                delay = getattr(self.config.midi, 'rtmidi_inter_message_delay', 0.0)
+            delay = delay or 0.0
+
             if self.config.midi_output_backend == "jack":
                 from sketchatone.midi.jack_backend import JackMidiBackend
                 self.backend = JackMidiBackend(
                     channel=self.config.channel,
                     client_name=self.config.jack_client_name,
-                    auto_connect=self.config.jack_auto_connect
+                    auto_connect=self.config.jack_auto_connect,
+                    inter_message_delay=delay
                 )
             else:
                 from sketchatone.midi.rtmidi_backend import RtMidiBackend
-                self.backend = RtMidiBackend(channel=self.config.channel)
+                self.backend = RtMidiBackend(channel=self.config.channel, inter_message_delay=delay)
 
             # Connect backend
             port = self.config.midi_output_id
@@ -1642,19 +1652,23 @@ class StrummerWebSocketServer(TabletReaderBase):
                     # Map the control value to pitch bend range
                     bend_value = pitch_bend_cfg.map_value(control_value)
 
-                    # Throttle pitch bend to max 50 messages per second (20ms interval)
-                    # to avoid overwhelming the MIDI output
+                    # Initialize tracking variables
                     current_time = time.time()
                     if not hasattr(self, '_last_pitch_bend_time'):
                         self._last_pitch_bend_time = 0
                         self._last_pitch_bend_value = None
 
-                    # Only send if enough time has passed OR value changed significantly
-                    time_since_last = current_time - self._last_pitch_bend_time
+                    # Apply deadzone around center (±0.02) to avoid sending tiny changes near zero
+                    # This prevents MIDI flooding when there's no actual pitch bend
+                    if abs(bend_value) < 0.02:
+                        bend_value = 0.0
+
+                    # Only send if value changed significantly
+                    # Don't send repeated messages with the same value
                     value_changed = (self._last_pitch_bend_value is None or
                                    abs(bend_value - self._last_pitch_bend_value) > 0.01)
 
-                    if time_since_last >= 0.02 or (value_changed and time_since_last >= 0.005):
+                    if value_changed:
                         self.backend.send_pitch_bend(bend_value)
                         self._last_pitch_bend_time = current_time
                         self._last_pitch_bend_value = bend_value
@@ -1892,7 +1906,8 @@ class StrummerWebSocketServer(TabletReaderBase):
     async def run_server(self) -> None:
         """Run the WebSocket and HTTP servers"""
         self._main_loop = asyncio.get_event_loop()
-        http_server = None
+        self._http_server = None
+        self._ws_server = None
 
         # Initialize MIDI output
         print(colored('Initializing MIDI output...', Colors.GRAY))
@@ -1925,28 +1940,30 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Get local IP for LAN access URLs
         local_ip = get_local_ip()
 
+        # Use ANSI underline (\033[4m) to make URLs visually clickable
+        UNDERLINE = '\033[4m'
+        RESET = '\033[0m'
+
         # Start HTTP server if port is configured
         if self.http_port:
-            http_server = await asyncio.start_server(
+            self._http_server = await asyncio.start_server(
                 self._handle_http_request,
                 "0.0.0.0",
                 self.http_port
             )
             print(colored(f'✓ HTTP server listening on port {self.http_port}', Colors.GREEN))
             print(colored(f'  Serving: {self.public_dir}', Colors.CYAN))
-            # Use ANSI underline (\033[4m) to make URLs visually clickable
-            UNDERLINE = '\033[4m'
-            RESET = '\033[0m'
             print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://localhost:{self.http_port}{RESET}')
             if local_ip:
                 print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://{local_ip}:{self.http_port}{RESET}')
 
         # Start WebSocket server
-        self.server = await websockets.serve(
+        self._ws_server = await websockets.serve(
             self._handle_client,
             "0.0.0.0",
             self.ws_port
         )
+        self.server = self._ws_server  # Keep backward compatibility
 
         print(colored(f'✓ WebSocket server listening on port {self.ws_port}', Colors.GREEN))
         print(colored(f'  Throttle: {self.event_bus.throttle_ms}ms', Colors.CYAN))
@@ -1966,13 +1983,22 @@ class StrummerWebSocketServer(TabletReaderBase):
         except asyncio.CancelledError:
             pass
         finally:
+            print(colored('Cleaning up servers...', Colors.GRAY))
             self.event_bus.cleanup()
-            if http_server:
-                http_server.close()
-                await http_server.wait_closed()
-            if self.server:
-                self.server.close()
-                await self.server.wait_closed()
+            if self._http_server:
+                self._http_server.close()
+                await self._http_server.wait_closed()
+                print(colored('✓ HTTP server closed', Colors.GREEN))
+            if self._ws_server:
+                self._ws_server.close()
+                await self._ws_server.wait_closed()
+                print(colored('✓ WebSocket server closed', Colors.GREEN))
+            if self.backend:
+                self.backend.disconnect()
+                print(colored('✓ MIDI backend disconnected', Colors.GREEN))
+            if self.midi_input:
+                self.midi_input.disconnect()
+                print(colored('✓ MIDI input disconnected', Colors.GREEN))
 
     def _run_tablet_reader(self) -> None:
         """Run tablet reader in a separate thread"""
@@ -2229,9 +2255,15 @@ def main():
             print(colored('\nForce shutdown...', Colors.RED))
             if server._tablet_initialized:
                 server.stop_sync()
-            sys.exit(1)
+            # Force close servers synchronously
+            if server._http_server:
+                server._http_server.close()
+            if server._ws_server:
+                server._ws_server.close()
+            os._exit(1)
         shutdown_requested = True
-        print(colored('\nShutting down...', Colors.YELLOW))
+        print(colored('\nShutting down gracefully...', Colors.YELLOW))
+        print(colored('(Press Ctrl+C again to force quit)', Colors.GRAY))
         # Stop the server
         server.is_running = False
         if server._tablet_initialized:

@@ -6,7 +6,7 @@ MIDI output backend using python-rtmidi for cross-platform MIDI support.
 
 import threading
 import time
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Tuple, Set
 
 try:
     import rtmidi
@@ -15,6 +15,7 @@ except ImportError:
 
 from .protocol import MidiBackendProtocol
 from ..models.note import Note, NoteObject
+from .note_scheduler import get_scheduler
 
 
 class RtMidiBackend(MidiBackendProtocol):
@@ -30,12 +31,14 @@ class RtMidiBackend(MidiBackendProtocol):
         backend.disconnect()
     """
 
-    def __init__(self, channel: Optional[int] = None):
+    def __init__(self, channel: Optional[int] = None, inter_message_delay: float = 0.0):
         """
         Initialize the rtmidi backend.
 
         Args:
             channel: Default MIDI channel (1-16), or None for all channels
+            inter_message_delay: Seconds to wait after each MIDI message (default 0).
+                Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick with direct USB (e.g. Juno DS).
         """
         if rtmidi is None:
             raise ImportError(
@@ -43,14 +46,37 @@ class RtMidiBackend(MidiBackendProtocol):
                 "Install with: pip install python-rtmidi"
             )
 
+        self._last_send_time = 0
         self._channel = channel
         self._midi_out: Optional[rtmidi.MidiOut] = None
         self._connected = False
         self._current_output_name: Optional[str] = None
+        self._inter_message_delay = max(0.0, float(inter_message_delay))
 
-        # Note timing management
-        self._active_note_timers: Dict[Tuple[int, Tuple[int, ...]], threading.Timer] = {}
-        self._timer_lock = threading.Lock()
+        # Serialize all MIDI output to avoid RtMIDI/ALSA contention (fixes stuck notes on RPi when strumming fast)
+        self._send_lock = threading.Lock()
+        # Note-off via single scheduler thread (threading.Timer often never runs on Pi when main thread is busy)
+        self._scheduler = get_scheduler()
+        self._scheduled_note_keys: Set[Tuple[int, Tuple[int, ...]]] = set()
+
+        # State Guard: Track active notes to prevent "Note Shadowing" (sending Note On twice without Note Off)
+        self._active_notes: Set[int] = set()
+        self._last_send_time = 0.0
+
+    def _send(self, message) -> None:
+        """
+        Send one MIDI message with global throttling to protect hardware buffers.
+        Call only while holding _send_lock.
+        """
+        if self._inter_message_delay > 0:
+            now = time.time()
+            # Calculate if we need to wait to maintain the inter-message gap
+            wait = (self._last_send_time + self._inter_message_delay) - now
+            if wait > 0:
+                time.sleep(wait)
+    
+        self._midi_out.send_message(message)
+        self._last_send_time = time.time() # Track last physical send
 
     @property
     def is_connected(self) -> bool:
@@ -74,10 +100,10 @@ class RtMidiBackend(MidiBackendProtocol):
     def connect(self, output_port: Optional[str] = None) -> bool:
         """
         Connect to MIDI output.
-        
+
         Args:
             output_port: Port name or index (as string). If None, uses first available.
-            
+
         Returns:
             True if connection successful
         """
@@ -90,9 +116,15 @@ class RtMidiBackend(MidiBackendProtocol):
                 # Create virtual port as fallback
                 self._midi_out.open_virtual_port("Sketchatone")
                 print("[RtMidi] Created virtual port: Sketchatone")
+                print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
                 self._current_output_name = "Sketchatone"
                 self._connected = True
                 return True
+
+            # Print available ports for debugging
+            print(f"[RtMidi] Available MIDI output ports:")
+            for i, port in enumerate(available_ports):
+                print(f"[RtMidi]   {i}: {port}")
 
             # Resolve port
             port_index = 0
@@ -102,6 +134,7 @@ class RtMidiBackend(MidiBackendProtocol):
             self._midi_out.open_port(port_index)
             self._current_output_name = available_ports[port_index]
             print(f"[RtMidi] Connected to: {self._current_output_name}")
+            print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
             self._connected = True
             return True
 
@@ -147,23 +180,27 @@ class RtMidiBackend(MidiBackendProtocol):
     
     def disconnect(self) -> None:
         """Disconnect and clean up."""
-        # Cancel all active timers
-        with self._timer_lock:
-            for timer in self._active_note_timers.values():
-                timer.cancel()
-            self._active_note_timers.clear()
+        for note_key in list(self._scheduled_note_keys):
+            self._scheduler.cancel(note_key)
+        self._scheduled_note_keys.clear()
 
         if self._midi_out:
             # Send "All Notes Off" and "Reset All Controllers" on all channels
             # to clean up any stuck notes or pitch bend
             try:
                 for ch in range(16):
-                    # All Notes Off (CC 123)
-                    self._midi_out.send_message([0xB0 + ch, 123, 0])
-                    # Reset All Controllers (CC 121)
-                    self._midi_out.send_message([0xB0 + ch, 121, 0])
-                    # Reset pitch bend to center
-                    self._midi_out.send_message([0xE0 + ch, 0x00, 0x40])
+                    with self._send_lock:
+                        self._send([0xB0 + ch, 123, 0])
+                    if self._inter_message_delay > 0:
+                        time.sleep(self._inter_message_delay)
+                    with self._send_lock:
+                        self._send([0xB0 + ch, 121, 0])
+                    if self._inter_message_delay > 0:
+                        time.sleep(self._inter_message_delay)
+                    with self._send_lock:
+                        self._send([0xE0 + ch, 0x00, 0x40])
+                    if self._inter_message_delay > 0:
+                        time.sleep(self._inter_message_delay)
             except Exception as e:
                 print(f"[RtMidi] Error sending cleanup messages: {e}")
 
@@ -203,32 +240,57 @@ class RtMidiBackend(MidiBackendProtocol):
             return [0]
     
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
-        """Send note-on message."""
+        """
+        Send note-on message with State Guard protection.
+
+        If the note is already on, kills it first to prevent "Note Shadowing"
+        (sending Note On twice without Note Off causes orphaned notes on hardware synths).
+        """
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
-        
-        for ch in channels:
-            message = [0x90 + ch, midi_note, velocity]
-            self._midi_out.send_message(message)
+
+        with self._send_lock:
+            # If the note is already on, kill it first (Standard Strum Practice)
+            if midi_note in self._active_notes:
+                for ch in channels:
+                    self._send([0x90 + ch, midi_note, 0])
+
+            # Now play the new note
+            for ch in channels:
+                self._send([0x90 + ch, midi_note, velocity])
+            self._active_notes.add(midi_note)
     
     def send_note_off(self, note: NoteObject, channel: Optional[int] = None) -> None:
-        """Send note-off message."""
+        """
+        Send note-off message with State Guard protection.
+
+        Only sends Note Off if the note is actually active, preventing
+        redundant messages that could confuse the synth's voice allocator.
+        """
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
-        
-        for ch in channels:
-            message = [0x80 + ch, midi_note, 0x40]
-            self._midi_out.send_message(message)
+
+        with self._send_lock:
+            if midi_note in self._active_notes:
+                for ch in channels:
+                    # Send 0x90 velocity 0 (Note ON with velocity 0)
+                    self._send([0x90 + ch, midi_note, 0])
+                self._active_notes.discard(midi_note)
     
     def send_note(self, note: NoteObject, velocity: int, duration: float = 1.5,
                   channel: Optional[int] = None) -> None:
-        """Send note with automatic note-off after duration."""
+        """
+        Send note with automatic note-off after duration.
+
+        Uses State Guard to prevent Note Shadowing during rapid strumming.
+        Uses single scheduler thread (reliable on Pi with daemon=False).
+        """
         if not self.is_connected:
             return
 
@@ -236,45 +298,37 @@ class RtMidiBackend(MidiBackendProtocol):
         channels = self._get_channels(channel)
         note_key = (midi_note, tuple(channels))
 
-        # Cancel existing timer for this note
-        with self._timer_lock:
-            if note_key in self._active_note_timers:
-                self._active_note_timers[note_key].cancel()
-                del self._active_note_timers[note_key]
+        self._scheduler.cancel(note_key)
+        self._scheduled_note_keys.discard(note_key)
 
-        # Send note-on
-        for ch in channels:
-            message = [0x90 + ch, midi_note, velocity]
-            self._midi_out.send_message(message)
-
-        # Schedule note-off
-        def send_off():
-            if self.is_connected and self._midi_out:
+        # Send note-on with State Guard protection
+        with self._send_lock:
+            # If the note is already on, kill it first (prevents orphaned notes)
+            if midi_note in self._active_notes:
                 for ch in channels:
-                    message = [0x80 + ch, midi_note, 0x40]
-                    self._midi_out.send_message(message)
-            with self._timer_lock:
-                self._active_note_timers.pop(note_key, None)
+                    self._send([0x90 + ch, midi_note, 0])
 
-        timer = threading.Timer(duration, send_off)
-        timer.daemon = True
-        with self._timer_lock:
-            self._active_note_timers[note_key] = timer
-        timer.start()
+            # Now play the new note
+            for ch in channels:
+                self._send([0x90 + ch, midi_note, velocity])
+            self._active_notes.add(midi_note)
+
+        def send_off() -> None:
+            if self.is_connected and self._midi_out:
+                with self._send_lock:
+                    if midi_note in self._active_notes:
+                        for ch in channels:
+                            self._send([0x90 + ch, midi_note, 0])
+                        self._active_notes.discard(midi_note)
+            self._scheduled_note_keys.discard(note_key)
+
+        self._scheduler.schedule(note_key, duration, send_off)
+        self._scheduled_note_keys.add(note_key)
 
     def send_raw_note(self, midi_note: int, velocity: int, duration: float = 1.5,
                       channel: Optional[int] = None) -> None:
         """
-        Send a raw MIDI note number with automatic note-off after duration.
-
-        Used for features like strum release where we need to send a specific
-        MIDI note number rather than a NoteObject.
-
-        Args:
-            midi_note: MIDI note number (0-127)
-            velocity: MIDI velocity (0-127)
-            duration: Duration in seconds before note-off
-            channel: MIDI channel (1-16), or None to use default
+        Send a raw MIDI note number with State Guard protection.
         """
         if not self.is_connected:
             return
@@ -282,53 +336,54 @@ class RtMidiBackend(MidiBackendProtocol):
         channels = self._get_channels(channel)
         note_key = (midi_note, tuple(channels))
 
-        # Cancel existing timer for this note
-        with self._timer_lock:
-            if note_key in self._active_note_timers:
-                self._active_note_timers[note_key].cancel()
-                del self._active_note_timers[note_key]
+        self._scheduler.cancel(note_key)
+        self._scheduled_note_keys.discard(note_key)
 
-        # Send note-on
-        for ch in channels:
-            message = [0x90 + ch, midi_note, velocity]
-            self._midi_out.send_message(message)
-
-        # Schedule note-off
-        def send_off():
-            if self.is_connected and self._midi_out:
+        # Send note-on with State Guard protection
+        with self._send_lock:
+            # If the note is already on, kill it first
+            if midi_note in self._active_notes:
                 for ch in channels:
-                    message = [0x80 + ch, midi_note, 0x40]
-                    self._midi_out.send_message(message)
-            with self._timer_lock:
-                self._active_note_timers.pop(note_key, None)
+                    self._send([0x90 + ch, midi_note, 0])
 
-        timer = threading.Timer(duration, send_off)
-        timer.daemon = True
-        with self._timer_lock:
-            self._active_note_timers[note_key] = timer
-        timer.start()
+            # Now play the new note
+            for ch in channels:
+                self._send([0x90 + ch, midi_note, velocity])
+            self._active_notes.add(midi_note)
+
+        def send_off() -> None:
+            if self.is_connected and self._midi_out:
+                with self._send_lock:
+                    if midi_note in self._active_notes:
+                        for ch in channels:
+                            self._send([0x90 + ch, midi_note, 0])
+                        self._active_notes.discard(midi_note)
+            self._scheduled_note_keys.discard(note_key)
+
+        self._scheduler.schedule(note_key, duration, send_off)
+        self._scheduled_note_keys.add(note_key)
 
     def release_notes(self, notes: List[NoteObject]) -> None:
-        """Immediately release specific notes."""
+        """
+        Immediately release specific notes with State Guard protection.
+        """
         if not self.is_connected or not notes:
             return
 
         channels = self._get_channels()
 
-        for note in notes:
-            midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
-            note_key = (midi_note, tuple(channels))
+        with self._send_lock:
+            for note in notes:
+                midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
+                note_key = (midi_note, tuple(channels))
 
-            # Cancel timer
-            with self._timer_lock:
-                if note_key in self._active_note_timers:
-                    self._active_note_timers[note_key].cancel()
-                    del self._active_note_timers[note_key]
+                self._scheduler.cancel(note_key)
+                self._scheduled_note_keys.discard(note_key)
 
-            # Send note-off
-            for ch in channels:
-                message = [0x80 + ch, midi_note, 0x40]
-                self._midi_out.send_message(message)
+                if midi_note in self._active_notes:
+                    for ch in channels:
+                        self._send([0x90 + ch, midi_note, 0])
+                    self._active_notes.discard(midi_note)
     
     def send_pitch_bend(self, bend_value: float) -> None:
         """Send pitch bend message."""
@@ -345,5 +400,7 @@ class RtMidiBackend(MidiBackendProtocol):
         
         channels = self._get_channels()
         for ch in channels:
-            message = [0xE0 + ch, lsb, msb]
-            self._midi_out.send_message(message)
+            with self._send_lock:
+                self._send([0xE0 + ch, lsb, msb])
+            if self._inter_message_delay > 0:
+                time.sleep(self._inter_message_delay)

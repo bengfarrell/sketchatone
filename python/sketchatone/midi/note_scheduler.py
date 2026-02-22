@@ -56,11 +56,13 @@ class NoteScheduler:
         """Start the scheduler background thread."""
         if self._running:
             return
-        
+
         self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        # CRITICAL: daemon=False for Raspberry Pi timing fix
+        # daemon=True causes timers to fire immediately on slower systems
+        self._thread = threading.Thread(target=self._run, daemon=False)
         self._thread.start()
-    
+
     def stop(self) -> None:
         """Stop the scheduler and cancel all pending events."""
         with self._condition:
@@ -127,6 +129,7 @@ class NoteScheduler:
     
     def _run(self) -> None:
         """Background thread that processes scheduled events."""
+        print("[NoteScheduler] Thread loop running")
         while self._running:
             with self._condition:
                 # Clean up cancelled events from the front of the heap

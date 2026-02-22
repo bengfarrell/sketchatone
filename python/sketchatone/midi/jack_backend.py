@@ -8,7 +8,7 @@ Designed for Linux systems, especially Zynthian.
 import threading
 import queue
 import time
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Set
 
 try:
     import jack
@@ -17,6 +17,7 @@ except ImportError:
 
 from .protocol import MidiBackendProtocol
 from ..models.note import Note, NoteObject
+from .note_scheduler import get_scheduler
 
 
 class JackMidiBackend(MidiBackendProtocol):
@@ -35,7 +36,7 @@ class JackMidiBackend(MidiBackendProtocol):
     """
 
     def __init__(self, channel: Optional[int] = None, client_name: str = "sketchatone",
-                 auto_connect: str = "chain0"):
+                 auto_connect: str = "chain0", inter_message_delay: float = 0.0):
         """
         Initialize the JACK MIDI backend.
 
@@ -43,6 +44,8 @@ class JackMidiBackend(MidiBackendProtocol):
             channel: Default MIDI channel (1-16), or None for all channels
             client_name: JACK client name
             auto_connect: Auto-connect mode: "chain0", "all-chains", or "none"
+            inter_message_delay: Seconds to wait after each MIDI message (default 0).
+                Use e.g. 0.002 (2 ms) on systems where notes stick during busy strumming.
         """
         if jack is None:
             raise ImportError(
@@ -53,6 +56,7 @@ class JackMidiBackend(MidiBackendProtocol):
         self._channel = channel
         self._client_name = client_name
         self._auto_connect = auto_connect
+        self._inter_message_delay = inter_message_delay
 
         self._jack_client: Optional[jack.Client] = None
         self._midi_out_port: Optional[jack.MidiPort] = None
@@ -61,9 +65,14 @@ class JackMidiBackend(MidiBackendProtocol):
         # MIDI event queue for real-time processing
         self._midi_queue: queue.Queue = queue.Queue(maxsize=1000)
 
-        # Note timing management
-        self._active_note_timers: Dict[Tuple[int, Tuple[int, ...]], threading.Timer] = {}
-        self._timer_lock = threading.Lock()
+        # Note scheduling using shared scheduler (daemon=False for Pi timing)
+        self._scheduler = get_scheduler()
+        self._scheduled_note_keys: Set[Tuple[int, Tuple[int, ...]]] = set()
+
+        # State Guard: Track active notes to prevent "Note Shadowing"
+        self._active_notes: Set[int] = set()
+        self._send_lock = threading.Lock()
+        self._last_send_time = 0.0
     
     @property
     def is_connected(self) -> bool:
@@ -200,31 +209,42 @@ class JackMidiBackend(MidiBackendProtocol):
             print(f"[JackMidi] Auto-connect error: {e}")
     
     def _queue_midi_event(self, midi_message: bytes, offset: int = 0) -> None:
-        """Queue a MIDI event for the process callback."""
+        """
+        Queue a MIDI event for the process callback with optional throttling.
+        Call only while holding _send_lock for inter-message delay.
+        """
+        if self._inter_message_delay > 0:
+            now = time.time()
+            wait = (self._last_send_time + self._inter_message_delay) - now
+            if wait > 0:
+                time.sleep(wait)
+
         try:
             self._midi_queue.put_nowait((offset, midi_message))
+            self._last_send_time = time.time()
         except queue.Full:
             print("[JackMidi] Warning: MIDI queue full")
     
     def disconnect(self) -> None:
         """Disconnect and clean up."""
-        # Cancel all active timers
-        with self._timer_lock:
-            for timer in self._active_note_timers.values():
-                timer.cancel()
-            self._active_note_timers.clear()
+        # Cancel all scheduled note-offs
+        for note_key in list(self._scheduled_note_keys):
+            self._scheduler.cancel(note_key)
+        self._scheduled_note_keys.clear()
 
         if self._jack_client and self._midi_out_port:
             # Send "All Notes Off" and "Reset All Controllers" on all channels
             # to clean up any stuck notes or pitch bend
             try:
-                for ch in range(16):
-                    # All Notes Off (CC 123)
-                    self._queue_midi_event(bytes([0xB0 + ch, 123, 0]))
-                    # Reset All Controllers (CC 121)
-                    self._queue_midi_event(bytes([0xB0 + ch, 121, 0]))
-                    # Reset pitch bend to center
-                    self._queue_midi_event(bytes([0xE0 + ch, 0x00, 0x40]))
+                with self._send_lock:
+                    for ch in range(16):
+                        # All Notes Off (CC 123)
+                        self._queue_midi_event(bytes([0xB0 + ch, 123, 0]))
+                        # Reset All Controllers (CC 121)
+                        self._queue_midi_event(bytes([0xB0 + ch, 121, 0]))
+                        # Reset pitch bend to center
+                        self._queue_midi_event(bytes([0xE0 + ch, 0x00, 0x40]))
+                    self._active_notes.clear()
             except Exception as e:
                 print(f"[JackMidi] Error sending cleanup messages: {e}")
 
@@ -258,32 +278,58 @@ class JackMidiBackend(MidiBackendProtocol):
             return list(range(16))
     
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
-        """Send note-on message."""
+        """
+        Send note-on message with State Guard protection.
+
+        If the note is already on, kills it first to prevent "Note Shadowing".
+        """
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
-        
-        for ch in channels:
-            message = bytes([0x90 + ch, midi_note, velocity])
-            self._queue_midi_event(message)
+
+        with self._send_lock:
+            # If the note is already on, kill it first
+            if midi_note in self._active_notes:
+                for ch in channels:
+                    message = bytes([0x90 + ch, midi_note, 0])
+                    self._queue_midi_event(message)
+
+            # Now play the new note
+            for ch in channels:
+                message = bytes([0x90 + ch, midi_note, velocity])
+                self._queue_midi_event(message)
+            self._active_notes.add(midi_note)
     
     def send_note_off(self, note: NoteObject, channel: Optional[int] = None) -> None:
-        """Send note-off message."""
+        """
+        Send note-off message with State Guard protection.
+
+        Only sends Note Off if the note is actually active.
+        """
         if not self.is_connected:
             return
-        
+
         midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
         channels = self._get_channels(channel)
-        
-        for ch in channels:
-            message = bytes([0x80 + ch, midi_note, 0x40])
-            self._queue_midi_event(message)
+
+        with self._send_lock:
+            if midi_note in self._active_notes:
+                for ch in channels:
+                    # Send 0x90 velocity 0 (Note ON with velocity 0)
+                    message = bytes([0x90 + ch, midi_note, 0])
+                    self._queue_midi_event(message)
+                self._active_notes.discard(midi_note)
     
     def send_note(self, note: NoteObject, velocity: int, duration: float = 1.5,
                   channel: Optional[int] = None) -> None:
-        """Send note with automatic note-off after duration."""
+        """
+        Send note with automatic note-off after duration.
+
+        Uses State Guard to prevent Note Shadowing during rapid strumming.
+        Uses single scheduler thread (reliable on Pi with daemon=False).
+        """
         if not self.is_connected:
             return
 
@@ -291,53 +337,62 @@ class JackMidiBackend(MidiBackendProtocol):
         channels = self._get_channels(channel)
         note_key = (midi_note, tuple(channels))
 
-        # Cancel existing timer for this note
-        with self._timer_lock:
-            if note_key in self._active_note_timers:
-                self._active_note_timers[note_key].cancel()
-                del self._active_note_timers[note_key]
+        # Cancel existing scheduled note-off for this note
+        self._scheduler.cancel(note_key)
+        self._scheduled_note_keys.discard(note_key)
 
-        # Send note-on
-        for ch in channels:
-            message = bytes([0x90 + ch, midi_note, velocity])
-            self._queue_midi_event(message)
+        # Send note-on with State Guard protection
+        with self._send_lock:
+            # If the note is already on, kill it first (prevents orphaned notes)
+            if midi_note in self._active_notes:
+                for ch in channels:
+                    message = bytes([0x90 + ch, midi_note, 0])
+                    self._queue_midi_event(message)
+
+            # Now play the new note
+            for ch in channels:
+                message = bytes([0x90 + ch, midi_note, velocity])
+                self._queue_midi_event(message)
+            self._active_notes.add(midi_note)
 
         # Schedule note-off
-        def send_off():
+        def send_off() -> None:
             if self.is_connected:
-                for ch in channels:
-                    message = bytes([0x80 + ch, midi_note, 0x40])
-                    self._queue_midi_event(message)
-            with self._timer_lock:
-                self._active_note_timers.pop(note_key, None)
+                with self._send_lock:
+                    if midi_note in self._active_notes:
+                        for ch in channels:
+                            message = bytes([0x90 + ch, midi_note, 0])
+                            self._queue_midi_event(message)
+                        self._active_notes.discard(midi_note)
+            self._scheduled_note_keys.discard(note_key)
 
-        timer = threading.Timer(duration, send_off)
-        timer.daemon = True
-        with self._timer_lock:
-            self._active_note_timers[note_key] = timer
-        timer.start()
+        self._scheduler.schedule(note_key, duration, send_off)
+        self._scheduled_note_keys.add(note_key)
     
     def release_notes(self, notes: List[NoteObject]) -> None:
-        """Immediately release specific notes."""
+        """
+        Immediately release specific notes with State Guard protection.
+        """
         if not self.is_connected or not notes:
             return
 
         channels = self._get_channels()
 
-        for note in notes:
-            midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
-            note_key = (midi_note, tuple(channels))
+        with self._send_lock:
+            for note in notes:
+                midi_note = Note.notation_to_midi(f"{note.notation}{note.octave}")
+                note_key = (midi_note, tuple(channels))
 
-            # Cancel timer
-            with self._timer_lock:
-                if note_key in self._active_note_timers:
-                    self._active_note_timers[note_key].cancel()
-                    del self._active_note_timers[note_key]
+                # Cancel scheduled note-off
+                self._scheduler.cancel(note_key)
+                self._scheduled_note_keys.discard(note_key)
 
-            # Send note-off
-            for ch in channels:
-                message = bytes([0x80 + ch, midi_note, 0x40])
-                self._queue_midi_event(message)
+                # Send note-off only if note is active
+                if midi_note in self._active_notes:
+                    for ch in channels:
+                        message = bytes([0x90 + ch, midi_note, 0])
+                        self._queue_midi_event(message)
+                    self._active_notes.discard(midi_note)
     
     def send_pitch_bend(self, bend_value: float) -> None:
         """Send pitch bend message."""

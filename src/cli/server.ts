@@ -184,6 +184,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
   // State tracking for strum release feature
   private strumStartTime: number = 0;
 
+  // State tracking for pitch bend throttling
+  private lastPitchBendTime: number = 0;
+  private lastPitchBendValue: number | null = null;
+
   // Path to the strummer config file (for saving)
   private strummerConfigPath: string | undefined;
 
@@ -1226,7 +1230,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.tabletButtonState[stateKey] = buttonPressed;
       }
 
-      // Apply pitch bend based on configuration
+      // Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
       const pitchBendCfg = this.config.pitchBend;
       if (pitchBendCfg && this.backend) {
         const controlValue = this.getControlValue(pitchBendCfg.control, {
@@ -1238,8 +1242,31 @@ class StrummerWebSocketServer extends TabletReaderBase {
           tiltXY,
         });
         if (controlValue !== null) {
-          const bendValue = pitchBendCfg.mapValue(controlValue);
-          this.backend.sendPitchBend?.(bendValue);
+          let bendValue = pitchBendCfg.mapValue(controlValue);
+
+          // Initialize tracking variables
+          if (!this.lastPitchBendTime) {
+            this.lastPitchBendTime = 0;
+            this.lastPitchBendValue = null;
+          }
+
+          // Apply deadzone around center (±0.02) to avoid sending tiny changes near zero
+          // This prevents MIDI flooding when there's no actual pitch bend
+          if (Math.abs(bendValue) < 0.02) {
+            bendValue = 0.0;
+          }
+
+          // Only send if value changed significantly
+          // Don't send repeated messages with the same value
+          const valueChanged =
+            this.lastPitchBendValue === null ||
+            Math.abs(bendValue - this.lastPitchBendValue) > 0.01;
+
+          if (valueChanged) {
+            this.backend.sendPitchBend?.(bendValue);
+            this.lastPitchBendTime = Date.now();
+            this.lastPitchBendValue = bendValue;
+          }
         }
       }
 

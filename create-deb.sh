@@ -84,16 +84,46 @@ else
 fi
 
 # Create launcher script in /usr/bin
+# This script detects the install mode and sets PYTHONPATH accordingly
 cat > "$PKG_DIR/usr/bin/sketchatone" << 'BINEOF'
 #!/bin/bash
 # Sketchatone launcher - runs Python module directly
 export PYTHONPATH="/opt/sketchatone/python:$PYTHONPATH"
+
+# Add Zynthian venv to PYTHONPATH if installed in Zynthian mode
+if [ -f /opt/sketchatone/.install-mode ] && [ "$(cat /opt/sketchatone/.install-mode)" = "zynthian" ]; then
+    export PYTHONPATH="$PYTHONPATH:/zynthian/venv/lib/python3.11/site-packages"
+fi
+
 exec python3 -m sketchatone.cli.server "$@"
 BINEOF
 chmod +x "$PKG_DIR/usr/bin/sketchatone"
 
-# Create systemd service file
-cat > "$PKG_DIR/etc/systemd/system/sketchatone.service" << 'SERVICEEOF'
+# Create systemd service templates (actual service is generated at install time based on user choice)
+# ALSA mode service (for standard Raspberry Pi)
+cat > "$PKG_DIR/opt/sketchatone/sketchatone-alsa.service" << 'SERVICEEOF'
+[Unit]
+Description=Sketchatone MIDI Strummer
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sketchatone
+Environment="PYTHONPATH=/opt/sketchatone/python:/usr/lib/python3/dist-packages"
+Environment="DISPLAY=:0"
+ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+# Zynthian mode service (uses JACK)
+cat > "$PKG_DIR/opt/sketchatone/sketchatone-zynthian.service" << 'SERVICEEOF'
 [Unit]
 Description=Sketchatone MIDI Strummer
 After=network.target sound.target jack2.service a2jmidid.service
@@ -119,14 +149,15 @@ StandardError=journal
 WantedBy=multi-user.target
 SERVICEEOF
 
-# Create control file
+# Create control file - remove hard JACK dependency for ALSA mode compatibility
 cat > "$PKG_DIR/DEBIAN/control" << CONTROLEOF
 Package: sketchatone
 Version: $VERSION
 Section: sound
 Priority: optional
 Architecture: $ARCH
-Depends: python3 (>= 3.8), python3-pip, libhidapi-hidraw0, libhidapi-dev, libasound2, libjack0 | libjack-jackd2-0
+Depends: python3 (>= 3.8), python3-pip, libhidapi-hidraw0, libhidapi-dev, libasound2, python3-dev, build-essential
+Recommends: libjack0 | libjack-jackd2-0, python3-rtmidi
 Maintainer: Sketchatone Project
 Description: MIDI Strummer for Drawing Tablets
  Sketchatone converts drawing tablet input into expressive MIDI output,
@@ -139,7 +170,7 @@ Description: MIDI Strummer for Drawing Tablets
   - WebSocket real-time communication
   - Optional web dashboard
   - USB plug-and-play auto-start (optional)
-  - Zynthian compatible
+  - Supports ALSA (standard Pi) and JACK/Zynthian
 CONTROLEOF
 
 # Create postinst script (runs after installation)
@@ -148,20 +179,108 @@ cat > "$PKG_DIR/DEBIAN/postinst" << 'POSTINSTEOF'
 set -e
 
 echo ""
+echo "=========================================="
+echo "Sketchatone Installation"
+echo "=========================================="
+echo ""
+echo "Please select your installation mode:"
+echo ""
+echo "  1) Standard Raspberry Pi (ALSA)"
+echo "     - Uses ALSA for MIDI output"
+echo "     - Works with USB MIDI cables and interfaces"
+echo "     - Recommended for most users"
+echo ""
+echo "  2) Zynthian"
+echo "     - Uses JACK for MIDI output"
+echo "     - Integrates with Zynthian's audio system"
+echo "     - Only for Zynthian installations"
+echo ""
+
+# Read user choice
+INSTALL_MODE=""
+while [ -z "$INSTALL_MODE" ]; do
+    read -p "Enter choice [1 or 2]: " choice
+    case "$choice" in
+        1)
+            INSTALL_MODE="alsa"
+            echo ""
+            echo "📦 Installing for Standard Raspberry Pi (ALSA)..."
+            ;;
+        2)
+            INSTALL_MODE="zynthian"
+            echo ""
+            echo "📦 Installing for Zynthian..."
+            ;;
+        *)
+            echo "Invalid choice. Please enter 1 or 2."
+            ;;
+    esac
+done
+
+# Save install mode for future reference
+echo "$INSTALL_MODE" > /opt/sketchatone/.install-mode
+
+# Install the appropriate systemd service
+if [ "$INSTALL_MODE" = "zynthian" ]; then
+    cp /opt/sketchatone/sketchatone-zynthian.service /etc/systemd/system/sketchatone.service
+else
+    cp /opt/sketchatone/sketchatone-alsa.service /etc/systemd/system/sketchatone.service
+fi
+
+# Install Python dependencies
+echo ""
 echo "📦 Installing Python dependencies..."
 
-# Install Python dependencies to system Python
-pip3 install --break-system-packages \
-    "websockets>=11.0.0" \
-    "hidapi>=0.14.0" \
-    "inquirer>=3.1.0" \
-    "colorama>=0.4.6" \
-    2>/dev/null || \
-pip3 install \
-    "websockets>=11.0.0" \
-    "hidapi>=0.14.0" \
-    "inquirer>=3.1.0" \
-    "colorama>=0.4.6"
+# Function to install a package with fallback methods
+install_package() {
+    local package="$1"
+
+    # Try with --break-system-packages first (Debian 12+)
+    if pip3 install --break-system-packages "$package" 2>/dev/null; then
+        return 0
+    fi
+
+    # Try without flag (older systems)
+    if pip3 install "$package" 2>/dev/null; then
+        return 0
+    fi
+
+    # Try with apt if available (for common packages)
+    local apt_name=$(echo "$package" | sed 's/>=.*//' | sed 's/-/_/g')
+    if apt-cache show "python3-$apt_name" >/dev/null 2>&1; then
+        echo "  → Installing $apt_name via apt..."
+        apt install -y "python3-$apt_name" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
+if [ "$INSTALL_MODE" = "zynthian" ]; then
+    # Zynthian: Install to system Python, JACK-Client is already in Zynthian venv
+    install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
+    install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
+    install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
+    install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
+else
+    # ALSA: Install python-rtmidi for MIDI support
+    install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
+    install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
+    install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
+    install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
+
+    # Try to install python-rtmidi - first try apt, then pip
+    echo "📦 Installing python-rtmidi..."
+    if apt-cache show python3-rtmidi >/dev/null 2>&1; then
+        echo "  → Installing from apt (python3-rtmidi)..."
+        apt-get install -y python3-rtmidi && echo "  ✓ Installed from apt" || {
+            echo "  ⚠️  apt install failed, trying pip..."
+            install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
+        }
+    else
+        echo "  → python3-rtmidi not available in apt, using pip..."
+        install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
+    fi
+fi
 
 # Set correct permissions
 chmod +x /usr/bin/sketchatone
@@ -191,6 +310,8 @@ echo ""
 echo "=========================================="
 echo "✅ Sketchatone installed successfully!"
 echo "=========================================="
+echo ""
+echo "Install mode: $INSTALL_MODE"
 echo ""
 echo "Sketchatone is configured to auto-start when your tablet is plugged in."
 echo ""
@@ -282,11 +403,7 @@ else
     tar czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME"
     cd ..
 
-    # Clean up
-    echo "🧹 Cleaning up..."
-    rm -rf "$PKG_DIR"
-
-    # Create a helper script to build the deb on the Pi
+    # Create a helper script to build the deb on the Pi (before cleanup)
     cat > "dist/install-sketchatone.sh" << INSTALLEOF
 #!/bin/bash
 # Install Sketchatone on Raspberry Pi
@@ -312,6 +429,10 @@ echo ""
 echo "Run: sketchatone -c /opt/sketchatone/configs/config.json"
 INSTALLEOF
     chmod +x "dist/install-sketchatone.sh"
+
+    # Clean up
+    echo "🧹 Cleaning up..."
+    rm -rf "$PKG_DIR"
 
     echo ""
     echo "=========================================="

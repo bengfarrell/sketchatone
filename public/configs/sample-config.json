@@ -101,12 +101,13 @@
   },
   "midi": {
     "midi_output_backend": "rtmidi",
-    "midi_output_id": null,
+    "midi_output_id": 1,
     "midi_input_id": null,
-    "midi_input_exclude": ["sketchatone", "ZynMidiRouter", "zynseq", "zynsmf", "ttymidi", "Midi Through"],
+    "midi_input_exclude": ["sketchatone", "ZynMidiRouter", "zynseq", "zynsmf", "ttymidi", "Midi Through", "RtMidi"],
     "jack_client_name": "sketchatone",
     "jack_auto_connect": "chain0",
-    "note_duration": 1.5
+    "note_duration": 1.5,
+    "midiInterMessageDelay": 0
   },
   "server": {
     "device": "devices",

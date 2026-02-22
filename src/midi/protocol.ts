@@ -110,4 +110,11 @@ export interface MidiBackendOptions {
    * Name for virtual port (if using virtual ports)
    */
   virtualPortName?: string;
+
+  /**
+   * Delay in seconds after each MIDI message (default: 0)
+   * Use e.g. 0.002 (2 ms) on systems where notes stick during busy strumming.
+   * Works with both RtMidi and JACK backends.
+   */
+  interMessageDelay?: number;
 }

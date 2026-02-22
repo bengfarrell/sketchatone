@@ -298,16 +298,24 @@ class MidiStrummer(TabletReaderBase):
     def _setup_midi(self) -> bool:
         """Initialize MIDI backend and bridge"""
         try:
+            # Get inter-message delay with backward compatibility
+            delay = getattr(self.config.midi, 'midi_inter_message_delay', None)
+            if delay is None:
+                # Backward compatibility: check old name
+                delay = getattr(self.config.midi, 'rtmidi_inter_message_delay', 0.0)
+            delay = delay or 0.0
+
             if self.config.midi_output_backend == "jack":
                 from sketchatone.midi.jack_backend import JackMidiBackend
                 self.backend = JackMidiBackend(
                     channel=self.config.channel,
                     client_name=self.config.jack_client_name,
-                    auto_connect=self.config.jack_auto_connect
+                    auto_connect=self.config.jack_auto_connect,
+                    inter_message_delay=delay
                 )
             else:
                 from sketchatone.midi.rtmidi_backend import RtMidiBackend
-                self.backend = RtMidiBackend(channel=self.config.channel)
+                self.backend = RtMidiBackend(channel=self.config.channel, inter_message_delay=delay)
 
             # Connect backend
             port = self.config.midi_output_id
@@ -472,7 +480,7 @@ class MidiStrummer(TabletReaderBase):
                 # Update tablet button state
                 self.tablet_button_state[button_key] = button_pressed
 
-            # Apply pitch bend based on configuration
+            # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
             pitch_bend_cfg = self.config.strummer.pitch_bend
             if pitch_bend_cfg and self.backend:
                 # Get the control input value based on the control setting
@@ -480,7 +488,27 @@ class MidiStrummer(TabletReaderBase):
                 if control_value is not None:
                     # Map the control value to pitch bend range
                     bend_value = pitch_bend_cfg.map_value(control_value)
-                    self.backend.send_pitch_bend(bend_value)
+
+                    # Initialize tracking variables
+                    current_time = time.time()
+                    if not hasattr(self, '_last_pitch_bend_time'):
+                        self._last_pitch_bend_time = 0
+                        self._last_pitch_bend_value = None
+
+                    # Apply deadzone around center (±0.02) to avoid sending tiny changes near zero
+                    # This prevents MIDI flooding when there's no actual pitch bend
+                    if abs(bend_value) < 0.02:
+                        bend_value = 0.0
+
+                    # Only send if value changed significantly
+                    # Don't send repeated messages with the same value
+                    value_changed = (self._last_pitch_bend_value is None or
+                                   abs(bend_value - self._last_pitch_bend_value) > 0.01)
+
+                    if value_changed:
+                        self.backend.send_pitch_bend(bend_value)
+                        self._last_pitch_bend_time = current_time
+                        self._last_pitch_bend_value = bend_value
 
             # Calculate dynamic note duration based on configuration
             note_duration_cfg = self.config.strummer.note_duration
