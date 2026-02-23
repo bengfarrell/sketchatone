@@ -1,36 +1,26 @@
 {% set aboutNav = [
     { url: '/', label: 'Introduction' },
-    { url: '/about/getting-started/', label: 'Getting Started' }
-] %}
-
-{% set runningNav = [
-    { url: '/about/running-overview/', label: 'Overview' },
-    { url: '/about/node-cli/', label: 'Node.js CLI' },
-    { url: '/about/python-cli/', label: 'Python CLI' },
+    { url: '/about/getting-started/', label: 'Getting Started' },
+    { url: '/about/dashboard/', label: 'Web Dashboard' },
     { url: '/about/builds/', label: 'Builds & Installers' }
 ] %}
 
 {% set configNav = [
-    { url: '/about/configuration-overview/', label: 'Overview' },
-    { url: '/about/configuration-settings/', label: 'Settings File' }
-] %}
-
-{% set featuresNav = [
+    { url: '/about/configuration-settings/', label: 'Configuration' },
     { url: '/about/strumming/', label: 'Strumming' },
     { url: '/about/note-velocity/', label: 'Note Velocity' },
     { url: '/about/note-duration/', label: 'Note Duration' },
     { url: '/about/pitch-bend/', label: 'Pitch Bend' },
-    { url: '/about/note-repeater/', label: 'Note Repeater' },
-    { url: '/about/transpose/', label: 'Transpose' },
-    { url: '/about/stylus-buttons/', label: 'Stylus Buttons' },
-    { url: '/about/tablet-buttons/', label: 'Tablet Buttons' },
-    { url: '/about/strum-release/', label: 'Strum Release' }
+    { url: '/about/strum-release/', label: 'Strum Release' },
+    { url: '/about/action-rules/', label: 'Action Rules' }
 ] %}
 
 {% set miscNav = [
-    { url: '/about/actions-reference/', label: 'Actions Reference' },
+    { url: '/about/node-cli/', label: 'Node.js CLI' },
+    { url: '/about/python-cli/', label: 'Python CLI' },
     { url: '/about/chords-and-progressions/', label: 'Chords & Progressions' },
-    { url: '/about/jack-midi/', label: 'JACK MIDI (Linux)' }
+    { url: '/about/jack-midi/', label: 'JACK MIDI (Linux)' },
+    { url: '/about/troubleshooting/', label: 'Troubleshooting' }
 ] %}
 
 <nav>
@@ -42,18 +32,8 @@
     <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
     {% endfor %}
 
-    <h4>Running the Application</h4>
-    {% for item in runningNav %}
-        <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
-    {% endfor %}
-
     <h4>Configuration</h4>
     {% for item in configNav %}
-        <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
-    {% endfor %}
-
-    <h4>Features</h4>
-    {% for item in featuresNav %}
         <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
     {% endfor %}
 

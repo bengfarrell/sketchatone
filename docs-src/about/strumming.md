@@ -93,4 +93,4 @@ This creates a wider range of notes to strum across.
 
 - **[Note Velocity](/about/note-velocity/)** - Control note loudness
 - **[Chords & Progressions](/about/chords-and-progressions/)** - Chord reference
-- **[Tablet Buttons](/about/tablet-buttons/)** - Switch chords with buttons
+- **[Action Rules](/about/action-rules/)** - Configure button actions to switch chords

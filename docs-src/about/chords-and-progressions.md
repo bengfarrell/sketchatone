@@ -80,20 +80,73 @@ Chords are specified using standard notation:
 |--------|-----|--------|-------------|
 | `c-major-50s` | C | C, Am, F, G | I-vi-IV-V |
 
-## Custom Progressions
+## Using Chords in Configuration
 
-Create your own progression:
+### In Strumming Config
+
+Set the chord to strum:
 
 ```json
 {
-  "tablet_buttons": {
-    "preset": "custom",
-    "chords": ["Dm7", "G7", "Cmaj7", "Am7"]
+  "strumming": {
+    "chord": "Am7",
+    "midi_channel": 0
+  }
+}
+```
+
+### With Action Rules
+
+Map buttons to change chords:
+
+```json
+{
+  "action_rules": {
+    "rules": [
+      {
+        "id": "set-dm7",
+        "name": "Set Dm7",
+        "button": "button:1",
+        "action": ["set-chord", "Dm7", 4],
+        "trigger": "press"
+      }
+    ]
+  }
+}
+```
+
+### With Chord Progressions
+
+Map button groups to progressions:
+
+```json
+{
+  "action_rules": {
+    "groups": [
+      {
+        "id": "chord-buttons",
+        "name": "Chord Buttons",
+        "buttons": ["button:1", "button:2", "button:3", "button:4"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "progression",
+        "name": "C Major Pop",
+        "group_id": "chord-buttons",
+        "trigger": "press",
+        "action": {
+          "type": "chord-progression",
+          "progression": "c-major-pop",
+          "octave": 4
+        }
+      }
+    ]
   }
 }
 ```
 
 ## See Also
 
-- **[Tablet Buttons](/about/tablet-buttons/)** - Button-to-chord mapping
+- **[Action Rules](/about/action-rules/)** - Button-to-chord mapping
 - **[Strumming](/about/strumming/)** - Strummer configuration

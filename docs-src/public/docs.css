@@ -62,8 +62,7 @@ body:hover::-webkit-scrollbar-thumb {
 
 body {
   margin: 0;
-  min-width: min-content;
-  width: 100vw;
+  width: 100%;
   font-family: 'Outfit', sans-serif;
   /* Tolex texture background */
   background: var(--tolex-dark);
@@ -80,10 +79,11 @@ body {
   padding-top: 140px;
   overscroll-behavior: none;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 #main-wrapper {
-  width: 100vw;
+  width: 100%;
   min-height: calc(100vh - 140px);
   display: flex;
 }
@@ -92,6 +92,7 @@ main {
   padding: 40px;
   width: calc(100% - 280px);
   flex: 1;
+  min-width: 0;
 }
 
 main .content {
@@ -107,7 +108,9 @@ main .content {
   color: var(--charcoal);
   padding: 40px 50px;
   position: relative;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  word-wrap: break-word;
 }
 
 main .content::before {
@@ -503,6 +506,59 @@ strong {
   font-weight: 600;
 }
 
+/* Image styling - constrain to content width */
+main .content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 20px 0;
+  border: 2px solid var(--chrome-dark);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Code blocks - allow horizontal scroll on small screens */
+pre[class*="language-"] {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Tablet/small laptop breakpoint */
+@media only screen and (max-width: 1024px) {
+  nav {
+    min-width: 220px;
+    width: 220px;
+    padding: 20px;
+    font-size: 14px;
+  }
+
+  main {
+    padding: 20px;
+    width: calc(100% - 220px);
+  }
+
+  main .content {
+    padding: 30px 35px;
+    font-size: 16px;
+  }
+
+  header {
+    height: 100px;
+  }
+
+  header > .logo-container img {
+    height: 75px;
+  }
+
+  body {
+    padding-top: 100px;
+  }
+
+  #main-wrapper {
+    min-height: calc(100vh - 100px);
+  }
+}
+
 @media only screen and (max-device-width: 490px) {
   body {
     padding-top: 70px;
@@ -510,20 +566,28 @@ strong {
 
   header {
     height: 70px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
   }
 
   header .mobile-menu-button {
-    margin-left: 15px;
-    margin-top: 5px;
+    margin-left: 20px;
+    margin-top: 0;
+    flex-shrink: 0;
   }
 
   header .logo-container {
-    display: none;
+    display: flex;
+    margin-top: 0;
+  }
+
+  header .logo-container img {
+    height: 50px;
   }
 
   header .title {
-    display: flex;
-    margin-top: 15px;
+    display: none;
   }
 
   header > .title h1 {
@@ -536,8 +600,7 @@ strong {
   }
 
   .mobile-header {
-    display: block;
-    padding: 10px;
+    display: none;
   }
 
   .mobile-header a > img {

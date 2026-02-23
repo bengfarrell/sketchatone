@@ -1,11 +1,137 @@
 ---
-title: Settings File
-description: Complete reference for all configuration options
+title: Configuration
+description: Understanding Sketchatone's configuration files and settings
+---
+
+# Configuration
+
+This document describes Sketchatone's configuration system and all available settings.
+
+## Configuration Methods
+
+Sketchatone can be configured via the **[Web Dashboard](/about/dashboard/)** (live, visual interface) or **JSON configuration files** (version-controlled, headless). Changes made in the dashboard apply immediately, while JSON file changes require a restart.
+
+---
+
+## Configuration Files
+
+Sketchatone uses two types of configuration files:
+
+### 1. Tablet Configuration
+
+Defines how to read HID data from your graphics tablet. These files are typically provided in `public/configs/` and matched automatically based on USB vendor/product IDs.
+
+**Example:** `xp-pen-deco-640.json`
+
+```json
+{
+  "name": "XP Pen Deco 640",
+  "vendorId": "0x28bd",
+  "productId": "0x2904",
+  "capabilities": {
+    "hasPressure": true,
+    "pressureLevels": 16384,
+    "hasTilt": true
+  },
+  "byteCodeMappings": { ... }
+}
+```
+
+### 2. Strummer Configuration
+
+Defines musical settings, parameter mappings, and MIDI backend options.
+
+**Example:** `strummer-config.json`
+
+```json
+{
+  "strumming": {
+    "chord": "Am",
+    "midi_channel": 0
+  },
+  "note_velocity": {
+    "control": "pressure",
+    "min": 0,
+    "max": 127
+  },
+  "midi": {
+    "midi_output_backend": "rtmidi",
+    "midi_output_id": 2
+  }
+}
+```
+
+## Configuration Presets
+
+You can create multiple JSON configuration files for different use cases and switch between them:
+
+### Use Cases for Multiple Configurations
+
+**Song-Specific Settings:**
+```
+configs/
+  ballad.json       # Slow, expressive, wide pitch bend
+  rock.json         # Fast, aggressive, minimal bend
+  jazz.json         # Complex chords, note repeater
+  drums.json        # Strum release for percussive hits
+```
+
+**Instrument-Specific Settings:**
+```
+configs/
+  piano.json        # Velocity-sensitive, no pitch bend
+  strings.json      # Pitch bend on Y-axis, legato
+  synth-lead.json   # Aggressive bend, short notes
+```
+
+### Switching Configurations
+
+**Via Dashboard:**
+1. Click "Load Configuration"
+2. Select JSON file
+3. Settings apply immediately
+
+**Via Command Line:**
+```bash
+# Node.js
+npm run server -- -s configs/ballad.json
+
+# Python
+python -m sketchatone.cli.server -s configs/ballad.json
+```
+
+**Via File System (Raspberry Pi):**
+```bash
+# Copy preset to active config location
+cp /opt/sketchatone/configs/presets/rock.json /opt/sketchatone/configs/config.json
+sudo systemctl restart sketchatone
+```
+
+### Creating Presets
+
+1. **Configure in dashboard** - Adjust all settings visually
+2. **Export configuration** - Click "Export Configuration" button
+3. **Save with descriptive name** - e.g., `my-song-verse.json`
+4. **Version control** - Commit to git for tracking changes
+
+---
+
+## Configuration Sections
+
+| Section | Purpose |
+|---------|---------|
+| `strumming` | Core strummer settings (chord, notes, channel) |
+| `note_velocity` | Velocity parameter mapping |
+| `note_duration` | Duration parameter mapping |
+| `pitch_bend` | Pitch bend parameter mapping |
+| `strum_release` | Release trigger settings (drum sounds on pen lift) |
+| `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
+| `midi` | MIDI backend settings |
+| `server` | Server settings |
+
 ---
 
 # Configuration Settings Reference
-
-This document describes all JSON configuration options for Sketchatone.
 
 ## Parameter Mappings
 
@@ -62,6 +188,92 @@ Core strumming configuration.
 | `chord` | string\|null | null | Chord notation (e.g., "Am", "Gmaj7") |
 | `upper_note_spread` | number | 3 | Notes to add above chord |
 | `lower_note_spread` | number | 3 | Notes to add below chord |
+| `invert_x` | boolean | false | Invert X axis for left-handed use |
+
+---
+
+## strum_release
+
+Strum release feature - triggers a MIDI note when pen is lifted.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `active` | boolean | false | Whether strum release is enabled |
+| `midi_note` | number | 38 | MIDI note to send on release (38 = snare) |
+| `midi_channel` | number\|null | null | MIDI channel (null = same as strumming) |
+| `max_duration` | number | 0.25 | Maximum duration of release note (seconds) |
+| `velocity_multiplier` | number | 1.0 | Scale factor for release velocity |
+
+**Use case:** Trigger drum sounds (e.g., snare) when lifting the pen after a strum.
+
+---
+
+## action_rules
+
+Button-to-action mapping configuration. Maps tablet buttons and stylus buttons to actions.
+
+### Structure
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `button_names` | object | Human-readable names for buttons |
+| `rules` | array | Individual button-to-action mappings |
+| `groups` | array | Button groups (collections of buttons) |
+| `group_rules` | array | Actions assigned to button groups |
+| `startup_rules` | array | Actions that execute on startup |
+
+### Button IDs
+
+| Button ID | Description |
+|-----------|-------------|
+| `button:primary` | Primary stylus button |
+| `button:secondary` | Secondary stylus button |
+| `button:1` through `button:N` | Tablet hardware buttons |
+
+### Action Rule Format
+
+```json
+{
+  "id": "unique-id",
+  "name": "Human Readable Name",
+  "button": "button:primary",
+  "action": "toggle-transpose",
+  "trigger": "press"
+}
+```
+
+### Available Actions
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `toggle-transpose` | Toggle transpose on/off | `semitones` (number, default: 12) |
+| `toggle-repeater` | Toggle note repeater on/off | `pressureMultiplier` (number), `frequencyMultiplier` (number) |
+| `transpose` | Transpose notes | `semitones` (number) |
+| `set-chord` | Set chord | Chord notation string |
+| `set-strum-notes` | Set specific notes | Array of note strings |
+| `chord-progression` | Cycle through chord progression | Progression name, octave |
+
+**Note:** Transpose and repeater state is managed entirely by the Actions system. The `note_repeater` and `transpose` config sections that may appear in older config files are **ignored** by the CLI/server. Use `action_rules` to configure these features instead.
+
+### Group Rule Format
+
+Used for chord progressions mapped to multiple buttons:
+
+```json
+{
+  "id": "chord-progression-rule",
+  "name": "C Major Pop Progression",
+  "group_id": "chord-buttons",
+  "trigger": "press",
+  "action": {
+    "type": "chord-progression",
+    "progression": "c-major-pop",
+    "octave": 4
+  }
+}
+```
+
+See **[Action Rules](/about/action-rules/)** for complete action documentation.
 
 ---
 
@@ -74,9 +286,29 @@ MIDI backend configuration.
 | `midi_output_backend` | string | "rtmidi" | Backend: "rtmidi" or "jack" |
 | `midi_output_id` | number\|string\|null | null | Output port (index or name) |
 | `midi_input_id` | number\|string\|null | null | Input port (index or name) |
+| `midi_input_exclude` | string[] | [...] | Port name patterns to exclude from input |
 | `jack_client_name` | string | "sketchatone" | JACK client name |
 | `jack_auto_connect` | string\|null | "chain0" | JACK auto-connect target |
 | `note_duration` | number | 1.5 | Default note duration (seconds) |
+| `midiInterMessageDelay` | number | 0 | Delay between MIDI messages (seconds) |
+
+### midiInterMessageDelay
+
+Adds a delay (in seconds) between consecutive MIDI messages to prevent buffer overflow on some hardware synthesizers during rapid strumming.
+
+**When to use:**
+- Set to `0.02` (20ms) if notes stick or sustain indefinitely during busy strumming
+- Particularly useful with direct USB MIDI connections to hardware synths with slow CPUs
+- Works with both RtMidi (ALSA) and JACK backends
+
+**Example:**
+```json
+"midi": {
+  "midiInterMessageDelay": 0.02
+}
+```
+
+**Note:** This adds latency to MIDI output. Only use if experiencing stuck notes.
 
 ---
 
@@ -86,7 +318,10 @@ Server configuration.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
+| `device` | string | "devices" | Device config directory path |
 | `http_port` | number\|null | null | HTTP server port (null = disabled) |
 | `ws_port` | number\|null | null | WebSocket server port (null = disabled) |
 | `ws_message_throttle` | number | 150 | WebSocket throttle interval (ms) |
 | `device_finding_poll_interval` | number\|null | null | Device poll interval (ms) |
+
+**Note:** Setting `http_port` and `ws_port` to `null` disables the web dashboard for minimal resource usage.

@@ -72,18 +72,9 @@ No additional Python packages need to be installed on the target system.
 
 Sketchatone provides a `.deb` package installer for Linux systems, with special support for Zynthian and Raspberry Pi.
 
-### Quick Install (from pre-built package)
+### Production Installation (Recommended)
 
-```bash
-# Download the .deb package (adjust version as needed)
-sudo apt install ./sketchatone-1.0.0-linux-armhf.deb
-```
-
-That's it! The installer automatically configures udev rules and sets up USB-triggered auto-start. Your tablet will work immediately when plugged in.
-
-### Building from Source
-
-If you need to build the installer yourself:
+The `.deb` package installs Sketchatone system-wide with all dependencies. **No virtual environment needed!**
 
 #### On your development machine (Mac/Linux):
 
@@ -96,44 +87,55 @@ cd sketchatone
 npm install
 npm run build
 
-# Create the Pi build package
+# Create the Pi installer package
 ./package-for-pi.sh
 ```
 
-This creates `dist/sketchatone-X.X.X-pi-build.tar.gz` containing everything needed.
+This creates:
+- `dist/sketchatone-X.X.X-deb-pkg.tar.gz` - Package structure
+- `dist/install-sketchatone.sh` - Simple installer script
 
 #### On the Raspberry Pi / Zynthian:
 
 ```bash
-# Copy the package to the Pi
-scp dist/sketchatone-*-pi-build.tar.gz pi@<pi-hostname>:~/
+# Copy files to Pi
+scp dist/sketchatone-*-deb-pkg.tar.gz dist/install-sketchatone.sh pi@<pi-hostname>:~/
 
 # SSH into the Pi
 ssh pi@<pi-hostname>
 
-# Extract and enter directory
-tar xzf sketchatone-*-pi-build.tar.gz
-cd sketchatone-*-pi-build
+# Run the installer (that's it!)
+sudo ./install-sketchatone.sh
+```
 
-# Set up Python environment
-cd python
+The installer will:
+1. Extract the package
+2. Build the `.deb` file
+3. Install to `/opt/sketchatone/`
+4. Install all Python dependencies system-wide
+5. Configure udev rules for USB auto-start
+6. Set up the systemd service
+
+**Your tablet will work immediately when plugged in!**
+
+### Development Installation (Optional)
+
+Only needed if you're developing Sketchatone or need to modify the source code:
+
+```bash
+# Clone the repository on the Pi
+git clone https://github.com/bengfarrell/sketchatone.git
+cd sketchatone/python
+
+# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
+
+# Install in editable mode
 pip install -e .
 
-# Install blankslate (tablet HID library)
-# Clone it first if you haven't: git clone https://github.com/bengfarrell/blankslate.git
-pip install -e /path/to/blankslate/python
-cd ..
-
-# Build the standalone application
-./build-linux.sh
-
-# Create the .deb package
-./create-deb.sh
-
-# Install
-sudo apt install ./dist/sketchatone-*.deb
+# Run manually
+python -m sketchatone.cli.server -c /path/to/config.json
 ```
 
 ### Auto-Start Modes
