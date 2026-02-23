@@ -73,6 +73,7 @@
     "docs": "npx @11ty/eleventy",
     "docs:serve": "npx @11ty/eleventy --serve",
     "docs:watch": "npx @11ty/eleventy --watch",
+    "docs:deploy": "npm run docs && gh-pages -d docs",
     "package:pi": "npm run build && ./package-for-pi.sh",
     "package:macos": "npm run build && ./create-macos-app.sh"
   },
@@ -102,6 +103,7 @@
     "@vitest/ui": "^1.6.0",
     "concurrently": "^9.2.1",
     "eslint": "^8.57.0",
+    "gh-pages": "^6.3.0",
     "happy-dom": "^14.12.3",
     "jsdom": "^24.1.0",
     "prettier": "^3.3.2",
