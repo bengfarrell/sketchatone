@@ -1,0 +1,729 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/configuration-settings/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Configuration">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/configuration-settings/">
+
+    <title>Sketchatone: Configuration</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+    <a href="../dashboard/">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href=".">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Understanding Sketchatone&#39;s configuration files and settings</h2>
+        <h1>Configuration</h1>
+<p>This document describes Sketchatone's configuration system and all available settings.</p>
+<h2>Configuration Methods</h2>
+<p>Sketchatone can be configured via the <strong><a href="/sketchatone/about/dashboard/">Web Dashboard</a></strong> (live, visual interface) or <strong>JSON configuration files</strong> (version-controlled, headless). Changes made in the dashboard apply immediately, while JSON file changes require a restart.</p>
+<hr>
+<h2>Configuration Files</h2>
+<p>Sketchatone uses two types of configuration files:</p>
+<h3>1. Tablet Configuration</h3>
+<p>Defines how to read HID data from your graphics tablet. These files are typically provided in <code>public/configs/</code> and matched automatically based on USB vendor/product IDs.</p>
+<p><strong>Example:</strong> <code>xp-pen-deco-640.json</code></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"XP Pen Deco 640"</span><span class="token punctuation">,</span>
+  <span class="token property">"vendorId"</span><span class="token operator">:</span> <span class="token string">"0x28bd"</span><span class="token punctuation">,</span>
+  <span class="token property">"productId"</span><span class="token operator">:</span> <span class="token string">"0x2904"</span><span class="token punctuation">,</span>
+  <span class="token property">"capabilities"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"hasPressure"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"pressureLevels"</span><span class="token operator">:</span> <span class="token number">16384</span><span class="token punctuation">,</span>
+    <span class="token property">"hasTilt"</span><span class="token operator">:</span> <span class="token boolean">true</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"byteCodeMappings"</span><span class="token operator">:</span> <span class="token punctuation">{</span> ... <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>2. Strummer Configuration</h3>
+<p>Defines musical settings, parameter mappings, and MIDI backend options.</p>
+<p><strong>Example:</strong> <code>strummer-config.json</code></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"strumming"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"chord"</span><span class="token operator">:</span> <span class="token string">"Am"</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_channel"</span><span class="token operator">:</span> <span class="token number">0</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"note_velocity"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"control"</span><span class="token operator">:</span> <span class="token string">"pressure"</span><span class="token punctuation">,</span>
+    <span class="token property">"min"</span><span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span>
+    <span class="token property">"max"</span><span class="token operator">:</span> <span class="token number">127</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"rtmidi"</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token number">2</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Configuration Presets</h2>
+<p>You can create multiple JSON configuration files for different use cases and switch between them:</p>
+<h3>Use Cases for Multiple Configurations</h3>
+<p><strong>Song-Specific Settings:</strong></p>
+<pre><code>configs/
+  ballad.json       # Slow, expressive, wide pitch bend
+  rock.json         # Fast, aggressive, minimal bend
+  jazz.json         # Complex chords, note repeater
+  drums.json        # Strum release for percussive hits
+</code></pre>
+<p><strong>Instrument-Specific Settings:</strong></p>
+<pre><code>configs/
+  piano.json        # Velocity-sensitive, no pitch bend
+  strings.json      # Pitch bend on Y-axis, legato
+  synth-lead.json   # Aggressive bend, short notes
+</code></pre>
+<h3>Switching Configurations</h3>
+<p><strong>Via Dashboard:</strong></p>
+<ol>
+<li>Click &quot;Load Configuration&quot;</li>
+<li>Select JSON file</li>
+<li>Settings apply immediately</li>
+</ol>
+<p><strong>Via Command Line:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Node.js</span>
+<span class="token function">npm</span> run server -- <span class="token parameter variable">-s</span> configs/ballad.json
+
+<span class="token comment"># Python</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.server <span class="token parameter variable">-s</span> configs/ballad.json</code></pre>
+<p><strong>Via File System (Raspberry Pi):</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Copy preset to active config location</span>
+<span class="token function">cp</span> /opt/sketchatone/configs/presets/rock.json /opt/sketchatone/configs/config.json
+<span class="token function">sudo</span> systemctl restart sketchatone</code></pre>
+<h3>Creating Presets</h3>
+<ol>
+<li><strong>Configure in dashboard</strong> - Adjust all settings visually</li>
+<li><strong>Export configuration</strong> - Click &quot;Export Configuration&quot; button</li>
+<li><strong>Save with descriptive name</strong> - e.g., <code>my-song-verse.json</code></li>
+<li><strong>Version control</strong> - Commit to git for tracking changes</li>
+</ol>
+<hr>
+<h2>Configuration Sections</h2>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>strumming</code></td>
+<td>Core strummer settings (chord, notes, channel)</td>
+</tr>
+<tr>
+<td><code>note_velocity</code></td>
+<td>Velocity parameter mapping</td>
+</tr>
+<tr>
+<td><code>note_duration</code></td>
+<td>Duration parameter mapping</td>
+</tr>
+<tr>
+<td><code>pitch_bend</code></td>
+<td>Pitch bend parameter mapping</td>
+</tr>
+<tr>
+<td><code>strum_release</code></td>
+<td>Release trigger settings (drum sounds on pen lift)</td>
+</tr>
+<tr>
+<td><code>action_rules</code></td>
+<td>Button-to-action mappings (stylus &amp; tablet buttons)</td>
+</tr>
+<tr>
+<td><code>midi</code></td>
+<td>MIDI backend settings</td>
+</tr>
+<tr>
+<td><code>server</code></td>
+<td>Server settings</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h1>Configuration Settings Reference</h1>
+<h2>Parameter Mappings</h2>
+<p>Parameter mappings control how tablet inputs (pressure, tilt, position) map to musical parameters.</p>
+<h3>Common Structure</h3>
+<p>All parameter mappings (<code>note_duration</code>, <code>pitch_bend</code>, <code>note_velocity</code>) share this structure:</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>min</code></td>
+<td>number</td>
+<td>0.0</td>
+<td>Minimum output value</td>
+</tr>
+<tr>
+<td><code>max</code></td>
+<td>number</td>
+<td>1.0</td>
+<td>Maximum output value</td>
+</tr>
+<tr>
+<td><code>multiplier</code></td>
+<td>number</td>
+<td>1.0</td>
+<td>Scale factor applied to output</td>
+</tr>
+<tr>
+<td><code>curve</code></td>
+<td>number</td>
+<td>1.0</td>
+<td>Response curve (1.0=linear, &gt;1=exponential)</td>
+</tr>
+<tr>
+<td><code>spread</code></td>
+<td>string</td>
+<td>&quot;direct&quot;</td>
+<td>How input maps to output range</td>
+</tr>
+<tr>
+<td><code>control</code></td>
+<td>string</td>
+<td>&quot;none&quot;</td>
+<td>Input source</td>
+</tr>
+<tr>
+<td><code>default</code></td>
+<td>number</td>
+<td>0.5</td>
+<td>Value when control is &quot;none&quot;</td>
+</tr>
+</tbody>
+</table>
+<h3>Control Sources</h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&quot;pressure&quot;</code></td>
+<td>Pen pressure (0-1)</td>
+</tr>
+<tr>
+<td><code>&quot;tiltX&quot;</code></td>
+<td>Pen tilt X axis</td>
+</tr>
+<tr>
+<td><code>&quot;tiltY&quot;</code></td>
+<td>Pen tilt Y axis</td>
+</tr>
+<tr>
+<td><code>&quot;tiltXY&quot;</code></td>
+<td>Combined tilt magnitude</td>
+</tr>
+<tr>
+<td><code>&quot;xaxis&quot;</code></td>
+<td>X position (normalized 0-1)</td>
+</tr>
+<tr>
+<td><code>&quot;yaxis&quot;</code></td>
+<td>Y position (normalized 0-1)</td>
+</tr>
+<tr>
+<td><code>&quot;velocity&quot;</code></td>
+<td>Movement velocity</td>
+</tr>
+<tr>
+<td><code>&quot;none&quot;</code></td>
+<td>No control (use default value)</td>
+</tr>
+</tbody>
+</table>
+<h3>Spread Types</h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&quot;direct&quot;</code></td>
+<td>Linear: 0→min, 1→max</td>
+</tr>
+<tr>
+<td><code>&quot;inverse&quot;</code></td>
+<td>Inverse: 0→max, 1→min</td>
+</tr>
+<tr>
+<td><code>&quot;central&quot;</code></td>
+<td>Central: 0.5→center, edges→min/max</td>
+</tr>
+<tr>
+<td><code>&quot;none&quot;</code></td>
+<td>No spread, use default</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>strumming</h2>
+<p>Core strumming configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pluck_velocity_scale</code></td>
+<td>number</td>
+<td>4.0</td>
+<td>Scale factor for pluck velocity</td>
+</tr>
+<tr>
+<td><code>pressure_threshold</code></td>
+<td>number</td>
+<td>0.1</td>
+<td>Minimum pressure to trigger strum</td>
+</tr>
+<tr>
+<td><code>midi_channel</code></td>
+<td>number|null</td>
+<td>null</td>
+<td>MIDI channel (0-15), null for omni</td>
+</tr>
+<tr>
+<td><code>initial_notes</code></td>
+<td>string[]</td>
+<td>[&quot;C4&quot;,&quot;E4&quot;,&quot;G4&quot;]</td>
+<td>List of note strings</td>
+</tr>
+<tr>
+<td><code>chord</code></td>
+<td>string|null</td>
+<td>null</td>
+<td>Chord notation (e.g., &quot;Am&quot;, &quot;Gmaj7&quot;)</td>
+</tr>
+<tr>
+<td><code>upper_note_spread</code></td>
+<td>number</td>
+<td>3</td>
+<td>Notes to add above chord</td>
+</tr>
+<tr>
+<td><code>lower_note_spread</code></td>
+<td>number</td>
+<td>3</td>
+<td>Notes to add below chord</td>
+</tr>
+<tr>
+<td><code>invert_x</code></td>
+<td>boolean</td>
+<td>false</td>
+<td>Invert X axis for left-handed use</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>strum_release</h2>
+<p>Strum release feature - triggers a MIDI note when pen is lifted.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>active</code></td>
+<td>boolean</td>
+<td>false</td>
+<td>Whether strum release is enabled</td>
+</tr>
+<tr>
+<td><code>midi_note</code></td>
+<td>number</td>
+<td>38</td>
+<td>MIDI note to send on release (38 = snare)</td>
+</tr>
+<tr>
+<td><code>midi_channel</code></td>
+<td>number|null</td>
+<td>null</td>
+<td>MIDI channel (null = same as strumming)</td>
+</tr>
+<tr>
+<td><code>max_duration</code></td>
+<td>number</td>
+<td>0.25</td>
+<td>Maximum duration of release note (seconds)</td>
+</tr>
+<tr>
+<td><code>velocity_multiplier</code></td>
+<td>number</td>
+<td>1.0</td>
+<td>Scale factor for release velocity</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Use case:</strong> Trigger drum sounds (e.g., snare) when lifting the pen after a strum.</p>
+<hr>
+<h2>action_rules</h2>
+<p>Button-to-action mapping configuration. Maps tablet buttons and stylus buttons to actions.</p>
+<h3>Structure</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>button_names</code></td>
+<td>object</td>
+<td>Human-readable names for buttons</td>
+</tr>
+<tr>
+<td><code>rules</code></td>
+<td>array</td>
+<td>Individual button-to-action mappings</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>array</td>
+<td>Button groups (collections of buttons)</td>
+</tr>
+<tr>
+<td><code>group_rules</code></td>
+<td>array</td>
+<td>Actions assigned to button groups</td>
+</tr>
+<tr>
+<td><code>startup_rules</code></td>
+<td>array</td>
+<td>Actions that execute on startup</td>
+</tr>
+</tbody>
+</table>
+<h3>Button IDs</h3>
+<table>
+<thead>
+<tr>
+<th>Button ID</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>button:primary</code></td>
+<td>Primary stylus button</td>
+</tr>
+<tr>
+<td><code>button:secondary</code></td>
+<td>Secondary stylus button</td>
+</tr>
+<tr>
+<td><code>button:1</code> through <code>button:N</code></td>
+<td>Tablet hardware buttons</td>
+</tr>
+</tbody>
+</table>
+<h3>Action Rule Format</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"unique-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Human Readable Name"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Available Actions</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Description</th>
+<th>Parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>toggle-transpose</code></td>
+<td>Toggle transpose on/off</td>
+<td><code>semitones</code> (number, default: 12)</td>
+</tr>
+<tr>
+<td><code>toggle-repeater</code></td>
+<td>Toggle note repeater on/off</td>
+<td><code>pressureMultiplier</code> (number), <code>frequencyMultiplier</code> (number)</td>
+</tr>
+<tr>
+<td><code>transpose</code></td>
+<td>Transpose notes</td>
+<td><code>semitones</code> (number)</td>
+</tr>
+<tr>
+<td><code>set-chord</code></td>
+<td>Set chord</td>
+<td>Chord notation string</td>
+</tr>
+<tr>
+<td><code>set-strum-notes</code></td>
+<td>Set specific notes</td>
+<td>Array of note strings</td>
+</tr>
+<tr>
+<td><code>chord-progression</code></td>
+<td>Cycle through chord progression</td>
+<td>Progression name, octave</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> Transpose and repeater state is managed entirely by the Actions system. The <code>note_repeater</code> and <code>transpose</code> config sections that may appear in older config files are <strong>ignored</strong> by the CLI/server. Use <code>action_rules</code> to configure these features instead.</p>
+<h3>Group Rule Format</h3>
+<p>Used for chord progressions mapped to multiple buttons:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-progression-rule"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"C Major Pop Progression"</span><span class="token punctuation">,</span>
+  <span class="token property">"group_id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"chord-progression"</span><span class="token punctuation">,</span>
+    <span class="token property">"progression"</span><span class="token operator">:</span> <span class="token string">"c-major-pop"</span><span class="token punctuation">,</span>
+    <span class="token property">"octave"</span><span class="token operator">:</span> <span class="token number">4</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>See <strong><a href="/sketchatone/about/action-rules/">Action Rules</a></strong> for complete action documentation.</p>
+<hr>
+<h2>midi</h2>
+<p>MIDI backend configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>midi_output_backend</code></td>
+<td>string</td>
+<td>&quot;rtmidi&quot;</td>
+<td>Backend: &quot;rtmidi&quot; or &quot;jack&quot;</td>
+</tr>
+<tr>
+<td><code>midi_output_id</code></td>
+<td>number|string|null</td>
+<td>null</td>
+<td>Output port (index or name)</td>
+</tr>
+<tr>
+<td><code>midi_input_id</code></td>
+<td>number|string|null</td>
+<td>null</td>
+<td>Input port (index or name)</td>
+</tr>
+<tr>
+<td><code>midi_input_exclude</code></td>
+<td>string[]</td>
+<td>[...]</td>
+<td>Port name patterns to exclude from input</td>
+</tr>
+<tr>
+<td><code>jack_client_name</code></td>
+<td>string</td>
+<td>&quot;sketchatone&quot;</td>
+<td>JACK client name</td>
+</tr>
+<tr>
+<td><code>jack_auto_connect</code></td>
+<td>string|null</td>
+<td>&quot;chain0&quot;</td>
+<td>JACK auto-connect target</td>
+</tr>
+<tr>
+<td><code>note_duration</code></td>
+<td>number</td>
+<td>1.5</td>
+<td>Default note duration (seconds)</td>
+</tr>
+<tr>
+<td><code>midiInterMessageDelay</code></td>
+<td>number</td>
+<td>0</td>
+<td>Delay between MIDI messages (seconds)</td>
+</tr>
+</tbody>
+</table>
+<h3>midiInterMessageDelay</h3>
+<p>Adds a delay (in seconds) between consecutive MIDI messages to prevent buffer overflow on some hardware synthesizers during rapid strumming.</p>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>Set to <code>0.02</code> (20ms) if notes stick or sustain indefinitely during busy strumming</li>
+<li>Particularly useful with direct USB MIDI connections to hardware synths with slow CPUs</li>
+<li>Works with both RtMidi (ALSA) and JACK backends</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+  <span class="token property">"midiInterMessageDelay"</span><span class="token operator">:</span> <span class="token number">0.02</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Note:</strong> This adds latency to MIDI output. Only use if experiencing stuck notes.</p>
+<hr>
+<h2>server</h2>
+<p>Server configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>device</code></td>
+<td>string</td>
+<td>&quot;devices&quot;</td>
+<td>Device config directory path</td>
+</tr>
+<tr>
+<td><code>http_port</code></td>
+<td>number|null</td>
+<td>null</td>
+<td>HTTP server port (null = disabled)</td>
+</tr>
+<tr>
+<td><code>ws_port</code></td>
+<td>number|null</td>
+<td>null</td>
+<td>WebSocket server port (null = disabled)</td>
+</tr>
+<tr>
+<td><code>ws_message_throttle</code></td>
+<td>number</td>
+<td>150</td>
+<td>WebSocket throttle interval (ms)</td>
+</tr>
+<tr>
+<td><code>device_finding_poll_interval</code></td>
+<td>number|null</td>
+<td>null</td>
+<td>Device poll interval (ms)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> Setting <code>http_port</code> and <code>ws_port</code> to <code>null</code> disables the web dashboard for minimal resource usage.</p>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

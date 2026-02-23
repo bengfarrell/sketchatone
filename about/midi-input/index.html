@@ -1,0 +1,223 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/midi-input/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: MIDI Input">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/midi-input/">
+
+    <title>Sketchatone: MIDI Input</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+
+    <h4>Running the Application</h4>
+    
+        <a href="../running-overview/">Overview</a>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-overview/">Overview</a>
+    
+        <a href="../configuration-settings/">Settings File</a>
+    
+
+    <h4>Features</h4>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../note-repeater/">Note Repeater</a>
+    
+        <a href="../transpose/">Transpose</a>
+    
+        <a href="../stylus-buttons/">Stylus Buttons</a>
+    
+        <a href="../tablet-buttons/">Tablet Buttons</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../actions-reference/">Actions Reference</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+
+        <a href=".">MIDI Input</a>
+
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Using external MIDI keyboards to set chord notes in Sketchatone</h2>
+        <h1>MIDI Input</h1>
+<p>Sketchatone can receive MIDI input from external keyboards or controllers to dynamically set the notes you strum. This allows you to play chords on a keyboard while strumming them on your tablet.</p>
+
+<h2>How It Works</h2>
+<p>When MIDI input is enabled:</p>
+<ul>
+<li>✅ Hold notes on your MIDI keyboard to set the strum notes</li>
+<li>✅ Strum on your tablet to play those notes</li>
+<li>✅ Change chords by pressing different keys</li>
+<li>✅ The last held chord persists when you release all keys</li>
+</ul>
+
+<h2>Automatic Connection</h2>
+<p>Sketchatone automatically connects to all available MIDI input sources, except those that could cause feedback loops. This "connect all" approach means you don't need to manually select which MIDI device to use - just plug in your keyboard and start playing.</p>
+
+<p>The web dashboard shows the connection status and displays which device sent the most recent MIDI notes.</p>
+
+<h2>Feedback Loop Prevention</h2>
+<p>To prevent MIDI feedback loops (where Sketchatone's output gets routed back to its input), certain ports are automatically excluded from auto-connection. This is controlled by the <code>midi_input_exclude</code> configuration option.</p>
+
+<h3>Default Exclusion List</h3>
+<p>The following port name patterns are excluded by default:</p>
+
+<table>
+<thead>
+<tr><th>Pattern</th><th>Reason</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sketchatone</code></td><td>Our own output port</td></tr>
+<tr><td><code>Midi Through</code></td><td>ALSA Midi Through (loopback)</td></tr>
+</tbody>
+</table>
+
+<h3>Zynthian-Specific Exclusions</h3>
+<p>On Zynthian, additional patterns should be excluded to prevent feedback through the internal MIDI routing:</p>
+
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_input_exclude"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token string">"sketchatone"</span><span class="token punctuation">,</span>
+      <span class="token string">"Midi Through"</span><span class="token punctuation">,</span>
+      <span class="token string">"ZynMidiRouter"</span><span class="token punctuation">,</span>
+      <span class="token string">"zynseq"</span><span class="token punctuation">,</span>
+      <span class="token string">"zynsmf"</span><span class="token punctuation">,</span>
+      <span class="token string">"ttymidi"</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+
+<h3>How Exclusion Works</h3>
+<p>Port names are matched case-insensitively as substrings. For example, the pattern <code>"sketchatone"</code> will exclude any port containing "sketchatone" in its name, such as <code>sketchatone:midi_out</code> or <code>Sketchatone Output</code>.</p>
+
+<h2>Backend Differences</h2>
+
+<h3>Python/JACK (Zynthian)</h3>
+<p>On Zynthian and other JACK-based systems, Sketchatone uses JACK MIDI for both input and output. It automatically connects to all JACK MIDI output ports (which are input sources for Sketchatone), except those matching the exclusion patterns.</p>
+
+<h3>Node.js/RtMidi (macOS, Windows, Linux)</h3>
+<p>On other platforms, Sketchatone uses RtMidi which connects directly to all available MIDI input ports, except those matching the exclusion patterns.</p>
+
+<h2>Virtual Port Mode</h2>
+<p>Both backends support a "register only" mode where Sketchatone creates a virtual MIDI input port without auto-connecting to any sources. This is useful when:</p>
+<ul>
+<li>You want to configure MIDI routing externally (e.g., via Zynthian's MIDI routing UI)</li>
+<li>You have a complex MIDI setup that requires manual routing</li>
+</ul>
+
+<h2>Troubleshooting</h2>
+
+<h3>No MIDI Input Detected</h3>
+<ol>
+<li>Check that your MIDI device is connected and powered on</li>
+<li>Verify the device appears in your system's MIDI settings</li>
+<li>Check the server logs for "Connecting to all ports" messages</li>
+</ol>
+
+<h3>Feedback Loop (Notes Playing Continuously)</h3>
+<ol>
+<li>Add the problematic port pattern to <code>midi_input_exclude</code> in your config</li>
+<li>On Zynthian, make sure <code>ZynMidiRouter</code> is in the exclusion list</li>
+<li>Restart the service after changing the config</li>
+</ol>
+
+<h3>Specific Device Not Working</h3>
+<ol>
+<li>Check if the device name matches any exclusion pattern</li>
+<li>Remove or modify the exclusion pattern if needed</li>
+<li>Check server logs to see which ports are being connected/excluded</li>
+</ol>
+
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/strumming/">Strumming</a></strong> - Configure strum behavior</li>
+<li><strong><a href="/sketchatone/about/jack-midi/">JACK MIDI</a></strong> - JACK MIDI output configuration</li>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Settings File</a></strong> - Full configuration reference</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>

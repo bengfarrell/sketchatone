@@ -1,0 +1,44 @@
+/.idea
+/node_modules
+/dist
+/coverage
+/docs
+
+# Build artifacts from TypeScript compilation
+/*.js
+/*.js.map
+/*.d.ts
+/*.d.ts.map
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
+*.tsbuildinfo
+
+# Test artifacts
+/test-results
+/playwright-report
+/.playwright
+
+# Environment
+.env
+.env.local
+
+# Keep build outputs from dependencies
+!vite.config.js
+!playwright.config.js
+
+# Python
+python/venv/
+python/__pycache__/
+python/**/__pycache__/
+python/*.pyc
+python/**/*.pyc
+python/.pytest_cache/
+python/htmlcov/
+python/.coverage
+python/dist/
+python/build/
+python/*.egg-info/
+python/.mypy_cache/
+python/.ruff_cache/

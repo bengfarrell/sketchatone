@@ -1,0 +1,269 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/transpose/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Transpose">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/transpose/">
+
+    <title>Sketchatone: Transpose</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+
+    <h4>Running the Application</h4>
+    
+        <a href="../running-overview/">Overview</a>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-overview/">Overview</a>
+    
+        <a href="../configuration-settings/">Settings File</a>
+    
+
+    <h4>Features</h4>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../note-repeater/">Note Repeater</a>
+    
+        <a href=".">Transpose</a>
+    
+        <a href="../stylus-buttons/">Stylus Buttons</a>
+    
+        <a href="../tablet-buttons/">Tablet Buttons</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../actions-reference/">Actions Reference</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Shift all notes up or down by semitones</h2>
+        <h1>Transpose</h1>
+<p>Transpose shifts all notes up or down by a specified number of semitones. This feature is controlled via button actions, not configuration.</p>
+<h2>How It Works</h2>
+<p>Transpose is a <strong>runtime feature</strong> managed by the Actions system:</p>
+<ul>
+<li>Toggle on/off using button actions</li>
+<li>When active, all notes are shifted by the specified number of semitones</li>
+<li>State is maintained internally by the Actions class</li>
+<li>Does not require configuration sections</li>
+</ul>
+<h2>Configuring Transpose Actions</h2>
+<p>Map transpose actions to buttons using <code>action_rules</code>:</p>
+<h3>Toggle Transpose (On/Off)</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Parameters:</strong></p>
+<ul>
+<li>First parameter: semitones to transpose (default: 12)</li>
+</ul>
+<h3>Common Transpose Values</h3>
+<table>
+<thead>
+<tr>
+<th>Semitones</th>
+<th>Interval</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>12</td>
+<td>Octave up</td>
+<td>Most common use case</td>
+</tr>
+<tr>
+<td>-12</td>
+<td>Octave down</td>
+<td>Lower register</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Perfect fifth up</td>
+<td>Harmonic shift</td>
+</tr>
+<tr>
+<td>-7</td>
+<td>Perfect fifth down</td>
+<td>Harmonic shift</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Perfect fourth up</td>
+<td>Harmonic shift</td>
+</tr>
+<tr>
+<td>-5</td>
+<td>Perfect fourth down</td>
+<td>Harmonic shift</td>
+</tr>
+</tbody>
+</table>
+<h3>Example: Multiple Transpose Buttons</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"octave-up"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Octave Up"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:1"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"octave-down"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Octave Down"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">-12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"fifth-up"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Fifth Up"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:3"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">7</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Direct Transpose Action</h2>
+<p>Use the <code>transpose</code> action to set a specific transpose value without toggling:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"set-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Set Transpose to +12"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>Startup Rules</h2>
+<p>Set transpose to be active on startup:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"startup_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"startup-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Enable Transpose on Startup"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/configuration-settings/#action_rules">Action Rules</a></strong> - Button-to-action mapping</li>
+<li><strong><a href="/sketchatone/about/actions-reference/">Actions Reference</a></strong> - All available actions</li>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Configuration Settings</a></strong> - Complete config reference</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

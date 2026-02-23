@@ -1,0 +1,551 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/action-rules/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Action Rules">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/action-rules/">
+
+    <title>Sketchatone: Action Rules</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+    <a href="../dashboard/">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-settings/">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href=".">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Map tablet and stylus buttons to actions</h2>
+        <h1>Action Rules</h1>
+<p>The Action Rules system is Sketchatone's unified button-to-action mapping system. It allows you to map stylus buttons, tablet hardware buttons, and even startup behaviors to various musical actions like transpose, note repeater, chord changes, and more.</p>
+<h2>Overview</h2>
+<p>Action Rules replace the older <code>stylus_buttons</code> and <code>tablet_buttons</code> configuration systems with a more flexible and powerful approach:</p>
+<ul>
+<li><strong>Unified System</strong>: One configuration format for all buttons</li>
+<li><strong>Flexible Mapping</strong>: Map any button to any action</li>
+<li><strong>Button Groups</strong>: Create groups of buttons for chord progressions</li>
+<li><strong>Startup Rules</strong>: Execute actions automatically on startup</li>
+<li><strong>Custom Names</strong>: Give buttons human-readable names</li>
+<li><strong>Multiple Triggers</strong>: Press, release, or hold triggers</li>
+</ul>
+<h2>Configuration Structure</h2>
+<p>The <code>action_rules</code> section has five main parts:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"button_names"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token comment">/* Human-readable button names */</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span> <span class="token comment">/* Individual button-to-action mappings */</span> <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"groups"</span><span class="token operator">:</span> <span class="token punctuation">[</span> <span class="token comment">/* Button groups (collections) */</span> <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"group_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span> <span class="token comment">/* Actions for button groups */</span> <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"startup_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span> <span class="token comment">/* Actions that run on startup */</span> <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h2>Button IDs</h2>
+<p>Buttons are identified by standardized IDs:</p>
+<table>
+<thead>
+<tr>
+<th>Button ID</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>button:primary</code></td>
+<td>Primary stylus button (barrel button 1)</td>
+</tr>
+<tr>
+<td><code>button:secondary</code></td>
+<td>Secondary stylus button (barrel button 2)</td>
+</tr>
+<tr>
+<td><code>button:1</code></td>
+<td>First tablet hardware button</td>
+</tr>
+<tr>
+<td><code>button:2</code></td>
+<td>Second tablet hardware button</td>
+</tr>
+<tr>
+<td><code>button:3</code></td>
+<td>Third tablet hardware button</td>
+</tr>
+<tr>
+<td><code>button:N</code></td>
+<td>Nth tablet hardware button</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>Button Names</h2>
+<p>Give buttons human-readable names for better organization:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"button_names"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"button:primary"</span><span class="token operator">:</span> <span class="token string">"Primary Stylus"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:secondary"</span><span class="token operator">:</span> <span class="token string">"Secondary Stylus"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:1"</span><span class="token operator">:</span> <span class="token string">"Button 1"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:2"</span><span class="token operator">:</span> <span class="token string">"Button 2"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:3"</span><span class="token operator">:</span> <span class="token string">"Button 3"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:4"</span><span class="token operator">:</span> <span class="token string">"Button 4"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h2>Action Rules</h2>
+<p>Individual button-to-action mappings.</p>
+<h3>Rule Format</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"unique-rule-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Human Readable Name"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token string">"action-name"</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Unique identifier for this rule</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>No</td>
+<td>Human-readable name</td>
+</tr>
+<tr>
+<td><code>button</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Button ID (e.g., <code>button:primary</code>)</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>string or array</td>
+<td>Yes</td>
+<td>Action to execute</td>
+</tr>
+<tr>
+<td><code>trigger</code></td>
+<td>string</td>
+<td>No</td>
+<td>When to trigger: <code>press</code>, <code>release</code>, <code>hold</code> (default: <code>release</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3>Trigger Types</h3>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>press</code></td>
+<td>Action fires when button is pressed down</td>
+</tr>
+<tr>
+<td><code>release</code></td>
+<td>Action fires when button is released (default)</td>
+</tr>
+<tr>
+<td><code>hold</code></td>
+<td>Action fires continuously while button is held</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>Available Actions</h2>
+<h3>Toggle Transpose</h3>
+<p>Toggle transpose on/off. When active, all notes are shifted by the specified number of semitones.</p>
+<p><strong>Action:</strong> <code>toggle-transpose</code></p>
+<p><strong>Parameters:</strong> <code>[semitones]</code></p>
+<ul>
+<li><code>semitones</code> (number, default: 12) - Number of semitones to transpose</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"toggle-transpose-octave"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Transpose (Octave Up)"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Common Values:</strong></p>
+<ul>
+<li><code>12</code> - Octave up</li>
+<li><code>-12</code> - Octave down</li>
+<li><code>7</code> - Perfect fifth up</li>
+<li><code>-7</code> - Perfect fifth down</li>
+<li><code>5</code> - Perfect fourth up</li>
+</ul>
+<hr>
+<h3>Toggle Repeater</h3>
+<p>Toggle note repeater on/off. When active, notes are automatically re-triggered while the pen is pressed, creating tremolo effects.</p>
+<p><strong>Action:</strong> <code>toggle-repeater</code></p>
+<p><strong>Parameters:</strong> <code>[pressureMultiplier, frequencyMultiplier]</code></p>
+<ul>
+<li><code>pressureMultiplier</code> (number, default: 1.0) - How much pressure affects repeat speed</li>
+<li><code>frequencyMultiplier</code> (number, default: 1.0) - Base repeat frequency</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"toggle-repeater"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Note Repeater"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:secondary"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-repeater"</span><span class="token punctuation">,</span> <span class="token number">2.0</span><span class="token punctuation">,</span> <span class="token number">1.5</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Parameter Guide:</strong></p>
+<ul>
+<li><strong>Pressure Multiplier:</strong>
+<ul>
+<li><code>0.5</code> - Gentle, less pressure-sensitive</li>
+<li><code>1.0</code> - Default, moderate response</li>
+<li><code>2.0</code> - Aggressive, very pressure-sensitive</li>
+</ul>
+</li>
+<li><strong>Frequency Multiplier:</strong>
+<ul>
+<li><code>0.5</code> - Slow tremolo</li>
+<li><code>1.0</code> - Default speed</li>
+<li><code>1.5</code> - Fast strumming</li>
+<li><code>2.0</code> - Very fast repetition</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3>Transpose</h3>
+<p>Set a specific transpose value (doesn't toggle).</p>
+<p><strong>Action:</strong> <code>transpose</code></p>
+<p><strong>Parameters:</strong> <code>[semitones]</code></p>
+<ul>
+<li><code>semitones</code> (number) - Number of semitones to transpose</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"transpose-octave-up"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Transpose Octave Up"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:1"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h3>Set Chord</h3>
+<p>Set the strummer to play a specific chord.</p>
+<p><strong>Action:</strong> <code>set-chord</code></p>
+<p><strong>Parameters:</strong> <code>[chordNotation, octave]</code></p>
+<ul>
+<li><code>chordNotation</code> (string) - Chord notation (e.g., &quot;Cmaj7&quot;, &quot;Am&quot;, &quot;G7&quot;)</li>
+<li><code>octave</code> (number, optional) - Base octave (default: 4)</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"set-chord-cmaj"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Set Chord to C Major"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:1"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"set-chord"</span><span class="token punctuation">,</span> <span class="token string">"C"</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h3>Set Strum Notes</h3>
+<p>Set specific notes for the strummer (not based on a chord).</p>
+<p><strong>Action:</strong> <code>set-strum-notes</code></p>
+<p><strong>Parameters:</strong> <code>[noteArray]</code></p>
+<ul>
+<li><code>noteArray</code> (array of strings) - Note names (e.g., [&quot;C4&quot;, &quot;E4&quot;, &quot;G4&quot;])</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"set-custom-notes"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Set Custom Notes"</span><span class="token punctuation">,</span>
+  <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"set-strum-notes"</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string">"C4"</span><span class="token punctuation">,</span> <span class="token string">"E4"</span><span class="token punctuation">,</span> <span class="token string">"G4"</span><span class="token punctuation">,</span> <span class="token string">"B4"</span><span class="token punctuation">]</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h2>Button Groups</h2>
+<p>Button groups allow you to assign multiple buttons to work together, typically for chord progressions.</p>
+<h3>Group Format</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"group-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Group Name"</span><span class="token punctuation">,</span>
+  <span class="token property">"buttons"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"button:1"</span><span class="token punctuation">,</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span> <span class="token string">"button:3"</span><span class="token punctuation">,</span> <span class="token string">"button:4"</span><span class="token punctuation">]</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Example</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"groups"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Chord Buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"buttons"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"button:1"</span><span class="token punctuation">,</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span> <span class="token string">"button:3"</span><span class="token punctuation">,</span> <span class="token string">"button:4"</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h2>Group Rules</h2>
+<p>Group rules assign actions to button groups, typically for chord progressions.</p>
+<h3>Group Rule Format</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"rule-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Rule Name"</span><span class="token punctuation">,</span>
+  <span class="token property">"group_id"</span><span class="token operator">:</span> <span class="token string">"group-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"chord-progression"</span><span class="token punctuation">,</span>
+    <span class="token property">"progression"</span><span class="token operator">:</span> <span class="token string">"c-major-pop"</span><span class="token punctuation">,</span>
+    <span class="token property">"octave"</span><span class="token operator">:</span> <span class="token number">4</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Chord Progression Action</h3>
+<p><strong>Action Type:</strong> <code>chord-progression</code></p>
+<p><strong>Properties:</strong></p>
+<ul>
+<li><code>progression</code> (string) - Progression name (see <strong><a href="/sketchatone/about/chords-and-progressions/">Chords &amp; Progressions</a></strong> for full list)</li>
+<li><code>octave</code> (number, default: 4) - Base octave</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"groups"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Chord Buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"buttons"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"button:1"</span><span class="token punctuation">,</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span> <span class="token string">"button:3"</span><span class="token punctuation">,</span> <span class="token string">"button:4"</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"group_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-progression-rule"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"C Major Pop Progression"</span><span class="token punctuation">,</span>
+        <span class="token property">"group_id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+          <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"chord-progression"</span><span class="token punctuation">,</span>
+          <span class="token property">"progression"</span><span class="token operator">:</span> <span class="token string">"c-major-pop"</span><span class="token punctuation">,</span>
+          <span class="token property">"octave"</span><span class="token operator">:</span> <span class="token number">4</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>This maps:</p>
+<ul>
+<li>Button 1 → C major</li>
+<li>Button 2 → G major</li>
+<li>Button 3 → A minor</li>
+<li>Button 4 → F major</li>
+</ul>
+<hr>
+<h2>Startup Rules</h2>
+<p>Startup rules execute actions automatically when Sketchatone starts.</p>
+<h3>Startup Rule Format</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"rule-id"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Rule Name"</span><span class="token punctuation">,</span>
+  <span class="token property">"action"</span><span class="token operator">:</span> <span class="token string">"action-definition"</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Example: Enable Transpose on Startup</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"startup_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"startup-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Enable Transpose on Startup"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<h3>Example: Set Initial Chord</h3>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"startup_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"startup-chord"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Set Initial Chord to Am"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"set-chord"</span><span class="token punctuation">,</span> <span class="token string">"Am"</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<hr>
+<h2>Complete Example</h2>
+<p>Here's a complete action rules configuration:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"button_names"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"button:primary"</span><span class="token operator">:</span> <span class="token string">"Primary Stylus"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:secondary"</span><span class="token operator">:</span> <span class="token string">"Secondary Stylus"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:1"</span><span class="token operator">:</span> <span class="token string">"C Major"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:2"</span><span class="token operator">:</span> <span class="token string">"G Major"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:3"</span><span class="token operator">:</span> <span class="token string">"A Minor"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:4"</span><span class="token operator">:</span> <span class="token string">"F Major"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"stylus-primary-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Transpose (Octave Up)"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"stylus-secondary-repeater"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Note Repeater"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:secondary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-repeater"</span><span class="token punctuation">,</span> <span class="token number">2.0</span><span class="token punctuation">,</span> <span class="token number">1.5</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"groups"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Chord Buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"buttons"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"button:1"</span><span class="token punctuation">,</span> <span class="token string">"button:2"</span><span class="token punctuation">,</span> <span class="token string">"button:3"</span><span class="token punctuation">,</span> <span class="token string">"button:4"</span><span class="token punctuation">]</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"group_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"chord-progression-rule"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"C Major Pop Progression"</span><span class="token punctuation">,</span>
+        <span class="token property">"group_id"</span><span class="token operator">:</span> <span class="token string">"chord-buttons"</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+          <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"chord-progression"</span><span class="token punctuation">,</span>
+          <span class="token property">"progression"</span><span class="token operator">:</span> <span class="token string">"c-major-pop"</span><span class="token punctuation">,</span>
+          <span class="token property">"octave"</span><span class="token operator">:</span> <span class="token number">4</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"startup_rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>This configuration:</p>
+<ul>
+<li>Maps primary stylus button to toggle transpose (octave up)</li>
+<li>Maps secondary stylus button to toggle note repeater</li>
+<li>Maps tablet buttons 1-4 to C major pop progression (C, G, Am, F)</li>
+</ul>
+<hr>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/configuration-settings/#action_rules">Configuration Settings</a></strong> - Complete config reference</li>
+<li><strong><a href="/sketchatone/about/chords-and-progressions/">Chords &amp; Progressions</a></strong> - Chord notation reference</li>
+<li><strong><a href="/sketchatone/about/strumming/">Strumming</a></strong> - Strummer configuration</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

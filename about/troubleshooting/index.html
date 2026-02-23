@@ -1,0 +1,344 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/troubleshooting/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Troubleshooting">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/troubleshooting/">
+
+    <title>Sketchatone: Troubleshooting</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+    <a href="../dashboard/">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-settings/">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href=".">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Common issues and solutions</h2>
+        <h1>Troubleshooting</h1>
+<p>This guide covers common issues and their solutions.</p>
+<h2>MIDI Issues</h2>
+<h3>Notes Stick or Sustain Indefinitely</h3>
+<p><strong>Symptoms:</strong></p>
+<ul>
+<li>Notes continue playing after you stop strumming</li>
+<li>Notes don't turn off properly during rapid strumming</li>
+<li>Hardware synthesizer plays sustained notes that never end</li>
+</ul>
+<p><strong>Cause:</strong>
+Some hardware synthesizers (especially when connected via USB MIDI) can't handle the rapid stream of MIDI messages during busy strumming. The MIDI buffer overflows, causing Note Off messages to be lost.</p>
+<p><strong>Solution:</strong>
+Add a delay between MIDI messages using <code>midiInterMessageDelay</code>:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midiInterMessageDelay"</span><span class="token operator">:</span> <span class="token number">0.08</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Recommended values:</strong></p>
+<ul>
+<li><code>0.08</code> (80ms) - Good starting point for most hardware synths</li>
+<li><code>0.05</code> (50ms) - Try if 80ms feels too sluggish</li>
+<li><code>0.1</code> (100ms) - Use if notes still stick with lower values</li>
+<li><code>0</code> (default) - No delay, maximum responsiveness</li>
+</ul>
+<p><strong>Note:</strong> This adds latency to MIDI output. Only use if experiencing stuck notes.</p>
+<p><strong>Tested with:</strong></p>
+<ul>
+<li>Roland Juno-DS88 (USB MIDI) - Works with 0.08</li>
+<li>E-MU USB MIDI cables - May need adjustment</li>
+</ul>
+<hr>
+<h3>No MIDI Output</h3>
+<p><strong>Symptoms:</strong></p>
+<ul>
+<li>No sound when strumming</li>
+<li>MIDI monitor shows no messages</li>
+</ul>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check MIDI port connection:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># On Raspberry Pi (ALSA)</span>
+aconnect <span class="token parameter variable">-l</span>
+
+<span class="token comment"># Look for your MIDI device and note the port number</span></code></pre>
+</li>
+<li>
+<p><strong>Verify config file:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"rtmidi"</span><span class="token punctuation">,</span>  <span class="token comment">// or "jack" for Zynthian</span>
+    <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token number">0</span>  <span class="token comment">// Try different port numbers</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+</li>
+<li>
+<p><strong>Check available ports:</strong></p>
+<ul>
+<li>The server prints available MIDI ports on startup</li>
+<li>Look for <code>[RtMidi] Available MIDI output ports:</code> in the console</li>
+</ul>
+</li>
+<li>
+<p><strong>Test with virtual port:</strong>
+Set <code>midi_output_id</code> to <code>null</code> - this creates a virtual MIDI port you can connect to</p>
+</li>
+</ol>
+<hr>
+<h3>MIDI Input Not Working</h3>
+<p><strong>Symptoms:</strong></p>
+<ul>
+<li>Playing notes on external keyboard doesn't update strum notes in dashboard</li>
+<li>No MIDI input messages received</li>
+</ul>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check input port configuration:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_input_id"</span><span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span>  <span class="token comment">// Specific port, or null for all ports</span>
+    <span class="token property">"midi_input_exclude"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token string">"Midi Through"</span><span class="token punctuation">,</span>
+      <span class="token string">"RtMidi"</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+</li>
+<li>
+<p><strong>Verify port isn't excluded:</strong></p>
+<ul>
+<li>The server automatically excludes the output port to prevent feedback</li>
+<li>Check the <code>midi_input_exclude</code> list</li>
+<li>Remove your keyboard's port name if it's being excluded</li>
+</ul>
+</li>
+<li>
+<p><strong>Test with aseqdump (Raspberry Pi):</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># List ports</span>
+aconnect <span class="token parameter variable">-l</span>
+
+<span class="token comment"># Monitor a specific port (e.g., 28:0)</span>
+aseqdump <span class="token parameter variable">-p</span> <span class="token number">28</span>:0
+
+<span class="token comment"># Play notes on keyboard - you should see MIDI messages</span></code></pre>
+</li>
+</ol>
+<hr>
+<h2>Post-Installation Configuration</h2>
+<h3>Setting Up MIDI Input (Optional)</h3>
+<p><strong>Strumming should work right away</strong> after installation. However, if you want to use an external MIDI keyboard to change the notes being strummed (e.g., playing chords on a keyboard to update the strum pattern), you'll need to configure MIDI input.</p>
+<p><strong>Find available MIDI input ports:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># On Raspberry Pi (ALSA)</span>
+aconnect <span class="token parameter variable">-l</span>
+
+<span class="token comment"># Look for your MIDI device in the output, e.g.:</span>
+<span class="token comment"># client 28: 'Juno-DS' [type=kernel,card=2]</span>
+<span class="token comment">#     0 'Juno-DS MIDI 1  '</span>
+<span class="token comment">#     1 'Juno-DS MIDI 2  '</span></code></pre>
+<p>The port number format is <code>client:port</code>, so in the example above, &quot;Juno-DS MIDI 1&quot; would be port <code>28:0</code>.</p>
+<p><strong>Configure MIDI input:</strong></p>
+<p>Edit the config file:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">nano</span> /opt/sketchatone/configs/config.json</code></pre>
+<p>Add or update the <code>midi_input_id</code>:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_input_id"</span><span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">,</span>  <span class="token comment">// Set to your MIDI input port number</span>
+    <span class="token property">"midi_input_exclude"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token string">"Midi Through"</span><span class="token punctuation">,</span>
+      <span class="token string">"RtMidi"</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p><strong>Restart the service:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> systemctl restart sketchatone</code></pre>
+<p><strong>View logs to verify connection:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Follow logs in real-time</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone <span class="token parameter variable">-f</span>
+
+<span class="token comment"># Look for lines like:</span>
+<span class="token comment"># [RtMidi] Available MIDI input ports:</span>
+<span class="token comment"># [RtMidi]   0: Juno-DS MIDI 1</span>
+<span class="token comment"># ✓ MIDI input: Juno-DS MIDI 1</span></code></pre>
+<p><strong>Tip:</strong> If you want to listen to <strong>all</strong> MIDI input ports (discovery mode), set <code>midi_input_id</code> to <code>null</code>:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token property">"midi_input_id"</span><span class="token operator">:</span> <span class="token null keyword">null</span></code></pre>
+<hr>
+<h2>Installation Issues</h2>
+<h3>python-rtmidi Installation Fails</h3>
+<p><strong>Symptoms:</strong></p>
+<ul>
+<li>Error during <code>apt install ./sketchatone-*.deb</code></li>
+<li>Message: &quot;python-rtmidi install failed&quot;</li>
+</ul>
+<p><strong>Solutions:</strong></p>
+<p>The installer now tries multiple methods automatically:</p>
+<ol>
+<li>First tries <code>apt install python3-rtmidi</code> (pre-compiled)</li>
+<li>Falls back to <code>pip install python-rtmidi</code> (compiles from source)</li>
+</ol>
+<p>If both fail:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Install build dependencies</span>
+<span class="token function">sudo</span> <span class="token function">apt-get</span> <span class="token function">install</span> <span class="token parameter variable">-y</span> python3-dev build-essential libasound2-dev
+
+<span class="token comment"># Try manual install</span>
+pip3 <span class="token function">install</span> python-rtmidi</code></pre>
+<hr>
+<h2>Performance Issues</h2>
+<h3>High Latency / Sluggish Response</h3>
+<p><strong>Causes:</strong></p>
+<ul>
+<li><code>midiInterMessageDelay</code> set too high</li>
+<li>System under heavy load</li>
+<li>USB issues</li>
+</ul>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Reduce inter-message delay:</strong></p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midiInterMessageDelay"</span><span class="token operator">:</span> <span class="token number">0</span>  <span class="token comment">// Remove delay if notes aren't sticking</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+</li>
+<li>
+<p><strong>Check system load:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">top</span>
+<span class="token comment"># Look for high CPU usage</span></code></pre>
+</li>
+<li>
+<p><strong>Use JACK on Zynthian:</strong></p>
+<ul>
+<li>JACK provides lower latency than ALSA</li>
+<li>Set <code>&quot;midi_output_backend&quot;: &quot;jack&quot;</code></li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2>Viewing Logs</h2>
+<p>Since Sketchatone runs as a systemd service, you can view logs using <code>journalctl</code>:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># View recent logs</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone
+
+<span class="token comment"># Follow logs in real-time (like tail -f)</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone <span class="token parameter variable">-f</span>
+
+<span class="token comment"># View logs since last boot</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone <span class="token parameter variable">-b</span>
+
+<span class="token comment"># View last 50 lines</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone <span class="token parameter variable">-n</span> <span class="token number">50</span>
+
+<span class="token comment"># View logs with timestamps</span>
+<span class="token function">sudo</span> journalctl <span class="token parameter variable">-u</span> sketchatone <span class="token parameter variable">--since</span> <span class="token string">"5 minutes ago"</span></code></pre>
+<p><strong>Check service status:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> systemctl status sketchatone</code></pre>
+<p>This shows whether the service is running, recent log entries, and any errors.</p>
+<hr>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Configuration Settings</a></strong> - Complete settings reference</li>
+<li><strong><a href="/sketchatone/about/getting-started/">Getting Started</a></strong> - Initial setup guide</li>
+<li><strong><a href="/sketchatone/about/jack-midi/">JACK MIDI</a></strong> - JACK backend configuration</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

@@ -1,0 +1,222 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/getting-started/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Getting Started">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/getting-started/">
+
+    <title>Sketchatone: Getting Started</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href=".">Getting Started</a>
+    
+    <a href="../dashboard/">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-settings/">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Install and run Sketchatone for the first time</h2>
+        <h1>Getting Started</h1>
+<p>This guide will help you get Sketchatone running with your graphics tablet.</p>
+<h2>Prerequisites</h2>
+<ul>
+<li>A graphics tablet (Wacom, XP-Pen, Huion, etc.)</li>
+<li>A MIDI-capable application (DAW, synthesizer, virtual instrument)</li>
+</ul>
+<h2>Installation</h2>
+<p>Choose the installer for your platform:</p>
+<h3>macOS</h3>
+<p><strong><a href="https://github.com/bengfarrell/sketchatone/releases/latest">Download from GitHub Releases</a></strong></p>
+<p>Download <code>Sketchatone-macOS.zip</code>, unzip, drag to Applications, and run.</p>
+<p>See <strong><a href="/sketchatone/about/builds/#macos">macOS Installation Guide</a></strong> for details.</p>
+<h3>Raspberry Pi / Zynthian</h3>
+<p><strong><a href="https://github.com/bengfarrell/sketchatone/releases/latest">Download from GitHub Releases</a></strong></p>
+<p>Download <code>sketchatone-debian-installer.tar.gz</code> for simple installation with automatic USB auto-start configuration.</p>
+<p><strong>Quick install:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Download and extract</span>
+<span class="token function">tar</span> xzf sketchatone-debian-installer.tar.gz
+
+<span class="token comment"># Run installer</span>
+<span class="token function">sudo</span> ./install-sketchatone.sh</code></pre>
+<p>See <strong><a href="/sketchatone/about/builds/#linux-raspberry-pi-zynthian">Raspberry Pi Installation Guide</a></strong> for details.</p>
+<h3>Windows</h3>
+<p><strong>Coming soon</strong> - Windows installer in development</p>
+<h3>From Source</h3>
+<p>For developers or other platforms, see <strong><a href="/sketchatone/about/builds/">Building from Source</a></strong>.</p>
+<h2>Quick Start</h2>
+<h3>1. Connect Your Tablet</h3>
+<p>Plug in your graphics tablet. Sketchatone will auto-detect supported tablets based on USB vendor/product IDs.</p>
+<p><strong>Supported tablets include:</strong></p>
+<ul>
+<li>Wacom (Intuos, Cintiq, etc.)</li>
+<li>XP-Pen (Deco, Artist, etc.)</li>
+<li>Huion (Inspiroy, Kamvas, etc.)</li>
+<li>And many others</li>
+</ul>
+<p>If your tablet isn't recognized, you may need to create a device configuration file. See <strong><a href="/sketchatone/about/configuration-settings/">Configuration</a></strong>.</p>
+<h3>2. Set Up MIDI Output</h3>
+<p>Make sure you have a MIDI destination ready:</p>
+<ul>
+<li><strong>macOS</strong>: Enable IAC Driver in Audio MIDI Setup (built-in virtual MIDI)</li>
+<li><strong>Windows</strong>: Install loopMIDI or use a DAW</li>
+<li><strong>Linux/Raspberry Pi</strong>: Connect a USB MIDI device or use ALSA virtual ports</li>
+<li><strong>Zynthian</strong>: JACK MIDI is configured automatically</li>
+</ul>
+<h3>3. Start Sketchatone</h3>
+<p><strong>macOS:</strong> Launch the Sketchatone app - the dashboard opens automatically in your browser</p>
+<p><strong>Raspberry Pi/Zynthian:</strong> Plug in your tablet (auto-starts by default, no dashboard)</p>
+<p><strong>From source:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># With dashboard (recommended for configuration)</span>
+<span class="token function">npm</span> run server
+<span class="token comment"># or</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.server
+
+<span class="token comment"># Without dashboard (MIDI only)</span>
+<span class="token function">npm</span> run midi-strummer
+<span class="token comment"># or</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.midi_strummer</code></pre>
+<h3>4. Configure with the Dashboard</h3>
+<p><strong>macOS/Development:</strong> The web dashboard opens automatically at <code>http://localhost:8080</code></p>
+<p>The dashboard lets you:</p>
+<ul>
+<li>✅ <strong>Configure settings visually</strong> - No JSON editing required</li>
+<li>✅ <strong>See live tablet input</strong> - Watch pressure, tilt, and position in real-time</li>
+<li>✅ <strong>Adjust parameters instantly</strong> - Changes apply immediately without restart</li>
+<li>✅ <strong>Load/save presets</strong> - Switch between configurations for different songs</li>
+</ul>
+<p>See <strong><a href="/sketchatone/about/dashboard/">Web Dashboard</a></strong> for complete documentation.</p>
+<p><strong>Raspberry Pi/Zynthian:</strong> Dashboard is typically disabled for performance. Configure via JSON files (see <strong><a href="/sketchatone/about/configuration-settings/">Configuration</a></strong>).</p>
+<h3>5. Start Strumming!</h3>
+<p>Draw across your tablet surface to strum notes. By default, you'll hear a C major chord (C, E, G).</p>
+<p><strong>Try adjusting settings in the dashboard:</strong></p>
+<ul>
+<li>Change the chord</li>
+<li>Adjust pressure sensitivity</li>
+<li>Enable pitch bend with pen tilt</li>
+<li>Map stylus buttons to transpose or note repeater</li>
+</ul>
+<h3>6. Optional: Configure MIDI Input</h3>
+<p>If you want to use an external MIDI keyboard to change the notes being strummed, see <strong><a href="/sketchatone/about/troubleshooting/#post-installation-configuration">Post-Installation Configuration</a></strong>.</p>
+<h2>What's Next?</h2>
+<h3>Learn the Basics</h3>
+<ul>
+<li><strong><a href="/sketchatone/about/strumming/">Strumming</a></strong> - How strumming works</li>
+<li><strong><a href="/sketchatone/about/pitch-bend/">Pitch Bend</a></strong> - Control pitch with pen tilt</li>
+<li><strong><a href="/sketchatone/about/note-velocity/">Note Velocity</a></strong> - Control volume with pressure</li>
+<li><strong><a href="/sketchatone/about/chords-and-progressions/">Chords and Progressions</a></strong> - Play different chords</li>
+</ul>
+<h3>Customize Your Setup</h3>
+<ul>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Configuration</a></strong> - Understanding config files and settings</li>
+<li><strong><a href="/sketchatone/about/action-rules/">Action Rules</a></strong> - Configure stylus and tablet button actions</li>
+</ul>
+<h3>Troubleshooting</h3>
+<ul>
+<li><strong><a href="/sketchatone/about/troubleshooting/">Troubleshooting Guide</a></strong> - Common issues and solutions</li>
+<li><strong><a href="/sketchatone/about/jack-midi/">JACK MIDI</a></strong> - Zynthian-specific configuration</li>
+</ul>
+<h3>Advanced</h3>
+<ul>
+<li><strong><a href="/sketchatone/about/node-cli/">Node.js CLI</a></strong> - Command-line reference (Node.js)</li>
+<li><strong><a href="/sketchatone/about/python-cli/">Python CLI</a></strong> - Command-line reference (Python)</li>
+<li><strong><a href="/sketchatone/about/action-rules/">Action Rules</a></strong> - Button action system</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

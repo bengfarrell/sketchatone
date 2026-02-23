@@ -1,0 +1,346 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/dashboard/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Web Dashboard">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/dashboard/">
+
+    <title>Sketchatone: Web Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+    <a href=".">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-settings/">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Configure and monitor Sketchatone in real-time with the web interface</h2>
+        <h1>Web Dashboard</h1>
+<p>The Sketchatone web dashboard provides a visual interface for configuring and monitoring your tablet in real-time. Changes made in the dashboard take effect immediately without restarting the application.</p>
+<h2>Accessing the Dashboard</h2>
+<h3>macOS App</h3>
+<p>The macOS app automatically opens the dashboard in your browser when launched.</p>
+<p><strong>Default URL:</strong> <code>http://localhost:8080</code></p>
+<h3>From Source (Development)</h3>
+<p>Start the server:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Node.js</span>
+<span class="token function">npm</span> run server
+
+<span class="token comment"># Python</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.server</code></pre>
+<p>Then open your browser to <code>http://localhost:8080</code></p>
+<h3>Raspberry Pi / Zynthian</h3>
+<p>If you've enabled the web server in your config:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"server"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"http_port"</span><span class="token operator">:</span> <span class="token number">8080</span><span class="token punctuation">,</span>
+    <span class="token property">"ws_port"</span><span class="token operator">:</span> <span class="token number">8081</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>Access from another device on your network: <code>http://&lt;pi-hostname&gt;:8080</code></p>
+<p><strong>Note:</strong> For minimal resource usage, you can disable the dashboard by setting ports to <code>null</code>.</p>
+<hr>
+<h2>Dashboard Features</h2>
+<h3>1. Live Tablet Monitoring</h3>
+<p><img src="/sketchatone/img/dashboard-tablet-monitor.png" alt="Live tablet input visualization showing pen position, pressure, tilt, and button states"></p>
+<p>The dashboard displays real-time tablet input:</p>
+<ul>
+<li>Pen position (X/Y coordinates)</li>
+<li>Pressure level</li>
+<li>Tilt angles (X/Y)</li>
+<li>Button states</li>
+<li>Strum events</li>
+</ul>
+<p>This helps you understand how your tablet movements translate to MIDI output.</p>
+<h3>2. Strumming Configuration</h3>
+<p><img src="/sketchatone/img/dashboard-strumming-config.png" alt="Strumming configuration panel with chord selection and settings"></p>
+<p>Configure core strumming settings:</p>
+<ul>
+<li><strong>Chord Selection</strong> - Choose from preset chords or enter custom notation</li>
+<li><strong>MIDI Channel</strong> - Set output channel (0-15 or omni)</li>
+<li><strong>Pressure Threshold</strong> - Adjust sensitivity</li>
+<li><strong>Note Spread</strong> - Control octave range</li>
+<li><strong>Invert X</strong> - Flip for left-handed use</li>
+</ul>
+<p>Changes apply immediately as you strum.</p>
+<h3>3. Parameter Mappings</h3>
+<p><img src="/sketchatone/img/dashboard-parameter-mappings.png" alt="Parameter mapping controls for velocity, duration, and pitch bend"></p>
+<p>Map tablet inputs to musical parameters:</p>
+<h4>Note Velocity</h4>
+<ul>
+<li>Control source (pressure, tilt, position, etc.)</li>
+<li>Min/max range</li>
+<li>Response curve</li>
+<li>Spread type</li>
+</ul>
+<h4>Note Duration</h4>
+<ul>
+<li>Control source</li>
+<li>Duration range (seconds)</li>
+<li>Response curve</li>
+</ul>
+<h4>Pitch Bend</h4>
+<ul>
+<li>Control source</li>
+<li>Bend range</li>
+<li>Response curve</li>
+<li>Central/direct/inverse spread</li>
+</ul>
+<p><strong>Live Preview:</strong> Adjust sliders and immediately hear the effect on your playing.</p>
+<h3>4. Action Rules (Button Configuration)</h3>
+<p><img src="/sketchatone/img/dashboard-action-rules.png" alt="Action rules configuration interface showing button mappings"></p>
+<p>Configure stylus and tablet buttons:</p>
+<ul>
+<li><strong>Visual Button Mapping</strong> - See which buttons are available</li>
+<li><strong>Action Assignment</strong> - Drag-and-drop or select actions</li>
+<li><strong>Trigger Types</strong> - Choose press, release, or hold</li>
+<li><strong>Button Groups</strong> - Create chord progression groups</li>
+<li><strong>Startup Rules</strong> - Set initial state</li>
+</ul>
+<h3>5. Strum Release</h3>
+<p><img src="/sketchatone/img/dashboard-strum-release.png" alt="Strum release configuration panel"></p>
+<p>Configure drum sounds on pen lift:</p>
+<ul>
+<li>Enable/disable</li>
+<li>MIDI note selection</li>
+<li>Max duration threshold</li>
+<li>Velocity multiplier</li>
+</ul>
+<h3>6. MIDI Configuration</h3>
+<p><strong>Note:</strong> MIDI configuration (output/input ports, backend selection) is <strong>not available in the dashboard</strong> as it requires a restart to apply. Configure MIDI settings via JSON files or command-line arguments.</p>
+<p><strong>MIDI Settings (Requires Restart):</strong></p>
+<ul>
+<li><strong>Output Port</strong> (<code>midi_output_id</code>) - MIDI device to send notes to</li>
+<li><strong>Input Port</strong> (<code>midi_input_id</code>) - MIDI keyboard for chord input</li>
+<li><strong>Backend</strong> (<code>midi_output_backend</code>) - <code>rtmidi</code> (default) or <code>jack</code> (Linux)</li>
+<li><strong>Inter-Message Delay</strong> (<code>midiInterMessageDelay</code>) - Prevent stuck notes on slow hardware (e.g., 0.08 for Raspberry Pi)</li>
+<li><strong>JACK Settings</strong> - Client name and auto-connect mode</li>
+</ul>
+<p><strong>To change MIDI settings:</strong></p>
+<ol>
+<li>
+<p><strong>Via JSON file</strong> - Edit <code>config.json</code> and restart:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"rtmidi"</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token number">2</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_input_id"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"midiInterMessageDelay"</span><span class="token operator">:</span> <span class="token number">0.08</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+</li>
+<li>
+<p><strong>Via command-line arguments:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Node.js</span>
+<span class="token function">npm</span> run server -- --midi-port <span class="token number">2</span>
+
+<span class="token comment"># Python</span>
+python <span class="token parameter variable">-m</span> sketchatone.cli.server --midi-port <span class="token number">2</span></code></pre>
+</li>
+</ol>
+<p>See <strong><a href="/sketchatone/about/configuration-settings/#midi-settings">Configuration</a></strong> for complete MIDI configuration reference.</p>
+<hr>
+<h2>Configuration Presets</h2>
+<h3>Loading Configurations</h3>
+<p><img src="/sketchatone/img/dashboard-config-presets.png" alt="Configuration load/save interface"></p>
+<p>The dashboard allows you to load different JSON configuration files:</p>
+<ol>
+<li>Click <strong>&quot;Load Configuration&quot;</strong></li>
+<li>Select a JSON file from your computer</li>
+<li>Configuration applies immediately</li>
+</ol>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Switch between songs with different settings</li>
+<li>Load performance presets</li>
+<li>Test different configurations quickly</li>
+</ul>
+<h3>Saving Configurations</h3>
+<p>Save your current dashboard settings to a JSON file:</p>
+<ol>
+<li>Configure settings in the dashboard</li>
+<li>Click <strong>&quot;Export Configuration&quot;</strong></li>
+<li>Save the JSON file</li>
+<li>Use it later or commit to version control</li>
+</ol>
+<h3>Creating Presets</h3>
+<p>Create multiple configuration files for different scenarios:</p>
+<p><strong>Example Presets:</strong></p>
+<ul>
+<li><code>ballad.json</code> - Slow, expressive settings with wide pitch bend</li>
+<li><code>rock.json</code> - Fast, aggressive settings with minimal bend</li>
+<li><code>jazz.json</code> - Complex chords with note repeater</li>
+<li><code>drums.json</code> - Strum release enabled for percussive hits</li>
+</ul>
+<p>Switch between them instantly in the dashboard without restarting.</p>
+<hr>
+<h2>Live Performance Features</h2>
+<h3>Real-Time Adjustments</h3>
+<p>During performance, you can adjust:</p>
+<ul>
+<li>Chord changes (via buttons or dashboard)</li>
+<li>Transpose on/off (via buttons)</li>
+<li>Note repeater on/off (via buttons)</li>
+<li>Parameter sensitivity (via dashboard)</li>
+</ul>
+<h3>Visual Feedback</h3>
+<p>The dashboard shows:</p>
+<ul>
+<li>Current chord being played</li>
+<li>Active transpose/repeater state</li>
+<li>MIDI messages being sent</li>
+<li>Button press events</li>
+<li>Tablet input values</li>
+</ul>
+<p>This helps you troubleshoot issues during soundcheck or performance.</p>
+<hr>
+<h2>Headless Mode (No Dashboard)</h2>
+<p>For production use on Raspberry Pi or Zynthian, you can disable the dashboard entirely:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"server"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"http_port"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"ws_port"</span><span class="token operator">:</span> <span class="token null keyword">null</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>This minimizes resource usage. All configuration must be done via JSON files.</p>
+<hr>
+<h2>Troubleshooting</h2>
+<h3>Dashboard Won't Load</h3>
+<p><strong>Check server is running:</strong></p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token comment"># Look for "HTTP server listening on port 8080"</span></code></pre>
+<p><strong>Check firewall settings:</strong></p>
+<ul>
+<li>macOS: Allow incoming connections for the app</li>
+<li>Linux: Ensure port 8080 is not blocked</li>
+</ul>
+<h3>Changes Don't Apply</h3>
+<p><strong>Refresh the page:</strong></p>
+<ul>
+<li>The dashboard maintains a WebSocket connection</li>
+<li>If disconnected, refresh to reconnect</li>
+</ul>
+<p><strong>Check console for errors:</strong></p>
+<ul>
+<li>Open browser developer tools (F12)</li>
+<li>Look for WebSocket connection errors</li>
+</ul>
+<h3>Can't See Tablet Input</h3>
+<p><strong>Verify tablet is connected:</strong></p>
+<ul>
+<li>Check USB connection</li>
+<li>Look for device detection messages in server logs</li>
+</ul>
+<p><strong>Check device config:</strong></p>
+<ul>
+<li>Ensure your tablet has a matching config file</li>
+<li>See <strong><a href="/sketchatone/about/configuration-settings/">Configuration</a></strong> for details</li>
+</ul>
+<hr>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Configuration</a></strong> - Complete JSON configuration reference</li>
+<li><strong><a href="/sketchatone/about/action-rules/">Action Rules</a></strong> - Button configuration details</li>
+<li><strong><a href="/sketchatone/about/troubleshooting/">Troubleshooting</a></strong> - Common issues and solutions</li>
+<li><strong><a href="/sketchatone/about/node-cli/">Node.js CLI</a></strong> - Server command-line options</li>
+<li><strong><a href="/sketchatone/about/python-cli/">Python CLI</a></strong> - Server command-line options</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+

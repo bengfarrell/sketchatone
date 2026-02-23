@@ -1,0 +1,222 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/stylus-buttons/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: Stylus Buttons">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/stylus-buttons/">
+
+    <title>Sketchatone: Stylus Buttons</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+
+    <h4>Running the Application</h4>
+    
+        <a href="../running-overview/">Overview</a>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-overview/">Overview</a>
+    
+        <a href="../configuration-settings/">Settings File</a>
+    
+
+    <h4>Features</h4>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Map pen buttons to actions</h2>
+        <h1>Stylus Buttons</h1>
+<p>Most graphics tablet pens have one or two buttons on the barrel. Sketchatone can map these to various actions like transpose, note repeater, and more.</p>
+<h2>Button IDs</h2>
+<p>Stylus buttons are identified as:</p>
+<ul>
+<li><code>button:primary</code> - Primary stylus button (barrel button 1)</li>
+<li><code>button:secondary</code> - Secondary stylus button (barrel button 2)</li>
+</ul>
+<h2>Quick Example</h2>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"action_rules"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"button_names"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"button:primary"</span><span class="token operator">:</span> <span class="token string">"Primary Stylus"</span><span class="token punctuation">,</span>
+      <span class="token property">"button:secondary"</span><span class="token operator">:</span> <span class="token string">"Secondary Stylus"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"rules"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"stylus-primary-transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Transpose"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:primary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-transpose"</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"stylus-secondary-repeater"</span><span class="token punctuation">,</span>
+        <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Toggle Repeater"</span><span class="token punctuation">,</span>
+        <span class="token property">"button"</span><span class="token operator">:</span> <span class="token string">"button:secondary"</span><span class="token punctuation">,</span>
+        <span class="token property">"action"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"toggle-repeater"</span><span class="token punctuation">,</span> <span class="token number">2.0</span><span class="token punctuation">,</span> <span class="token number">1.5</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+        <span class="token property">"trigger"</span><span class="token operator">:</span> <span class="token string">"press"</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>This configuration:</p>
+<ul>
+<li>Maps primary button to toggle transpose (octave up)</li>
+<li>Maps secondary button to toggle note repeater</li>
+</ul>
+<h2>Common Actions for Stylus Buttons</h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Description</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>toggle-transpose</code></td>
+<td>Toggle transpose on/off</td>
+<td><code>[&quot;toggle-transpose&quot;, 12]</code></td>
+</tr>
+<tr>
+<td><code>toggle-repeater</code></td>
+<td>Toggle note repeater</td>
+<td><code>[&quot;toggle-repeater&quot;, 2.0, 1.5]</code></td>
+</tr>
+<tr>
+<td><code>set-chord</code></td>
+<td>Set specific chord</td>
+<td><code>[&quot;set-chord&quot;, &quot;Am&quot;, 4]</code></td>
+</tr>
+</tbody>
+</table>
+<h2>Trigger Types</h2>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>press</code></td>
+<td>Action fires when button is pressed</td>
+</tr>
+<tr>
+<td><code>release</code></td>
+<td>Action fires when button is released (default)</td>
+</tr>
+<tr>
+<td><code>hold</code></td>
+<td>Action fires while button is held</td>
+</tr>
+</tbody>
+</table>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/action-rules/">Action Rules</a></strong> - Complete action rules documentation</li>
+<li><strong><a href="/sketchatone/about/configuration-settings/#action_rules">Configuration Settings</a></strong> - Config reference</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+
