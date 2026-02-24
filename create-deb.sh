@@ -287,9 +287,27 @@ chmod +x /usr/bin/sketchatone
 
 # Create default config if it doesn't exist
 if [ ! -f /opt/sketchatone/configs/config.json ]; then
-    if [ -f /opt/sketchatone/configs/sample-config.json ]; then
-        cp /opt/sketchatone/configs/sample-config.json /opt/sketchatone/configs/config.json
-        echo "📋 Created default config: /opt/sketchatone/configs/config.json"
+    # Use appropriate sample config based on install mode
+    if [ "$INSTALL_MODE" = "zynthian" ]; then
+        if [ -f /opt/sketchatone/configs/sample-config-zynthian.json ]; then
+            cp /opt/sketchatone/configs/sample-config-zynthian.json /opt/sketchatone/configs/config.json
+            echo "📋 Created default Zynthian config: /opt/sketchatone/configs/config.json"
+        fi
+    else
+        if [ -f /opt/sketchatone/configs/sample-config.json ]; then
+            cp /opt/sketchatone/configs/sample-config.json /opt/sketchatone/configs/config.json
+            echo "📋 Created default config: /opt/sketchatone/configs/config.json"
+        fi
+    fi
+else
+    # Config exists - update MIDI backend if installing in Zynthian mode
+    if [ "$INSTALL_MODE" = "zynthian" ]; then
+        # Check if config has rtmidi backend and update it to jack
+        if grep -q '"midi_output_backend".*:.*"rtmidi"' /opt/sketchatone/configs/config.json 2>/dev/null; then
+            echo "📝 Updating existing config to use JACK backend for Zynthian..."
+            sed -i 's/"midi_output_backend"[[:space:]]*:[[:space:]]*"rtmidi"/"midi_output_backend": "jack"/' /opt/sketchatone/configs/config.json
+            echo "   ✓ Changed midi_output_backend from rtmidi to jack"
+        fi
     fi
 fi
 
