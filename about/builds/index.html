@@ -93,6 +93,8 @@
     
         <a href="../jack-midi/">JACK MIDI (Linux)</a>
     
+        <a href="../usb-midi-gadget/">USB MIDI Gadget (Pi)</a>
+    
         <a href="../troubleshooting/">Troubleshooting</a>
     
 </nav>
@@ -324,6 +326,19 @@ systemctl status sketchatone</code></pre>
 </li>
 </ol>
 <p>See <strong><a href="/sketchatone/about/jack-midi/">JACK MIDI</a></strong> for detailed Zynthian configuration.</p>
+<h3>USB MIDI Gadget Mode (Optional)</h3>
+<p>For users who want to connect the Raspberry Pi directly to MIDI hardware that supports power over the USB MIDI connection (like the Akai MPC One+):</p>
+<p>The Pi can be configured as a <strong>USB MIDI device</strong>, allowing it to communicate and be powered through a single USB-C cable. This eliminates the need for external MIDI adapters or a separate data and power cord.</p>
+<p>See <strong><a href="/sketchatone/about/usb-midi-gadget/">USB MIDI Gadget Setup</a></strong> for complete instructions on:</p>
+<ul>
+<li>Enabling USB gadget mode on Raspberry Pi 4</li>
+<li>Configuring the <code>g_midi</code> kernel module</li>
+<li>Routing Sketchatone MIDI output through the USB gadget port</li>
+<li>Connecting directly to MIDI hardware</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> This is an optional advanced configuration. Standard MIDI adapters work perfectly fine for most use cases.</p>
+</blockquote>
 <h2>Running from Source (Development)</h2>
 <p>For development or platforms without installers:</p>
 <h3>Node.js</h3>

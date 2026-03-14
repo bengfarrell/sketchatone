@@ -1,0 +1,244 @@
+<html lang="en-US" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="canonical" href="/sketchatone/about/usb-midi-gadget/">
+    <meta property="og:site_name" content="Sketchatone">
+    <meta property="og:title" content="Sketchatone: USB MIDI Gadget Setup">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/about/usb-midi-gadget/">
+
+    <title>Sketchatone: USB MIDI Gadget Setup</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="../../docs.css">
+    <link rel="stylesheet" href="../../prism-okaidia.css">
+    <link rel="preload" href="../../docs.css" as="style">
+</head>
+<body>
+
+<header>
+    <button id="mobile-menu" class="mobile-menu-button" aria-label="Open menu">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" fill="currentColor" height="24" width="24" aria-hidden="true">
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="16"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="6"></rect>
+            <rect height="4" rx="1" ry="1" width="28" x="4" y="26"></rect>
+        </svg>
+    </button>
+  
+    <div class="logo-container">
+        <img src="../../img/sketchatone-logo.svg" alt="Sketchatone">
+    </div>
+
+    <div class="title">
+        <h1>Sketchatone</h1>
+        <h4>Turn your drawing tablet into a MIDI strumming controller</h4>
+    </div>
+
+    <div class="logo-container github">
+        <a href="https://github.com/bengfarrell/sketchatone"><img src="../../img/github-logo.svg" alt="Github Logo"></a>
+    </div>
+</header>
+
+<div id="main-wrapper">
+  
+
+
+
+
+
+<nav>
+    <div class="mobile-header">
+        <h1>Sketchatone</h1>
+    </div>
+    <h4>About</h4>
+    
+    <a href="../../">Introduction</a>
+    
+    <a href="../getting-started/">Getting Started</a>
+    
+    <a href="../dashboard/">Web Dashboard</a>
+    
+    <a href="../builds/">Builds &amp; Installers</a>
+    
+
+    <h4>Configuration</h4>
+    
+        <a href="../configuration-settings/">Configuration</a>
+    
+        <a href="../strumming/">Strumming</a>
+    
+        <a href="../note-velocity/">Note Velocity</a>
+    
+        <a href="../note-duration/">Note Duration</a>
+    
+        <a href="../pitch-bend/">Pitch Bend</a>
+    
+        <a href="../strum-release/">Strum Release</a>
+    
+        <a href="../action-rules/">Action Rules</a>
+    
+
+    <h4>Misc</h4>
+    
+        <a href="../node-cli/">Node.js CLI</a>
+    
+        <a href="../python-cli/">Python CLI</a>
+    
+        <a href="../chords-and-progressions/">Chords &amp; Progressions</a>
+    
+        <a href="../jack-midi/">JACK MIDI (Linux)</a>
+    
+        <a href=".">USB MIDI Gadget (Pi)</a>
+    
+        <a href="../troubleshooting/">Troubleshooting</a>
+    
+</nav>
+
+  <main>
+      <div class="content">
+        <h2 id="page-title">Configure Raspberry Pi as a USB MIDI device for direct connection to MIDI hardware</h2>
+        <h1>USB MIDI Gadget Setup</h1>
+<p>This guide shows you how to configure your Raspberry Pi 4 to appear as a <strong>USB MIDI device</strong>, allowing MIDI hardware like the Akai MPC One+ to recognize it directly over USB without requiring a separate MIDI adapter.</p>
+<p>This is an <strong>optional advanced setup</strong> that enables:</p>
+<ul>
+<li>Direct USB connection between Pi and MIDI hardware</li>
+<li>Power and communication over a single USB-C cable</li>
+<li>Elimination of external MIDI adapters</li>
+</ul>
+<hr>
+<h2>Prerequisites</h2>
+<p>Make sure your Pi is up to date and has the necessary tools installed:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">apt</span> update <span class="token operator">&amp;&amp;</span> <span class="token function">sudo</span> <span class="token function">apt</span> upgrade <span class="token parameter variable">-y</span>
+<span class="token function">sudo</span> <span class="token function">apt</span> <span class="token function">install</span> alsa-utils</code></pre>
+<hr>
+<h2>Step 1: Enable the DWC2 Driver</h2>
+<p>The Pi 4's USB-C port needs to be switched into <strong>peripheral (device) mode</strong> so it can present itself as a MIDI device to your MIDI hardware.</p>
+<p>Edit the boot config:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">nano</span> /boot/firmware/config.txt</code></pre>
+<p>Add the following line at the bottom:</p>
+<pre><code>dtoverlay=dwc2,dr_mode=peripheral
+</code></pre>
+<p>Then edit the kernel modules file:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">nano</span> /etc/modules</code></pre>
+<p>Add these two lines:</p>
+<pre><code>dwc2
+g_midi
+</code></pre>
+<p>Reboot for the changes to take effect:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">sudo</span> <span class="token function">reboot</span></code></pre>
+<hr>
+<h2>Step 2: Verify the Module Loaded</h2>
+<p>After rebooting, confirm the <code>g_midi</code> module loaded successfully:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash">lsmod <span class="token operator">|</span> <span class="token function">grep</span> g_midi</code></pre>
+<p>Then check that ALSA has registered a new MIDI port:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash">aconnect <span class="token parameter variable">-l</span></code></pre>
+<p>You should see output similar to:</p>
+<pre><code>client 20: 'MIDI Gadget' [type=kernel]
+    0 'MIDI Gadget MIDI 1'
+</code></pre>
+<p>If the gadget port does not appear, check the kernel log for errors:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">dmesg</span> <span class="token operator">|</span> <span class="token function">grep</span> dwc2
+<span class="token function">dmesg</span> <span class="token operator">|</span> <span class="token function">grep</span> g_midi</code></pre>
+<p>Also verify the gadget appears as a sound card:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash"><span class="token function">cat</span> /proc/asound/cards</code></pre>
+<blockquote>
+<p><strong>Note:</strong> Make sure you are using a USB-C cable that supports data, not a charge-only cable. Charge-only cables will not work.</p>
+</blockquote>
+<hr>
+<h2>Step 3: Test the Gadget Port</h2>
+<p>Before connecting to your MIDI hardware, verify the gadget port is functioning by listing available MIDI hardware ports:</p>
+<pre class="language-bash" tabindex="0"><code class="language-bash">amidi <span class="token parameter variable">-l</span></code></pre>
+<p>You should see the gadget listed, with a hardware address like <code>hw:2,0,0</code>:</p>
+<pre><code>Dir Device    Name
+IO  hw:2,0,0  f_midi
+</code></pre>
+<p>The device name <code>f_midi</code> confirms the USB MIDI gadget is active and ready. This is the port name Sketchatone will use in the next step.</p>
+<hr>
+<h2>Step 4: Configure Sketchatone</h2>
+<p>Update Sketchatone's <code>config.json</code> to route MIDI output through the USB gadget port.</p>
+<p>Locate and open your <code>config.json</code> file, then update the <code>midi</code> section as follows:</p>
+<pre class="language-json" tabindex="0"><code class="language-json"><span class="token punctuation">{</span>
+  <span class="token property">"midi"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"midi_output_backend"</span><span class="token operator">:</span> <span class="token string">"rtmidi"</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_output_id"</span><span class="token operator">:</span> <span class="token string">"f_midi"</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_input_id"</span><span class="token operator">:</span> <span class="token number">1</span><span class="token punctuation">,</span>
+    <span class="token property">"midi_input_exclude"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"sketchatone"</span><span class="token punctuation">,</span> <span class="token string">"ZynMidiRouter"</span><span class="token punctuation">,</span> <span class="token string">"zynseq"</span><span class="token punctuation">,</span> <span class="token string">"zynsmf"</span><span class="token punctuation">,</span> <span class="token string">"ttymidi"</span><span class="token punctuation">,</span> <span class="token string">"Midi Through"</span><span class="token punctuation">,</span> <span class="token string">"RtMidi"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"jack_client_name"</span><span class="token operator">:</span> <span class="token string">"sketchatone"</span><span class="token punctuation">,</span>
+    <span class="token property">"jack_auto_connect"</span><span class="token operator">:</span> <span class="token string">"chain0"</span><span class="token punctuation">,</span>
+    <span class="token property">"note_duration"</span><span class="token operator">:</span> <span class="token number">1.5</span><span class="token punctuation">,</span>
+    <span class="token property">"midiInterMessageDelay"</span><span class="token operator">:</span> <span class="token number">0</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre>
+<p>The key change is <code>midi_output_id</code>, which is updated from <code>1</code> to <code>&quot;f_midi&quot;</code> — the name of the USB MIDI gadget port identified in Step 3.</p>
+<p>Save the file and restart Sketchatone for the change to take effect.</p>
+<hr>
+<h2>Step 5: Connect to Your MIDI Hardware</h2>
+<p>Plug a USB-C cable from the Pi into your MIDI hardware's USB port (e.g., Akai MPC One+).</p>
+<p>On your MIDI hardware, navigate to the MIDI settings (for MPC One+: <strong>Settings → MIDI → USB</strong>).</p>
+<p>The Pi should appear as a MIDI device. Once recognized, MIDI events generated by Sketchatone from your drawing tablet will be sent directly to your MIDI hardware over USB.</p>
+<hr>
+<h2>Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Issue</th>
+<th>What to check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>g_midi</code> not in <code>lsmod</code></td>
+<td>Verify <code>/etc/modules</code> has both <code>dwc2</code> and <code>g_midi</code>, then reboot</td>
+</tr>
+<tr>
+<td><code>f_midi</code> not in <code>amidi -l</code></td>
+<td>Check <code>dmesg</code> for DWC2 or g_midi errors</td>
+</tr>
+<tr>
+<td>MIDI hardware doesn't recognize the Pi</td>
+<td>Try a different USB-C cable (must be data-capable)</td>
+</tr>
+<tr>
+<td>Sketchatone can't find <code>f_midi</code></td>
+<td>Confirm the gadget port is visible via <code>amidi -l</code> before starting Sketchatone</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>Additional Notes</h2>
+<h3>Power Considerations</h3>
+<p>When using USB gadget mode, the Pi can be powered through the USB-C connection from some MIDI hardware devices. However, this depends on:</p>
+<ul>
+<li>Whether your MIDI hardware provides sufficient power over USB (typically 5V/2.5A minimum for Pi 4)</li>
+<li>The quality of your USB-C cable</li>
+</ul>
+<p>If the Pi doesn't power on or shows undervoltage warnings, you may need to use a separate power supply.</p>
+<h3>Reverting to Host Mode</h3>
+<p>If you need to switch the Pi back to normal USB host mode (to use USB peripherals), remove the <code>dtoverlay=dwc2,dr_mode=peripheral</code> line from <code>/boot/firmware/config.txt</code> and reboot.</p>
+<hr>
+<h2>See Also</h2>
+<ul>
+<li><strong><a href="/sketchatone/about/builds/#linux-raspberry-pi-zynthian">Raspberry Pi Installation</a></strong> - Standard installation guide</li>
+<li><strong><a href="/sketchatone/about/configuration-settings/">Configuration Settings</a></strong> - Understanding config files</li>
+<li><strong><a href="/sketchatone/about/troubleshooting/">Troubleshooting</a></strong> - Common issues and solutions</li>
+</ul>
+
+      </div>
+  </main>
+</div>
+</body>
+<script>
+    document.getElementById('mobile-menu').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.add('menu-open');
+    });
+    document.getElementById('main-wrapper').addEventListener('click', () => {
+        document.getElementById('main-wrapper').classList.remove('menu-open');
+    });
+</script>
+</html>
+
