@@ -277,6 +277,20 @@ For Zynthian, use the JACK MIDI backend for best integration:
 
 See **[JACK MIDI](/about/jack-midi/)** for detailed Zynthian configuration.
 
+### USB MIDI Gadget Mode (Optional)
+
+For users who want to connect the Raspberry Pi directly to MIDI hardware that supports power over the USB MIDI connection (like the Akai MPC One+):
+
+The Pi can be configured as a **USB MIDI device**, allowing it to communicate and be powered through a single USB-C cable. This eliminates the need for external MIDI adapters or a separate data and power cord.
+
+See **[USB MIDI Gadget Setup](/about/usb-midi-gadget/)** for complete instructions on:
+- Enabling USB gadget mode on Raspberry Pi 4
+- Configuring the `g_midi` kernel module
+- Routing Sketchatone MIDI output through the USB gadget port
+- Connecting directly to MIDI hardware
+
+> **Note:** This is an optional advanced configuration. Standard MIDI adapters work perfectly fine for most use cases.
+
 ## Running from Source (Development)
 
 For development or platforms without installers:

@@ -36,7 +36,8 @@
   "bin": {
     "strum-events": "./dist/cli/strum-event-viewer.js",
     "midi-strummer": "./dist/cli/midi-strummer.js",
-    "server": "./dist/cli/server.js"
+    "server": "./dist/cli/server.js",
+    "list-midi-devices": "./dist/cli/list-midi-devices.js"
   },
   "files": [
     "dist",
@@ -69,6 +70,7 @@
     "strum-events": "node dist/cli/strum-event-viewer.js",
     "midi-strummer": "node dist/cli/midi-strummer.js",
     "server": "node dist/cli/server.js",
+    "list-midi": "node dist/cli/list-midi-devices.js",
     "dev-server": "npm run build:cli && node dist/cli/server.js",
     "docs": "npx @11ty/eleventy",
     "docs:serve": "npx @11ty/eleventy --serve",
