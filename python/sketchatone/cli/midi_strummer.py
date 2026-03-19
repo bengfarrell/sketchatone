@@ -391,7 +391,7 @@ class MidiStrummer(TabletReaderBase):
 
         # Start reading
         if hasattr(self.reader, 'start_reading'):
-            self.reader.start_reading(lambda data: self.handle_packet(data))
+            self.reader.start_reading(lambda data, report_id=None, interface_type=None: self.handle_packet(data, report_id, interface_type))
 
         print(colored('✓ Started reading tablet data', Colors.GREEN))
         print(colored('Press Ctrl+C to stop\n', Colors.GRAY))
@@ -423,12 +423,13 @@ class MidiStrummer(TabletReaderBase):
 
         super().stop_sync()
 
-    def handle_packet(self, data: bytes):
+    def handle_packet(self, data: bytes, report_id: int = None, interface_type: str = None):
         """Handle incoming HID packet"""
         try:
             self.packet_count += 1
 
             # Process the data using the config
+            # Note: process_packet only takes data, it uses report_id internally from the data
             events = self.process_packet(data)
 
             # Extract normalized values

@@ -1585,10 +1585,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             return converter(value)
         return value
 
-    def handle_packet(self, data: bytes) -> None:
+    def handle_packet(self, data: bytes, report_id: int = None, interface_type: str = None) -> None:
         """Handle incoming HID packet"""
         try:
             # Process the data using the config
+            # Note: process_packet only takes data, it uses report_id internally from the data
             events = self.process_packet(data)
 
             # Extract normalized values
@@ -2023,7 +2024,7 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             # Start reading data
             if hasattr(self.reader, 'start_reading'):
-                self.reader.start_reading(lambda data: self.handle_packet(data))
+                self.reader.start_reading(lambda data, report_id=None, interface_type=None: self.handle_packet(data, report_id, interface_type))
 
             self.is_running = True
             self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
