@@ -7,6 +7,18 @@ description: Understanding Sketchatone's configuration files and settings
 
 This document describes Sketchatone's configuration system and all available settings.
 
+## MIDI Channel Indexing
+
+**Important:** MIDI channels use the standard **1-16** numbering (matching MIDI hardware) in all user-facing interfaces:
+
+- **CLI arguments** (e.g., `--channel`): Use **1-16**
+- **Configuration files** (JSON): Use **1-16**
+- **CLI display output**: Shows **1-16**
+
+Example: To use MIDI channel 1, specify `--channel 1` in CLI, or set `"midi_channel": 1` in config files.
+
+*Note: Internally, the code uses 0-15 (MIDI protocol), but this conversion is handled automatically.*
+
 ## Configuration Methods
 
 Sketchatone can be configured via the **[Web Dashboard](/about/dashboard/)** (live, visual interface) or **JSON configuration files** (version-controlled, headless). Changes made in the dashboard apply immediately, while JSON file changes require a restart.
@@ -47,7 +59,7 @@ Defines musical settings, parameter mappings, and MIDI backend options.
 {
   "strumming": {
     "chord": "Am",
-    "midi_channel": 0
+    "midi_channel": 1
   },
   "note_velocity": {
     "control": "pressure",
@@ -183,7 +195,7 @@ Core strumming configuration.
 |----------|------|---------|-------------|
 | `pluck_velocity_scale` | number | 4.0 | Scale factor for pluck velocity |
 | `pressure_threshold` | number | 0.1 | Minimum pressure to trigger strum |
-| `midi_channel` | number\|null | null | MIDI channel (0-15), null for omni |
+| `midi_channel` | number\|null | null | MIDI channel (1-16), null for omni |
 | `initial_notes` | string[] | ["C4","E4","G4"] | List of note strings |
 | `chord` | string\|null | null | Chord notation (e.g., "Am", "Gmaj7") |
 | `upper_note_spread` | number | 3 | Notes to add above chord |

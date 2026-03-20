@@ -21,7 +21,7 @@ describe('StrummingConfig', () => {
     const config = StrummingConfig.fromDict({
       pluck_velocity_scale: 2.0,
       pressure_threshold: 0.2,
-      midi_channel: 5,
+      midi_channel: 5, // Config file uses 1-16
       initial_notes: ['D4', 'F#4', 'A4'],
       chord: 'Dm',
       upper_note_spread: 2,
@@ -29,7 +29,7 @@ describe('StrummingConfig', () => {
     });
     expect(config.pluckVelocityScale).toBe(2.0);
     expect(config.pressureThreshold).toBe(0.2);
-    expect(config.midiChannel).toBe(5);
+    expect(config.midiChannel).toBe(4); // Internally stored as 0-15 (5 - 1 = 4)
     expect(config.initialNotes).toEqual(['D4', 'F#4', 'A4']);
     expect(config.chord).toBe('Dm');
     expect(config.upperNoteSpread).toBe(2);
@@ -40,7 +40,7 @@ describe('StrummingConfig', () => {
     const config = StrummingConfig.fromDict({
       pluckVelocityScale: 3.0,
       pressureThreshold: 0.15,
-      midiChannel: 3,
+      midiChannel: 3, // Config file uses 1-16
       initialNotes: ['E4', 'G#4', 'B4'],
       chord: 'E',
       upperNoteSpread: 4,
@@ -48,7 +48,7 @@ describe('StrummingConfig', () => {
     });
     expect(config.pluckVelocityScale).toBe(3.0);
     expect(config.pressureThreshold).toBe(0.15);
-    expect(config.midiChannel).toBe(3);
+    expect(config.midiChannel).toBe(2); // Internally stored as 0-15 (3 - 1 = 2)
     expect(config.initialNotes).toEqual(['E4', 'G#4', 'B4']);
     expect(config.chord).toBe('E');
     expect(config.upperNoteSpread).toBe(4);
@@ -59,7 +59,7 @@ describe('StrummingConfig', () => {
     const config = new StrummingConfig({
       pluckVelocityScale: 5.0,
       pressureThreshold: 0.25,
-      midiChannel: 7,
+      midiChannel: 7, // Internally stored as 0-15
       initialNotes: ['A4', 'C#5', 'E5'],
       chord: 'A',
       upperNoteSpread: 5,
@@ -68,7 +68,7 @@ describe('StrummingConfig', () => {
     const dict = config.toDict();
     expect(dict.pluckVelocityScale).toBe(5.0);
     expect(dict.pressureThreshold).toBe(0.25);
-    expect(dict.midiChannel).toBe(7);
+    expect(dict.midiChannel).toBe(8); // Config file uses 1-16 (7 + 1 = 8)
     expect(dict.initialNotes).toEqual(['A4', 'C#5', 'E5']);
     expect(dict.chord).toBe('A');
     expect(dict.upperNoteSpread).toBe(5);

@@ -97,7 +97,9 @@ export interface MidiBackendProtocol {
  */
 export interface MidiBackendOptions {
   /**
-   * Default MIDI channel (0-15)
+   * Default MIDI channel (0-15 internal representation, displayed as 1-16 to users)
+   * or undefined for omni mode (sends to all 16 channels).
+   * Note: CLI and user-facing interfaces use 1-16
    */
   channel?: number;
 

@@ -65,16 +65,16 @@ class MidiBackendProtocol(ABC):
         pass
     
     @abstractmethod
-    def send_note(self, note: NoteObject, velocity: int, duration: float = 1.5, 
+    def send_note(self, note: NoteObject, velocity: int, duration: float = 1.5,
                   channel: Optional[int] = None) -> None:
         """
         Send a MIDI note with automatic note-off after duration.
-        
+
         Args:
             note: The note to play
             velocity: MIDI velocity (0-127)
             duration: Duration in seconds before note-off
-            channel: MIDI channel (1-16), or None to use default
+            channel: MIDI channel (0-15), or None to use default
         """
         pass
     
@@ -92,9 +92,9 @@ class MidiBackendProtocol(ABC):
     def set_channel(self, channel: Optional[int]) -> None:
         """
         Set the default MIDI channel.
-        
+
         Args:
-            channel: MIDI channel (1-16), or None for omni/all channels
+            channel: MIDI channel (0-15), or None for omni/all channels
         """
         pass
     

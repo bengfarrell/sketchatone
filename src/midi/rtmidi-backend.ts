@@ -42,7 +42,7 @@ interface NoteTimer {
  */
 export class RtMidiBackend implements MidiBackendProtocol {
   private _midiOut: InstanceType<typeof import('@julusian/midi').Output> | null = null;
-  private _channel: number;
+  private _channel: number | undefined;
   private _isConnected = false;
   private _useVirtualPorts: boolean;
   private _virtualPortName: string;
@@ -57,7 +57,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
   private _lastSendTime: number = 0;
 
   constructor(options: MidiBackendOptions = {}) {
-    this._channel = options.channel ?? 0;
+    this._channel = options.channel; // undefined = omni mode (all 16 channels)
     this._useVirtualPorts = options.useVirtualPorts ?? false;
     this._virtualPortName = options.virtualPortName ?? 'Sketchatone';
     this._interMessageDelay = options.interMessageDelay ?? 0;
@@ -67,7 +67,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
     return this._isConnected;
   }
 
-  get channel(): number {
+  get channel(): number | undefined {
     return this._channel;
   }
 
@@ -183,10 +183,10 @@ export class RtMidiBackend implements MidiBackendProtocol {
   }
 
   /**
-   * Set the default MIDI channel
+   * Set the default MIDI channel (0-15) or undefined for omni (all channels)
    */
   setChannel(channel?: number): void {
-    this._channel = channel ?? 0;
+    this._channel = channel;
   }
 
   /**
@@ -196,7 +196,11 @@ export class RtMidiBackend implements MidiBackendProtocol {
     if (channel !== undefined) {
       return [channel];
     }
-    return [this._channel];
+    if (this._channel !== undefined) {
+      return [this._channel];
+    }
+    // undefined = omni mode (all 16 channels)
+    return Array.from({ length: 16 }, (_, i) => i);
   }
 
   /**

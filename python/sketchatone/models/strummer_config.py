@@ -23,7 +23,7 @@ class StrummingConfig:
     Attributes:
         pluck_velocity_scale: Scale factor for pluck velocity calculation
         pressure_threshold: Minimum pressure to trigger a strum (0-1)
-        midi_channel: MIDI channel (0-15, None for omni)
+        midi_channel: MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, None for omni)
         initial_notes: List of note strings for the strum (e.g., ["C4", "E4", "G4"])
         chord: Optional chord notation (e.g., "Am", "Gmaj7")
         upper_note_spread: Number of notes to add above the chord
@@ -41,11 +41,20 @@ class StrummingConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrummingConfig':
-        """Create from dictionary (supports both snake_case and camelCase)"""
+        """Create from dictionary (supports both snake_case and camelCase)
+
+        Note: Converts MIDI channel from 1-16 (user-facing in config files) to 0-15 (internal).
+        """
+        # Get channel from config (1-16) and convert to internal (0-15)
+        channel_from_config = data.get('midi_channel', data.get('midiChannel'))
+        midi_channel = None
+        if channel_from_config is not None:
+            midi_channel = channel_from_config - 1  # Convert 1-16 to 0-15
+
         return cls(
             pluck_velocity_scale=data.get('pluck_velocity_scale', data.get('pluckVelocityScale', 4.0)),
             pressure_threshold=data.get('pressure_threshold', data.get('pressureThreshold', 0.1)),
-            midi_channel=data.get('midi_channel', data.get('midiChannel')),
+            midi_channel=midi_channel,
             initial_notes=data.get('initial_notes', data.get('initialNotes', ["C4", "E4", "G4"])),
             chord=data.get('chord'),
             upper_note_spread=data.get('upper_note_spread', data.get('upperNoteSpread', 3)),
@@ -54,11 +63,19 @@ class StrummingConfig:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization (camelCase for webapp)"""
+        """Convert to dictionary for JSON serialization (camelCase for webapp)
+
+        Note: Converts MIDI channel from 0-15 (internal) to 1-16 (user-facing in config files).
+        """
+        # Convert channel from internal (0-15) to config file format (1-16)
+        midi_channel_for_config = None
+        if self.midi_channel is not None:
+            midi_channel_for_config = self.midi_channel + 1  # Convert 0-15 to 1-16
+
         return {
             'pluckVelocityScale': self.pluck_velocity_scale,
             'pressureThreshold': self.pressure_threshold,
-            'midiChannel': self.midi_channel,
+            'midiChannel': midi_channel_for_config,
             'initialNotes': self.initial_notes,
             'chord': self.chord,
             'upperNoteSpread': self.upper_note_spread,

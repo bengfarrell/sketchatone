@@ -29,7 +29,7 @@ class JackMidiBackend(MidiBackendProtocol):
     for real-time performance.
 
     Example:
-        backend = JackMidiBackend(channel=1, client_name="sketchatone")
+        backend = JackMidiBackend(channel=0, client_name="sketchatone")  # MIDI channel 1 (0-based)
         backend.connect()
         backend.send_note(note, velocity=100, duration=1.0)
         backend.disconnect()
@@ -41,7 +41,8 @@ class JackMidiBackend(MidiBackendProtocol):
         Initialize the JACK MIDI backend.
 
         Args:
-            channel: Default MIDI channel (1-16), or None for all channels
+            channel: Default MIDI channel (0-15 internal representation, displayed as 1-16 to users),
+                or None for all channels. Note: CLI and user-facing interfaces use 1-16.
             client_name: JACK client name
             auto_connect: Auto-connect mode: "chain0", "all-chains", or "none"
             inter_message_delay: Seconds to wait after each MIDI message (default 0).
@@ -261,7 +262,7 @@ class JackMidiBackend(MidiBackendProtocol):
         self._connected = False
     
     def set_channel(self, channel: Optional[int]) -> None:
-        """Set default MIDI channel (1-16) or None for all."""
+        """Set default MIDI channel (0-15) or None for all."""
         self._channel = channel
         if channel is not None:
             print(f"[JackMidi] Channel set to: {channel}")
@@ -271,9 +272,9 @@ class JackMidiBackend(MidiBackendProtocol):
     def _get_channels(self, channel: Optional[int] = None) -> List[int]:
         """Get list of 0-based channel indices to send on."""
         if channel is not None:
-            return [channel - 1]
+            return [channel]
         elif self._channel is not None:
-            return [self._channel - 1]
+            return [self._channel]
         else:
             return list(range(16))
     

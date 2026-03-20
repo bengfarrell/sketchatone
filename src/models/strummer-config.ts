@@ -31,7 +31,7 @@ export interface StrummingConfigData {
   pluckVelocityScale: number;
   /** Minimum pressure to trigger a strum (0-1) */
   pressureThreshold: number;
-  /** MIDI channel (0-15, null for omni) */
+  /** MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, null for omni) */
   midiChannel: number | null;
   /** List of note strings for the strum (e.g., ["C4", "E4", "G4"]) */
   initialNotes: string[];
@@ -85,12 +85,22 @@ export class StrummingConfig implements StrummingConfigData {
 
   /**
    * Create from dictionary (supports both snake_case and camelCase)
+   * Note: Converts MIDI channel from 1-16 (user-facing in config files) to 0-15 (internal).
    */
   static fromDict(data: Record<string, unknown>): StrummingConfig {
+    // Get channel from config (1-16) and convert to internal (0-15)
+    const channelFromConfig = (data.midi_channel ?? data.midiChannel) as number | null | undefined;
+    let midiChannel: number | null | undefined;
+    if (channelFromConfig !== null && channelFromConfig !== undefined) {
+      midiChannel = channelFromConfig - 1; // Convert 1-16 to 0-15
+    } else {
+      midiChannel = channelFromConfig;
+    }
+
     return new StrummingConfig({
       pluckVelocityScale: (data.pluck_velocity_scale ?? data.pluckVelocityScale) as number | undefined,
       pressureThreshold: (data.pressure_threshold ?? data.pressureThreshold) as number | undefined,
-      midiChannel: (data.midi_channel ?? data.midiChannel) as number | null | undefined,
+      midiChannel,
       initialNotes: (data.initial_notes ?? data.initialNotes) as string[] | undefined,
       chord: data.chord as string | undefined,
       upperNoteSpread: (data.upper_note_spread ?? data.upperNoteSpread) as number | undefined,
@@ -101,12 +111,19 @@ export class StrummingConfig implements StrummingConfigData {
 
   /**
    * Convert to dictionary for JSON serialization
+   * Note: Converts MIDI channel from 0-15 (internal) to 1-16 (user-facing in config files).
    */
   toDict(): StrummingConfigData {
+    // Convert channel from internal (0-15) to config file format (1-16)
+    let midiChannelForConfig: number | null = null;
+    if (this.midiChannel !== null && this.midiChannel !== undefined) {
+      midiChannelForConfig = this.midiChannel + 1; // Convert 0-15 to 1-16
+    }
+
     return {
       pluckVelocityScale: this.pluckVelocityScale,
       pressureThreshold: this.pressureThreshold,
-      midiChannel: this.midiChannel,
+      midiChannel: midiChannelForConfig,
       initialNotes: this.initialNotes,
       chord: this.chord,
       upperNoteSpread: this.upperNoteSpread,

@@ -352,8 +352,10 @@ class MidiStrummer(TabletReaderBase):
         print(colored('MIDI Config:', Colors.WHITE, bold=True))
         print(colored('  Backend: ', Colors.CYAN) +
               colored(self.config.midi_output_backend, Colors.WHITE))
+        # Display channel as 1-16 for users (internally stored as 0-15)
+        channel_display = str(self.config.channel + 1) if self.config.channel is not None else 'omni'
         print(colored('  Channel: ', Colors.CYAN) +
-              colored(str(self.config.channel), Colors.WHITE))
+              colored(channel_display, Colors.WHITE))
         if self.config.midi_output_id is not None:
             print(colored('  Output Port: ', Colors.CYAN) +
                   colored(str(self.config.midi_output_id), Colors.WHITE))
@@ -806,9 +808,9 @@ Examples:
     parser.add_argument(
         '--channel',
         type=int,
-        choices=range(0, 16),
-        metavar='0-15',
-        help='MIDI channel (0-15, overrides config)'
+        choices=range(1, 17),
+        metavar='1-16',
+        help='MIDI channel (1-16, overrides config)'
     )
 
     parser.add_argument(
@@ -877,7 +879,7 @@ Examples:
             live_mode=args.live,
             # CLI overrides
             use_jack=args.jack if args.jack else None,
-            midi_channel=args.channel,
+            midi_channel=args.channel - 1 if args.channel is not None else None,  # Convert 1-16 to 0-15
             midi_port=args.port,
             note_duration=args.duration,
             jack_client_name=args.jack_client_name,

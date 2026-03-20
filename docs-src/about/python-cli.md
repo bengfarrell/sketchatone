@@ -34,7 +34,7 @@ python -m sketchatone.cli.midi_strummer [options]
 | `--tablet-config` | `-t` | path | Path to tablet config JSON file |
 | `--strummer-config` | `-s` | path | Path to strummer/MIDI config JSON file |
 | `--jack` | `-j` | flag | Use JACK MIDI backend instead of rtmidi |
-| `--channel` | | 0-15 | MIDI channel (overrides config) |
+| `--channel` | | 1-16 | MIDI channel (overrides config) |
 | `--port` | `-p` | string/int | MIDI output port name or index |
 | `--duration` | `-d` | float | Note duration in seconds |
 | `--jack-client-name` | | string | JACK client name |

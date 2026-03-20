@@ -29,7 +29,7 @@ class TestStrummingConfig:
         data = {
             'pluck_velocity_scale': 2.0,
             'pressure_threshold': 0.2,
-            'midi_channel': 5,
+            'midi_channel': 5,  # Config file uses 1-16
             'initial_notes': ['A3', 'C4', 'E4'],
             'chord': 'Am',
             'upper_note_spread': 2,
@@ -38,7 +38,7 @@ class TestStrummingConfig:
         config = StrummingConfig.from_dict(data)
         assert config.pluck_velocity_scale == 2.0
         assert config.pressure_threshold == 0.2
-        assert config.midi_channel == 5
+        assert config.midi_channel == 4  # Internally stored as 0-15 (5 - 1 = 4)
         assert config.initial_notes == ['A3', 'C4', 'E4']
         assert config.chord == 'Am'
         assert config.upper_note_spread == 2
@@ -49,7 +49,7 @@ class TestStrummingConfig:
         data = {
             'pluckVelocityScale': 3.0,
             'pressureThreshold': 0.15,
-            'midiChannel': 10,
+            'midiChannel': 10,  # Config file uses 1-16
             'initialNotes': ['G3', 'B3', 'D4'],
             'chord': 'G',
             'upperNoteSpread': 4,
@@ -58,7 +58,7 @@ class TestStrummingConfig:
         config = StrummingConfig.from_dict(data)
         assert config.pluck_velocity_scale == 3.0
         assert config.pressure_threshold == 0.15
-        assert config.midi_channel == 10
+        assert config.midi_channel == 9  # Internally stored as 0-15 (10 - 1 = 9)
         assert config.initial_notes == ['G3', 'B3', 'D4']
         assert config.chord == 'G'
         assert config.upper_note_spread == 4
@@ -69,7 +69,7 @@ class TestStrummingConfig:
         config = StrummingConfig(
             pluck_velocity_scale=5.0,
             pressure_threshold=0.05,
-            midi_channel=1,
+            midi_channel=1,  # Internal value is 0-15
             initial_notes=['C3'],
             chord='C',
             upper_note_spread=5,
@@ -78,7 +78,7 @@ class TestStrummingConfig:
         d = config.to_dict()
         assert d['pluckVelocityScale'] == 5.0
         assert d['pressureThreshold'] == 0.05
-        assert d['midiChannel'] == 1
+        assert d['midiChannel'] == 2  # Exported as 1-16 (1 + 1 = 2)
         assert d['initialNotes'] == ['C3']
         assert d['chord'] == 'C'
         assert d['upperNoteSpread'] == 5

@@ -243,7 +243,9 @@ class MidiStrummer extends TabletReaderBase {
     }
     console.log();
     console.log(chalk.white.bold('MIDI Config:'));
-    console.log(chalk.cyan('  Channel: ') + chalk.white(this.config.channel.toString()));
+    // Display channel as 1-16 for users (internally stored as 0-15), or 'omni' if undefined
+    const channelDisplay = this.config.channel !== undefined && this.config.channel !== null ? (this.config.channel + 1).toString() : 'omni';
+    console.log(chalk.cyan('  Channel: ') + chalk.white(channelDisplay));
     if (this.config.outputPort !== null) {
       console.log(chalk.cyan('  Output Port: ') + chalk.white(String(this.config.outputPort)));
     }
@@ -756,7 +758,7 @@ async function main(): Promise<void> {
     .description('MIDI Strummer - tablet input to MIDI output')
     .option('-t, --tablet-config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
     .option('-s, --strummer-config <path>', 'Path to strummer/MIDI config JSON file')
-    .option('--channel <number>', 'MIDI channel (0-15, overrides config)', parseInt)
+    .option('--channel <number>', 'MIDI channel (1-16, overrides config)', parseInt)
     .option('-p, --port <port>', 'MIDI output port name or index (overrides config)')
     .option('-d, --duration <seconds>', 'Note duration in seconds (overrides config)', parseFloat)
     .option('-l, --live', 'Live dashboard mode (updates in place)')
@@ -819,12 +821,22 @@ Examples:
     midiPort = isNaN(portNum) ? options.port : portNum;
   }
 
+  // Validate and convert channel from 1-16 to 0-15
+  let midiChannel: number | undefined;
+  if (options.channel !== undefined) {
+    if (options.channel < 1 || options.channel > 16) {
+      console.error(chalk.red(`Error: MIDI channel must be between 1 and 16 (got ${options.channel})`));
+      process.exit(1);
+    }
+    midiChannel = options.channel - 1; // Convert 1-16 to 0-15
+  }
+
   let strummer: MidiStrummer | null = null;
   try {
     strummer = new MidiStrummer(tabletConfigPath, {
       strummerConfigPath: options.strummerConfig ? path.resolve(options.strummerConfig) : undefined,
       liveMode: options.live,
-      midiChannel: options.channel,
+      midiChannel,
       midiPort,
       noteDuration: options.duration,
     });

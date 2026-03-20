@@ -630,8 +630,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         print(colored('MIDI Config:', Colors.WHITE, bold=True))
         print(colored('  Backend: ', Colors.CYAN) +
               colored(self.config.midi_output_backend, Colors.WHITE))
+        # Display channel as 1-16 for users (internally stored as 0-15)
+        channel_display = str(self.config.channel + 1) if self.config.channel is not None else 'omni'
         print(colored('  Channel: ', Colors.CYAN) +
-              colored(str(self.config.channel), Colors.WHITE))
+              colored(channel_display, Colors.WHITE))
         if self.config.midi_output_id is not None:
             print(colored('  Output Port: ', Colors.CYAN) +
                   colored(str(self.config.midi_output_id), Colors.WHITE))
@@ -1244,7 +1246,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                 self._setup_notes()
 
             # Update MIDI channel on the backend if it changed
-            # Frontend sends 1-16 (1-based), backend expects 1-16 (1-based)
+            # Frontend sends 0-15 (0-based), backend expects 0-15 (0-based)
             if 'midiChannel' in path and self.backend is not None:
                 self.backend.set_channel(value)
 
@@ -2119,8 +2121,9 @@ def main():
     parser.add_argument(
         '--channel',
         type=int,
-        metavar='N',
-        help='MIDI channel (0-15)'
+        choices=range(1, 17),
+        metavar='1-16',
+        help='MIDI channel (1-16)'
     )
 
     parser.add_argument(
@@ -2238,7 +2241,7 @@ def main():
         search_dir=search_dir,
         # MIDI options
         use_jack=args.jack if args.jack else None,
-        midi_channel=args.channel,
+        midi_channel=args.channel - 1 if args.channel is not None else None,  # Convert 1-16 to 0-15
         midi_port=midi_port,
         note_duration=args.note_duration,
         jack_client_name=args.jack_client_name,

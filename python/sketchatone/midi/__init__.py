@@ -12,8 +12,8 @@ Backends:
 Usage:
     from sketchatone.midi import MidiStrummerBridge, RtMidiBackend, JackMidiBackend, RtMidiInput
 
-    # Create a MIDI backend
-    backend = RtMidiBackend(channel=1)
+    # Create a MIDI backend (channel 0 = MIDI channel 1)
+    backend = RtMidiBackend(channel=0)
     backend.connect()
 
     # Create the bridge

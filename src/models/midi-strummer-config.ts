@@ -99,7 +99,7 @@ export interface MidiConfigData {
   outputPort: string | number | null;
   /** MIDI input port name or index (for feedback) */
   inputPort: string | number | null;
-  /** Default MIDI channel (0-15) */
+  /** Default MIDI channel (0-15 in config files, displayed as 1-16 in CLI) */
   channel: number;
   /** Whether to use virtual MIDI ports */
   useVirtualPorts: boolean;

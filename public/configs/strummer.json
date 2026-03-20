@@ -6,6 +6,6 @@
     "chord": "Am",
     "lower_note_spread": 2,
     "upper_note_spread": 2,
-    "midi_channel": 0
+    "midi_channel": 1
   }
 }

@@ -21,23 +21,23 @@ class MidiStrummerBridge:
     Example:
         from sketchatone import Strummer
         from sketchatone.midi import MidiStrummerBridge, RtMidiBackend
-        
-        # Create strummer and backend
+
+        # Create strummer and backend (channel 0 = MIDI channel 1)
         strummer = Strummer()
-        backend = RtMidiBackend(channel=1)
+        backend = RtMidiBackend(channel=0)
         backend.connect()
-        
+
         # Create bridge - automatically connects events
         bridge = MidiStrummerBridge(strummer, backend)
-        
+
         # Configure note duration
         bridge.note_duration = 2.0
-        
+
         # Now strummer.strum() calls will send MIDI notes
         strummer.notes = [NoteObject(...), ...]
         event = strummer.strum(x=0.5, pressure=0.8)
         # MIDI notes are automatically sent!
-        
+
         # Clean up
         bridge.disconnect()
         backend.disconnect()
