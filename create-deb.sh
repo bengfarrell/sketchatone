@@ -113,6 +113,7 @@ WorkingDirectory=/opt/sketchatone
 Environment="PYTHONPATH=/opt/sketchatone/python:/usr/lib/python3/dist-packages"
 Environment="DISPLAY=:0"
 ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
+TimeoutStopSec=10
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -140,6 +141,7 @@ Environment="DISPLAY=:0"
 # Delay startup to ensure JACK is fully ready (helps when triggered by udev during boot)
 ExecStartPre=/bin/sleep 3
 ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
+TimeoutStopSec=10
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

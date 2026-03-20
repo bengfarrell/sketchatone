@@ -2157,6 +2157,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             pass
         finally:
             print(colored('Cleaning up servers...', Colors.GRAY))
+            # Stop tablet HID reader first (stop_sync sets is_running=False and joins reader threads)
+            if self._tablet_initialized:
+                self.stop_sync()
             self.event_bus.cleanup()
             if self._http_server:
                 self._http_server.close()
@@ -2172,6 +2175,10 @@ class StrummerWebSocketServer(TabletReaderBase):
             if self.midi_input:
                 self.midi_input.disconnect()
                 print(colored('✓ MIDI input disconnected', Colors.GREEN))
+            # Stop the note scheduler thread (daemon=False, blocks exit if not stopped)
+            from ..midi.note_scheduler import shutdown_scheduler
+            shutdown_scheduler()
+            print(colored('✓ Note scheduler stopped', Colors.GREEN))
 
     def _run_tablet_reader(self) -> None:
         """Run tablet reader in a separate thread"""
@@ -2427,24 +2434,14 @@ def main():
         if shutdown_requested:
             # Force exit on second signal
             print(colored('\nForce shutdown...', Colors.RED))
-            if server._tablet_initialized:
-                server.stop_sync()
-            # Force close servers synchronously
-            if server._http_server:
-                server._http_server.close()
-            if server._ws_server:
-                server._ws_server.close()
             os._exit(1)
         shutdown_requested = True
         print(colored('\nShutting down gracefully...', Colors.YELLOW))
         print(colored('(Press Ctrl+C again to force quit)', Colors.GRAY))
-        # Stop the server
+        # Set flag to stop tablet reader thread loop
         server.is_running = False
-        if server._tablet_initialized:
-            server.stop_sync()
-        # Cancel the main asyncio task to trigger clean shutdown
+        # Cancel asyncio tasks to trigger the finally block in run_server()
         if server._main_loop and server._main_loop.is_running():
-            # Schedule cancellation of all tasks
             for task in asyncio.all_tasks(server._main_loop):
                 server._main_loop.call_soon_threadsafe(task.cancel)
 
