@@ -56,11 +56,21 @@ export class RtMidiBackend implements MidiBackendProtocol {
   private _activeNotes: Set<number> = new Set();
   private _lastSendTime: number = 0;
 
+  // Device monitoring
+  private _deviceMonitoring: number | false;
+  private _monitoringTimer: ReturnType<typeof setInterval> | null = null;
+  private _lastRequestedPort: string | number | null | undefined = undefined;
+  private _lastAvailablePorts: string[] = [];
+
   constructor(options: MidiBackendOptions = {}) {
     this._channel = options.channel; // undefined = omni mode (all 16 channels)
     this._useVirtualPorts = options.useVirtualPorts ?? false;
     this._virtualPortName = options.virtualPortName ?? 'Sketchatone';
     this._interMessageDelay = options.interMessageDelay ?? 0;
+
+    // Handle device_monitoring: number (interval in ms), 0 (disabled), false (disabled), or undefined (default 2000)
+    const monitoring = options.device_monitoring ?? 2000;
+    this._deviceMonitoring = (monitoring === false || monitoring === 0) ? false : monitoring;
   }
 
   get isConnected(): boolean {
@@ -99,6 +109,9 @@ export class RtMidiBackend implements MidiBackendProtocol {
    */
   async connect(outputPort?: string | number | null): Promise<boolean> {
     try {
+      // Store the requested port for reconnection
+      this._lastRequestedPort = outputPort;
+
       const midiModule = await loadMidi();
       this._midiOut = new midiModule.Output();
 
@@ -108,12 +121,15 @@ export class RtMidiBackend implements MidiBackendProtocol {
         console.log(`[RtMidi] Opened virtual port: ${this._virtualPortName}`);
         this._currentOutputName = this._virtualPortName;
         this._isConnected = true;
+        this._startHotSwapMonitoring();
         return true;
       }
 
       const portCount = this._midiOut.getPortCount();
       if (portCount === 0) {
         console.error('[RtMidi] No MIDI output ports available');
+        // Start monitoring even if no ports available (for hot-plug)
+        this._startHotSwapMonitoring();
         return false;
       }
 
@@ -126,6 +142,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
             portIndex = outputPort;
           } else {
             console.error(`[RtMidi] Invalid port index: ${outputPort}`);
+            this._startHotSwapMonitoring();
             return false;
           }
         } else if (typeof outputPort === 'string') {
@@ -145,6 +162,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
             for (let i = 0; i < portCount; i++) {
               console.log(`  ${i}: ${this._midiOut.getPortName(i)}`);
             }
+            this._startHotSwapMonitoring();
             return false;
           }
         }
@@ -155,10 +173,18 @@ export class RtMidiBackend implements MidiBackendProtocol {
       console.log(`[RtMidi] Connected to port ${portIndex}: ${portName}`);
       this._currentOutputName = portName;
       this._isConnected = true;
+
+      // Update available ports list
+      this._lastAvailablePorts = this.getAvailablePorts();
+
+      // Start hot-swap monitoring
+      this._startHotSwapMonitoring();
+
       return true;
     } catch (error) {
       console.error('[RtMidi] Failed to connect:', error);
       this._currentOutputName = null;
+      this._startHotSwapMonitoring();
       return false;
     }
   }
@@ -167,6 +193,9 @@ export class RtMidiBackend implements MidiBackendProtocol {
    * Disconnect from MIDI output
    */
   disconnect(): void {
+    // Stop hot-swap monitoring
+    this._stopHotSwapMonitoring();
+
     // Cancel all active note timers
     for (const [, timerInfo] of Array.from(this._activeNoteTimers)) {
       clearTimeout(timerInfo.timer);
@@ -460,6 +489,110 @@ export class RtMidiBackend implements MidiBackendProtocol {
     const msb = (clamped >> 7) & 0x7f;
 
     // Pitch Bend: 0xE0 + channel, LSB, MSB
-    this._midiOut.sendMessage([0xe0 + this._channel, lsb, msb]);
+    const channel = this._channel ?? 0;
+    this._midiOut.sendMessage([0xe0 + channel, lsb, msb]);
+  }
+
+  /**
+   * Start device monitoring for device changes
+   */
+  private _startHotSwapMonitoring(): void {
+    if (this._deviceMonitoring === false) {
+      return;
+    }
+
+    // Stop any existing monitoring
+    this._stopHotSwapMonitoring();
+
+    // Start periodic scanning
+    this._monitoringTimer = setInterval(() => {
+      this._checkDeviceChanges();
+    }, this._deviceMonitoring);
+
+    console.log(`[RtMidi] Device monitoring started (interval: ${this._deviceMonitoring}ms)`);
+  }
+
+  /**
+   * Stop device monitoring
+   */
+  private _stopHotSwapMonitoring(): void {
+    if (this._monitoringTimer) {
+      clearInterval(this._monitoringTimer);
+      this._monitoringTimer = null;
+      console.log('[RtMidi] Device monitoring stopped');
+    }
+  }
+
+  /**
+   * Check for device changes and attempt reconnection if needed
+   */
+  private async _checkDeviceChanges(): Promise<void> {
+    if (!this._midiOut) {
+      return;
+    }
+
+    try {
+      // Get current available ports
+      const currentPorts = this.getAvailablePorts();
+
+      // Check if our current device is still connected
+      if (this._isConnected && this._currentOutputName) {
+        const stillConnected = currentPorts.some(port => port === this._currentOutputName);
+
+        if (!stillConnected) {
+          console.log(`[RtMidi] Device disconnected: ${this._currentOutputName}`);
+          this._isConnected = false;
+          this._currentOutputName = null;
+
+          // Clear active notes since device is gone
+          this._activeNotes.clear();
+
+          // Try to reconnect
+          await this._attemptReconnection(currentPorts);
+        }
+      } else if (!this._isConnected) {
+        // Not connected, check if we can reconnect
+        await this._attemptReconnection(currentPorts);
+      }
+
+      // Update the last known ports list
+      this._lastAvailablePorts = currentPorts;
+    } catch (error) {
+      console.error('[RtMidi] Error checking device changes:', error);
+    }
+  }
+
+  /**
+   * Attempt to reconnect to a MIDI device
+   */
+  private async _attemptReconnection(availablePorts: string[]): Promise<void> {
+    if (availablePorts.length === 0) {
+      return;
+    }
+
+    // Check if there are new ports available
+    const newPorts = availablePorts.filter(port => !this._lastAvailablePorts.includes(port));
+
+    if (newPorts.length > 0) {
+      console.log(`[RtMidi] New device(s) detected: ${newPorts.join(', ')}`);
+    }
+
+    // Try to reconnect using the last requested port
+    if (this._lastRequestedPort !== undefined) {
+      console.log(`[RtMidi] Attempting to reconnect to: ${this._lastRequestedPort ?? 'first available'}`);
+
+      // Temporarily disable monitoring to avoid recursion
+      const wasMonitoring = this._monitoringTimer !== null;
+      this._stopHotSwapMonitoring();
+
+      const success = await this.connect(this._lastRequestedPort);
+
+      if (success) {
+        console.log(`[RtMidi] Successfully reconnected to: ${this._currentOutputName}`);
+      } else if (wasMonitoring) {
+        // Restart monitoring if it was running
+        this._startHotSwapMonitoring();
+      }
+    }
   }
 }

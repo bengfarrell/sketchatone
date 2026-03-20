@@ -122,9 +122,28 @@ Configure drum sounds on pen lift:
 - Max duration threshold
 - Velocity multiplier
 
-### 6. MIDI Configuration
+### 6. MIDI Device Management
 
-**Note:** MIDI configuration (output/input ports, backend selection) is **not available in the dashboard** as it requires a restart to apply. Configure MIDI settings via JSON files or command-line arguments.
+The dashboard provides tools for managing MIDI devices:
+
+#### Viewing Available Devices
+
+The MIDI configuration panel displays:
+- **Available Output Ports** - MIDI devices you can send notes to
+- **Available Input Ports** - MIDI keyboards for chord input
+- **Currently Connected Ports** - Active connections
+
+#### Refreshing Device List
+
+After connecting or disconnecting MIDI devices:
+
+1. Click the **"Refresh Devices"** button in the MIDI panel
+2. The device list updates immediately
+3. Select your new device from the dropdown
+
+#### Changing MIDI Ports
+
+**Note:** MIDI port selection and backend configuration require a restart to apply. Configure these settings via JSON files or command-line arguments.
 
 **MIDI Settings (Requires Restart):**
 - **Output Port** (`midi_output_id`) - MIDI device to send notes to

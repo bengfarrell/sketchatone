@@ -52,14 +52,6 @@
     "velocity_multiplier": 1.0
   },
   "action_rules": {
-    "button_names": {
-      "button:primary": "Primary Stylus",
-      "button:secondary": "Secondary Stylus",
-      "button:1": "Button 1",
-      "button:2": "Button 2",
-      "button:3": "Button 3",
-      "button:4": "Button 4"
-    },
     "rules": [
       {
         "id": "stylus-primary-transpose",

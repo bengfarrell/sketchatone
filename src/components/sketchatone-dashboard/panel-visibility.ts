@@ -6,6 +6,7 @@ export type PanelId =
   | 'tabletVisualizer'
   | 'stylusVisualizer'
   | 'midiInput'
+  | 'midiDevices'
   | 'events'
   | 'noteVelocity'
   | 'noteDuration'
@@ -25,6 +26,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'tabletVisualizer', label: 'Tablet', icon: '📱' },
   { id: 'stylusVisualizer', label: 'Stylus', icon: '✏️' },
   { id: 'midiInput', label: 'MIDI In', icon: '🎹' },
+  { id: 'midiDevices', label: 'MIDI Devices', icon: '🎛️' },
   { id: 'events', label: 'Events', icon: '📋' },
   { id: 'noteVelocity', label: 'Velocity', icon: '🎚️' },
   { id: 'noteDuration', label: 'Duration', icon: '⏱️' },
@@ -43,6 +45,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   tabletVisualizer: true,
   stylusVisualizer: true,
   midiInput: true,
+  midiDevices: true,
   events: true,
   noteVelocity: true,
   noteDuration: true,

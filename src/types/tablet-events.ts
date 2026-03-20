@@ -86,7 +86,7 @@ export interface DeviceStatusData {
 /**
  * WebSocket message types from server to client
  */
-export type ServerMessageType = 'tablet' | 'config' | 'status';
+export type ServerMessageType = 'tablet' | 'config' | 'status' | 'midi-devices';
 
 /**
  * Device capabilities from blankslate tablet configuration
@@ -160,9 +160,27 @@ export interface StatusMessage {
 }
 
 /**
+ * MIDI device port information
+ */
+export interface MidiDevicePort {
+  id: string | number;
+  name: string;
+}
+
+/**
+ * MIDI devices information from server
+ */
+export interface MidiDevicesData {
+  inputPorts: MidiDevicePort[];
+  outputPorts: MidiDevicePort[];
+  currentInputPort: string | number | null;
+  currentOutputPort: string | number | null;
+}
+
+/**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices';
 
 /**
  * Set throttle client message
@@ -248,9 +266,25 @@ export interface DeleteConfigMessage {
 }
 
 /**
+ * Get MIDI devices client message
+ * Requests the list of available MIDI input/output devices from the server
+ */
+export interface GetMidiDevicesMessage {
+  type: 'get-midi-devices';
+}
+
+/**
+ * MIDI devices response message from server
+ */
+export interface MidiDevicesMessage {
+  type: 'midi-devices';
+  data: MidiDevicesData;
+}
+
+/**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage;
 
 /**
  * Tablet data for visualization components

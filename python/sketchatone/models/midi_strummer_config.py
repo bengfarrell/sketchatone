@@ -96,7 +96,8 @@ class MidiStrummerConfig:
 
     @property
     def note_duration(self) -> float:
-        return self.midi.note_duration
+        """Backward compatibility property - use midi.default_note_duration instead"""
+        return self.midi.default_note_duration
 
     # Server config convenience properties
     @property

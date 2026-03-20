@@ -301,8 +301,15 @@ MIDI backend configuration.
 | `midi_input_exclude` | string[] | [...] | Port name patterns to exclude from input |
 | `jack_client_name` | string | "sketchatone" | JACK client name |
 | `jack_auto_connect` | string\|null | "chain0" | JACK auto-connect target |
-| `note_duration` | number | 1.5 | Default note duration (seconds) |
+| `default_note_duration` | number | 1.5 | Default note duration (seconds) |
 | `midiInterMessageDelay` | number | 0 | Delay between MIDI messages (seconds) |
+
+### MIDI Device Detection
+
+After connecting or disconnecting a MIDI device:
+
+- **Via Dashboard:** Click the "Refresh Devices" button to update the device list
+- **Via CLI:** Restart the server to detect new devices
 
 ### midiInterMessageDelay
 

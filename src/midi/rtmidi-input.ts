@@ -68,6 +68,17 @@ const EXCLUDE_PORT_PATTERNS = [
 ];
 
 /**
+ * Options for creating a MIDI input
+ */
+export interface RtMidiInputOptions {
+  /**
+   * Device monitoring disabled by default (false)
+   * Users must manually refresh the device list
+   */
+  device_monitoring?: number | false;
+}
+
+/**
  * MIDI input backend using @julusian/midi (RtMidi wrapper).
  *
  * Listens to MIDI input and emits events when notes are pressed/released.
@@ -92,8 +103,20 @@ export class RtMidiInput extends EventEmitter {
   private _notes: string[] = [];
   private _connectedPorts: MidiInputPort[] = [];
 
-  constructor() {
+  // Device monitoring
+  private _deviceMonitoring: number | false;
+  private _monitoringTimer: ReturnType<typeof setInterval> | null = null;
+  private _lastRequestedPort: string | number | null | undefined = undefined;
+  private _lastExcludePorts: string[] = [];
+  private _lastAvailablePorts: MidiInputPort[] = [];
+  private _connectAllMode = false;
+
+  constructor(options: RtMidiInputOptions = {}) {
     super();
+
+    // Handle device_monitoring: disabled by default (false)
+    const monitoring = options.device_monitoring ?? false;
+    this._deviceMonitoring = (monitoring === false || monitoring === 0) ? false : monitoring;
   }
 
   get isConnected(): boolean {
@@ -243,10 +266,23 @@ export class RtMidiInput extends EventEmitter {
    */
   async connectAll(excludePorts: string[] = []): Promise<boolean> {
     try {
+      // Store parameters for reconnection
+      this._connectAllMode = true;
+      this._lastExcludePorts = excludePorts;
+
       const midiModule = await loadMidi();
 
-      // Close existing connections
-      this.disconnect();
+      // Close existing connections (but don't stop monitoring)
+      const wasMonitoring = this._monitoringTimer !== null;
+      if (wasMonitoring) {
+        this._stopHotSwapMonitoring();
+      }
+
+      for (const [, input] of this._midiInputs) {
+        input.closePort();
+      }
+      this._midiInputs.clear();
+      this._connectedPorts = [];
 
       // Get available ports
       const tempInput = new midiModule.Input();
@@ -255,6 +291,7 @@ export class RtMidiInput extends EventEmitter {
 
       if (portCount === 0) {
         console.log('[RtMidiInput] No MIDI input ports available');
+        this._startHotSwapMonitoring();
         return false;
       }
 
@@ -291,12 +328,19 @@ export class RtMidiInput extends EventEmitter {
 
       if (connectedCount === 0) {
         console.log('[RtMidiInput] No MIDI input ports available after exclusions');
+        this._startHotSwapMonitoring();
         return false;
       }
 
       this._isConnected = true;
       this._currentInputName = `All ports (${connectedCount})`;
       this._notes = [];
+
+      // Update available ports list
+      this._lastAvailablePorts = await this.getAvailablePorts();
+
+      // Start hot-swap monitoring
+      this._startHotSwapMonitoring();
 
       // Emit connection event
       this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
@@ -307,6 +351,7 @@ export class RtMidiInput extends EventEmitter {
       return true;
     } catch (error) {
       console.error('[RtMidiInput] Failed to connect to all ports:', error);
+      this._startHotSwapMonitoring();
       return false;
     }
   }
@@ -318,17 +363,31 @@ export class RtMidiInput extends EventEmitter {
    */
   async connect(inputPort: string | number): Promise<boolean> {
     try {
+      // Store parameters for reconnection
+      this._connectAllMode = false;
+      this._lastRequestedPort = inputPort;
+
       const midiModule = await loadMidi();
-      
-      // Close existing connections
-      this.disconnect();
-      
+
+      // Close existing connections (but don't stop monitoring)
+      const wasMonitoring = this._monitoringTimer !== null;
+      if (wasMonitoring) {
+        this._stopHotSwapMonitoring();
+      }
+
+      for (const [, input] of this._midiInputs) {
+        input.closePort();
+      }
+      this._midiInputs.clear();
+      this._connectedPorts = [];
+
       const input = new midiModule.Input();
       const portCount = input.getPortCount();
-      
+
       if (portCount === 0) {
         console.log('[RtMidiInput] No MIDI input ports available');
         input.closePort();
+        this._startHotSwapMonitoring();
         return false;
       }
 
@@ -341,6 +400,7 @@ export class RtMidiInput extends EventEmitter {
         } else {
           console.error(`[RtMidiInput] Invalid port index: ${inputPort}`);
           input.closePort();
+          this._startHotSwapMonitoring();
           return false;
         }
       } else if (typeof inputPort === 'string') {
@@ -361,36 +421,44 @@ export class RtMidiInput extends EventEmitter {
             console.log(`  ${i}: ${input.getPortName(i)}`);
           }
           input.closePort();
+          this._startHotSwapMonitoring();
           return false;
         }
       }
 
       const portName = input.getPortName(portIndex);
-      
+
       // Set up message callback before opening port
       input.on('message', (_deltaTime: number, message: number[]) => {
         this.handleMidiMessage(message, portName);
       });
-      
+
       input.openPort(portIndex);
-      
+
       this._midiInputs.set(portIndex, input);
       this._connectedPorts.push({ id: portIndex, name: portName });
       this._isConnected = true;
       this._currentInputName = portName;
       this._notes = [];
-      
+
+      // Update available ports list
+      this._lastAvailablePorts = await this.getAvailablePorts();
+
+      // Start hot-swap monitoring
+      this._startHotSwapMonitoring();
+
       console.log(`[RtMidiInput] Connected to port ${portIndex}: ${portName}`);
-      
+
       // Emit connection event
       this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
         connected: true,
         inputPort: portName,
       });
-      
+
       return true;
     } catch (error) {
       console.error('[RtMidiInput] Failed to connect:', error);
+      this._startHotSwapMonitoring();
       return false;
     }
   }
@@ -399,18 +467,21 @@ export class RtMidiInput extends EventEmitter {
    * Disconnect from all MIDI inputs
    */
   disconnect(): void {
+    // Stop hot-swap monitoring
+    this._stopHotSwapMonitoring();
+
     for (const [, input] of this._midiInputs) {
       input.closePort();
     }
     this._midiInputs.clear();
     this._connectedPorts = [];
-    
+
     this._isConnected = false;
     this._currentInputName = null;
     this._notes = [];
-    
+
     console.log('[RtMidiInput] Disconnected');
-    
+
     // Emit disconnection event
     this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
       connected: false,
@@ -481,6 +552,125 @@ export class RtMidiInput extends EventEmitter {
         removed: noteStr,
         portName,
       });
+    }
+  }
+
+  /**
+   * Start device monitoring for device changes
+   */
+  private _startHotSwapMonitoring(): void {
+    if (this._deviceMonitoring === false) {
+      return;
+    }
+
+    // Stop any existing monitoring
+    this._stopHotSwapMonitoring();
+
+    // Start periodic scanning
+    this._monitoringTimer = setInterval(() => {
+      this._checkDeviceChanges();
+    }, this._deviceMonitoring);
+
+    console.log(`[RtMidiInput] Device monitoring started (interval: ${this._deviceMonitoring}ms)`);
+  }
+
+  /**
+   * Stop device monitoring
+   */
+  private _stopHotSwapMonitoring(): void {
+    if (this._monitoringTimer) {
+      clearInterval(this._monitoringTimer);
+      this._monitoringTimer = null;
+      console.log('[RtMidiInput] Device monitoring stopped');
+    }
+  }
+
+  /**
+   * Check for device changes and attempt reconnection if needed
+   */
+  private async _checkDeviceChanges(): Promise<void> {
+    try {
+      // Get current available ports
+      const currentPorts = await this.getAvailablePorts();
+
+      // Check if any of our connected ports are still available
+      if (this._isConnected && this._connectedPorts.length > 0) {
+        const stillConnected = this._connectedPorts.filter(connectedPort =>
+          currentPorts.some(port => port.name === connectedPort.name)
+        );
+
+        if (stillConnected.length < this._connectedPorts.length) {
+          const disconnectedPorts = this._connectedPorts.filter(connectedPort =>
+            !currentPorts.some(port => port.name === connectedPort.name)
+          );
+
+          console.log(`[RtMidiInput] Device(s) disconnected: ${disconnectedPorts.map(p => p.name).join(', ')}`);
+
+          // If all devices disconnected, mark as not connected
+          if (stillConnected.length === 0) {
+            this._isConnected = false;
+            this._currentInputName = null;
+            this._notes = [];
+
+            // Emit disconnection event
+            this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
+              connected: false,
+            });
+          }
+
+          // Try to reconnect
+          await this._attemptReconnection(currentPorts);
+        }
+      } else if (!this._isConnected) {
+        // Not connected, check if we can reconnect
+        await this._attemptReconnection(currentPorts);
+      }
+
+      // Update the last known ports list
+      this._lastAvailablePorts = currentPorts;
+    } catch (error) {
+      console.error('[RtMidiInput] Error checking device changes:', error);
+    }
+  }
+
+  /**
+   * Attempt to reconnect to MIDI device(s)
+   */
+  private async _attemptReconnection(availablePorts: MidiInputPort[]): Promise<void> {
+    if (availablePorts.length === 0) {
+      return;
+    }
+
+    // Check if there are new ports available
+    const newPorts = availablePorts.filter(port =>
+      !this._lastAvailablePorts.some(lastPort => lastPort.name === port.name)
+    );
+
+    if (newPorts.length > 0) {
+      console.log(`[RtMidiInput] New device(s) detected: ${newPorts.map(p => p.name).join(', ')}`);
+    }
+
+    // Temporarily disable monitoring to avoid recursion
+    const wasMonitoring = this._monitoringTimer !== null;
+    this._stopHotSwapMonitoring();
+
+    let success = false;
+
+    if (this._connectAllMode) {
+      // Reconnect to all ports
+      console.log('[RtMidiInput] Attempting to reconnect to all ports');
+      success = await this.connectAll(this._lastExcludePorts);
+    } else if (this._lastRequestedPort !== undefined && this._lastRequestedPort !== null) {
+      // Reconnect to specific port
+      console.log(`[RtMidiInput] Attempting to reconnect to: ${this._lastRequestedPort}`);
+      success = await this.connect(this._lastRequestedPort);
+    }
+
+    if (success) {
+      console.log(`[RtMidiInput] Successfully reconnected to: ${this._currentInputName}`);
+    } else if (wasMonitoring) {
+      // Restart monitoring if it was running
+      this._startHotSwapMonitoring();
     }
   }
 }

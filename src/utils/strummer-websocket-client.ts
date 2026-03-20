@@ -41,6 +41,15 @@ export interface ServerMidiInputStatus {
   currentNotes: string[];
 }
 
+/** MIDI devices list from server */
+export interface ServerMidiDevices {
+  inputPorts: ServerMidiInputPort[];
+  outputPorts: ServerMidiInputPort[];
+  currentInputPorts: number[];
+  currentOutputPort: number | null;
+  excludedInputPorts: string[];
+}
+
 /** Action event from server */
 export interface ServerActionEvent {
   action: string;
@@ -69,6 +78,7 @@ export interface StrummerWebSocketClientEvents {
   'config': ServerConfigData;
   'midi-input': ServerMidiInputEvent;
   'midi-input-status': ServerMidiInputStatus;
+  'midi-devices': ServerMidiDevices;
   'action-event': ServerActionEvent;
   'error': Error;
 }
@@ -367,11 +377,26 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Subscribe to MIDI devices list from server
+   */
+  onMidiDevices(callback: (devices: ServerMidiDevices) => void): () => void {
+    this.on<ServerMidiDevices>('midi-devices', callback);
+    return () => this.off('midi-devices', callback as any);
+  }
+
+  /**
    * Subscribe to action events from server
    */
   onActionEvent(callback: (event: ServerActionEvent) => void): () => void {
     this.on<ServerActionEvent>('action-event', callback);
     return () => this.off('action-event', callback as any);
+  }
+
+  /**
+   * Request MIDI devices list from server
+   */
+  requestMidiDevices(): void {
+    this.send({ type: 'get-midi-devices' });
   }
 
   private setConnectionState(state: ConnectionState): void {
@@ -448,6 +473,18 @@ export class StrummerWebSocketClient extends EventEmitter {
             connectedPort: message.connectedPort ?? null,
             currentNotes: message.currentNotes ?? [],
           });
+          break;
+        case 'midi-devices':
+          // MIDI devices list from server (available and connected devices)
+          if (message.data) {
+            this.emit<ServerMidiDevices>('midi-devices', {
+              inputPorts: message.data.inputPorts ?? [],
+              outputPorts: message.data.outputPorts ?? [],
+              currentInputPorts: message.data.currentInputPorts ?? [],
+              currentOutputPort: message.data.currentOutputPort ?? null,
+              excludedInputPorts: message.data.excludedInputPorts ?? [],
+            });
+          }
           break;
         case 'action-event':
           // Action event from server (button pressed, action executed)

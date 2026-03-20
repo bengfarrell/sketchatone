@@ -107,8 +107,6 @@ export interface StartupRule {
  * Complete action rules configuration
  */
 export interface ActionRulesConfigData {
-  /** Human-readable names for buttons */
-  buttonNames: Record<ButtonId, string>;
   /** Individual button-to-action rules */
   rules: ActionRule[];
   /** Button groups (just collections of buttons) */
@@ -123,7 +121,6 @@ export interface ActionRulesConfigData {
  * Default action rules configuration
  */
 export const DEFAULT_ACTION_RULES_CONFIG: ActionRulesConfigData = {
-  buttonNames: {},
   rules: [],
   groups: [],
   groupRules: [],
@@ -174,36 +171,18 @@ export function createButtonId(type: 'stylus' | 'tablet', identifier: string | n
   return `button:${identifier}` as ButtonId;
 }
 
-/**
- * Get a human-readable label for a button ID
- */
-export function getButtonLabel(buttonId: ButtonId, buttonNames?: Record<ButtonId, string>): string {
-  // Check for custom name first
-  if (buttonNames && buttonNames[buttonId]) {
-    return buttonNames[buttonId];
-  }
-  
-  // Generate default label
-  const { type, identifier } = parseButtonId(buttonId);
-  if (type === 'stylus') {
-    return identifier === 'primary' ? 'Primary Stylus' : 'Secondary Stylus';
-  }
-  
-  return `Button ${identifier}`;
-}
+
 
 /**
  * Action Rules Configuration class
  */
 export class ActionRulesConfig implements ActionRulesConfigData {
-  buttonNames: Record<ButtonId, string>;
   rules: ActionRule[];
   groups: ButtonGroup[];
   groupRules: GroupRule[];
   startupRules: StartupRule[];
 
   constructor(data: Partial<ActionRulesConfigData> = {}) {
-    this.buttonNames = { ...DEFAULT_ACTION_RULES_CONFIG.buttonNames, ...data.buttonNames };
     this.rules = data.rules ? [...data.rules] : [];
     this.groups = data.groups ? [...data.groups] : [];
     this.groupRules = data.groupRules ? [...data.groupRules] : [];
@@ -229,7 +208,6 @@ export class ActionRulesConfig implements ActionRulesConfigData {
     })) ?? [];
 
     return new ActionRulesConfig({
-      buttonNames: (data.buttonNames ?? data.button_names) as Record<ButtonId, string> | undefined,
       rules: (data.rules as ActionRule[]) ?? [],
       groups: (data.groups as ButtonGroup[]) ?? [],
       groupRules,
@@ -242,7 +220,6 @@ export class ActionRulesConfig implements ActionRulesConfigData {
    */
   toDict(): ActionRulesConfigData {
     return {
-      buttonNames: { ...this.buttonNames },
       rules: [...this.rules],
       groups: [...this.groups],
       groupRules: [...this.groupRules],
@@ -388,17 +365,6 @@ export class ActionRulesConfig implements ActionRulesConfigData {
       return true;
     }
     return false;
-  }
-
-  /**
-   * Set a button's name
-   */
-  setButtonName(buttonId: ButtonId, name: string): void {
-    if (name) {
-      this.buttonNames[buttonId] = name;
-    } else {
-      delete this.buttonNames[buttonId];
-    }
   }
 
   /**

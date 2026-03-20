@@ -445,7 +445,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         if midi_port is not None:
             self.config.midi.midi_output_id = midi_port
         if note_duration is not None:
-            self.config.midi.note_duration = note_duration
+            self.config.midi.default_note_duration = note_duration
         if jack_client_name is not None:
             self.config.midi.jack_client_name = jack_client_name
         if jack_auto_connect is not None:
@@ -454,6 +454,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Create strummer
         self.strummer = Strummer()
         self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+
+        # Listen for notes_changed events to broadcast config updates
+        # Store the callback as an instance method to prevent garbage collection
+        self.strummer.on('notes_changed', self._on_strummer_notes_changed)
 
         # Set up notes
         self._setup_notes()
@@ -603,7 +607,10 @@ class StrummerWebSocketServer(TabletReaderBase):
                 )
             else:
                 from sketchatone.midi.rtmidi_backend import RtMidiBackend
-                self.backend = RtMidiBackend(channel=self.config.channel, inter_message_delay=delay)
+                self.backend = RtMidiBackend(
+                    channel=self.config.channel,
+                    inter_message_delay=delay,
+                )
 
             # Connect backend
             port = self.config.midi_output_id
@@ -646,6 +653,40 @@ class StrummerWebSocketServer(TabletReaderBase):
                 print(colored('  JACK Auto-connect: ', Colors.CYAN) +
                       colored(self.config.jack_auto_connect, Colors.WHITE))
 
+    def _register_midi_input_callback(self) -> None:
+        """Register the MIDI input note callback. Can be called multiple times to re-register after reconnection."""
+        if not self.midi_input:
+            return
+
+        # Listen for note events with debounce logic
+        def on_midi_note(event: MidiInputNoteEvent) -> None:
+            # Broadcast MIDI input event to all clients (for UI display)
+            self._broadcast_midi_input(event)
+
+            # Clear any pending debounce timer
+            if self._midi_input_debounce_timer:
+                self._midi_input_debounce_timer.cancel()
+                self._midi_input_debounce_timer = None
+
+            if event.get('added'):
+                # Note was added - update immediately
+                self._update_notes_from_midi_input(event['notes'])
+            elif event.get('removed'):
+                # Note was removed - debounce to handle rapid releases
+                def debounced_update():
+                    self._midi_input_debounce_timer = None
+                    # Only update if there are still notes held
+                    # If all notes released, keep the last chord
+                    if self.midi_input and len(self.midi_input.notes) > 0:
+                        self._update_notes_from_midi_input(self.midi_input.notes)
+
+                self._midi_input_debounce_timer = threading.Timer(0.1, debounced_update)
+                self._midi_input_debounce_timer.daemon = True
+                self._midi_input_debounce_timer.start()
+
+        self.midi_input.on_note(on_midi_note)
+        print(colored('[MIDI Input] Callback registered', Colors.GRAY))
+
     def _setup_midi_input(self) -> bool:
         """
         Initialize MIDI input for external keyboard.
@@ -686,33 +727,9 @@ class StrummerWebSocketServer(TabletReaderBase):
                 print(colored('[MIDI Input] No MIDI input ports available', Colors.YELLOW))
                 return False
 
-            # Listen for note events with debounce logic
-            def on_midi_note(event: MidiInputNoteEvent) -> None:
-                # Broadcast MIDI input event to all clients (for UI display)
-                self._broadcast_midi_input(event)
+            # Register note event callback
+            self._register_midi_input_callback()
 
-                # Clear any pending debounce timer
-                if self._midi_input_debounce_timer:
-                    self._midi_input_debounce_timer.cancel()
-                    self._midi_input_debounce_timer = None
-
-                if event.get('added'):
-                    # Note was added - update immediately
-                    self._update_notes_from_midi_input(event['notes'])
-                elif event.get('removed'):
-                    # Note was removed - debounce to handle rapid releases
-                    def debounced_update():
-                        self._midi_input_debounce_timer = None
-                        # Only update if there are still notes held
-                        # If all notes released, keep the last chord
-                        if self.midi_input and len(self.midi_input.notes) > 0:
-                            self._update_notes_from_midi_input(self.midi_input.notes)
-
-                    self._midi_input_debounce_timer = threading.Timer(0.1, debounced_update)
-                    self._midi_input_debounce_timer.daemon = True
-                    self._midi_input_debounce_timer.start()
-
-            self.midi_input.on_note(on_midi_note)
             return True
 
         except Exception as e:
@@ -746,6 +763,8 @@ class StrummerWebSocketServer(TabletReaderBase):
         }
 
         self._broadcast(json.dumps(midi_input_message))
+
+
 
     async def _send_midi_input_status(self, websocket: WebSocketServerProtocol) -> None:
         """Send MIDI input status to a specific client"""
@@ -781,13 +800,16 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Update the config's initial_notes
         self.config.strummer.strumming.initial_notes = note_strings
 
+        # Clear the chord so that initial_notes are used instead
+        self.config.strummer.strumming.chord = None
+
         # Reconfigure strummer with new notes
         self._setup_notes()
 
         # Broadcast config change to all connected clients
         self.broadcast_config()
 
-        print(colored(f'[MIDI Input] Notes: {", ".join(note_strings)}', Colors.CYAN))
+        print(colored(f'[MIDI Input] Updated notes: {", ".join(note_strings)}', Colors.CYAN))
 
     async def start(self) -> None:
         """Start the reader - required by TabletReaderBase abstract method"""
@@ -1041,6 +1063,13 @@ class StrummerWebSocketServer(TabletReaderBase):
             'isSavedState': is_saved_state,
         }
 
+    def _on_strummer_notes_changed(self) -> None:
+        """
+        Callback for when strummer notes change.
+        Broadcasts config update to all clients.
+        """
+        self.broadcast_config()
+
     def broadcast_config(self, is_saved_state: bool = False) -> None:
         """
         Broadcast current config to all clients.
@@ -1187,6 +1216,10 @@ class StrummerWebSocketServer(TabletReaderBase):
                 if config_name:
                     self._handle_delete_config(config_name)
 
+            elif msg_type == 'get-midi-devices':
+                # Get available MIDI devices
+                await self._handle_get_midi_devices(websocket)
+
             else:
                 print(colored(f'Unknown message type: {msg_type}', Colors.YELLOW))
         
@@ -1249,6 +1282,38 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Frontend sends 0-15 (0-based), backend expects 0-15 (0-based)
             if 'midiChannel' in path and self.backend is not None:
                 self.backend.set_channel(value)
+
+            # Reconnect MIDI output if port changed
+            if path == 'midi.midiOutputId' and self.backend is not None:
+                print(colored(f'[MIDI Output] Reconnecting to port: {value}', Colors.CYAN))
+                self.backend.disconnect()
+                if self.backend.connect(value):
+                    print(colored('[MIDI Output] Reconnected successfully', Colors.GREEN))
+                    # Broadcast updated device list to all clients
+                    self._broadcast_midi_devices()
+                else:
+                    print(colored('[MIDI Output] Failed to reconnect', Colors.RED))
+
+            # Reconnect MIDI input if port changed
+            if path == 'midi.midiInputId' and self.midi_input is not None:
+                print(colored(f'[MIDI Input] Reconnecting to port: {value}', Colors.CYAN))
+                self.midi_input.disconnect()
+                if value is None:
+                    # Connect to all ports
+                    if self.midi_input.connect_all():
+                        print(colored('[MIDI Input] Reconnected to all ports', Colors.GREEN))
+                        # Re-register the callback after reconnection
+                        self._register_midi_input_callback()
+                        # Broadcast updated device list to all clients
+                        self._broadcast_midi_devices()
+                else:
+                    # Connect to specific port
+                    if self.midi_input.connect(value):
+                        print(colored('[MIDI Input] Reconnected successfully', Colors.GREEN))
+                        # Re-register the callback after reconnection
+                        self._register_midi_input_callback()
+                        # Broadcast updated device list to all clients
+                        self._broadcast_midi_devices()
 
             # Re-apply action rules if they changed
             if 'actionRules' in path or 'action_rules' in path:
@@ -1502,6 +1567,108 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.broadcast_config(is_saved_state=True)
         except Exception as e:
             print(colored(f'[Delete Config] Failed to delete config: {e}', Colors.RED))
+
+    def _get_midi_devices_data(self) -> dict:
+        """
+        Get current MIDI devices data.
+        Returns a dict with inputPorts, outputPorts, currentInputPorts, currentOutputPort, and excludedInputPorts.
+        """
+        input_ports = []
+        output_ports = []
+
+        # Get MIDI input ports
+        if self.midi_input:
+            available_inputs = self.midi_input.get_available_ports()
+            input_ports = available_inputs
+
+        # Get MIDI output ports
+        if self.backend:
+            available_outputs = self.backend.get_available_ports()
+            output_ports = [
+                {'id': i, 'name': name}
+                for i, name in enumerate(available_outputs)
+            ]
+
+        # Get currently connected ports (not just config values)
+        # For input: return ALL connected port IDs (for "all ports" mode)
+        current_input_ports = []
+        if self.midi_input and self.midi_input.is_connected:
+            connected_ports = self.midi_input.connected_ports
+            current_input_ports = [p['id'] for p in connected_ports]
+
+        # Build exclusion list (same logic as _setup_midi_input)
+        excluded_input_ports = list(self.config.midi.midi_input_exclude)
+        if self.backend and self.backend.current_output_name:
+            excluded_input_ports.append(self.backend.current_output_name)
+
+        # For output: find the port ID that matches the connected port name
+        current_output_port = None
+        if self.backend and self.backend.is_connected and self.backend.current_output_name:
+            # Find the port index that matches the current output name
+            output_name = self.backend.current_output_name
+            for port in output_ports:
+                if port['name'] == output_name:
+                    current_output_port = port['id']
+                    break
+
+        return {
+            'inputPorts': input_ports,
+            'outputPorts': output_ports,
+            'currentInputPorts': current_input_ports,  # Array of connected input port IDs
+            'currentOutputPort': current_output_port,
+            'excludedInputPorts': excluded_input_ports,  # Ports excluded from input to prevent feedback loops
+        }
+
+    async def _handle_get_midi_devices(self, websocket: WebSocketServerProtocol) -> None:
+        """Handle get-midi-devices request - returns available MIDI input and output ports."""
+        try:
+            data = self._get_midi_devices_data()
+            response = {
+                'type': 'midi-devices',
+                'data': data
+            }
+            await websocket.send(json.dumps(response))
+        except Exception as e:
+            print(colored(f'[Get MIDI Devices] Error: {e}', Colors.RED))
+
+    def _broadcast_midi_devices(self) -> None:
+        """Broadcast MIDI devices update to all connected clients."""
+        if not self.clients:
+            print(colored('[Broadcast MIDI Devices] No clients connected', Colors.YELLOW))
+            return
+
+        try:
+            data = self._get_midi_devices_data()
+            print(colored(f'[Broadcast MIDI Devices] currentInputPorts: {data["currentInputPorts"]}', Colors.CYAN))
+            print(colored(f'[Broadcast MIDI Devices] currentOutputPort: {data["currentOutputPort"]}', Colors.CYAN))
+
+            message = {
+                'type': 'midi-devices',
+                'data': data
+            }
+
+            # Schedule broadcast on the event loop
+            if hasattr(self, '_main_loop') and self._main_loop:
+                print(colored(f'[Broadcast MIDI Devices] Broadcasting to {len(self.clients)} client(s)', Colors.GREEN))
+                asyncio.run_coroutine_threadsafe(
+                    self._broadcast_message(message),
+                    self._main_loop
+                )
+            else:
+                print(colored('[Broadcast MIDI Devices] No event loop available', Colors.RED))
+        except Exception as e:
+            print(colored(f'[Broadcast MIDI Devices] Error: {e}', Colors.RED))
+
+    async def _broadcast_message(self, message: dict) -> None:
+        """Broadcast a message to all connected clients."""
+        if not self.clients:
+            return
+
+        message_json = json.dumps(message)
+        await asyncio.gather(
+            *[client.send(message_json) for client in self.clients],
+            return_exceptions=True
+        )
 
     def _set_config_value(self, path: str, value: Any) -> None:
         """
@@ -1933,6 +2100,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             print(colored(f'✓ MIDI input: {port_info}', Colors.GREEN))
         else:
             print(colored('⚠ No MIDI input ports available', Colors.YELLOW))
+
+        # Note: Automatic device monitoring has been removed in favor of manual refresh
+        # Users can click the "Refresh Devices" button in the UI to update the device list
 
         # Start event bus
         self.event_bus.start(self._main_loop)

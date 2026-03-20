@@ -35,7 +35,7 @@ class MidiConfig:
         midi_input_exclude: List of port name patterns to exclude from auto-connect (case-insensitive substring match)
         jack_client_name: Name for JACK client (default: "sketchatone")
         jack_auto_connect: JACK auto-connect mode (default: "chain0")
-        note_duration: Duration of notes in seconds (default: 1.5)
+        default_note_duration: Default duration of notes in seconds (default: 1.5)
         midi_inter_message_delay: Delay in seconds after each MIDI message (default: 0).
             Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick with direct USB devices (e.g. Juno DS).
             Works with both rtmidi and JACK backends.
@@ -46,7 +46,7 @@ class MidiConfig:
     midi_input_exclude: List[str] = field(default_factory=lambda: DEFAULT_MIDI_INPUT_EXCLUDE.copy())
     jack_client_name: str = "sketchatone"
     jack_auto_connect: Optional[str] = "chain0"
-    note_duration: float = 1.5
+    default_note_duration: float = 1.5
     midi_inter_message_delay: float = 0.0
     
     @classmethod
@@ -58,11 +58,8 @@ class MidiConfig:
         if exclude_list is None:
             exclude_list = DEFAULT_MIDI_INPUT_EXCLUDE.copy()
 
-        # Get inter-message delay with backward compatibility
-        delay = data.get('midi_inter_message_delay', data.get('midiInterMessageDelay'))
-        if delay is None:
-            # Backward compatibility: check old name
-            delay = data.get('rtmidi_inter_message_delay', data.get('rtmidiInterMessageDelay', 0))
+        # Get inter-message delay
+        delay = data.get('midi_inter_message_delay', data.get('midiInterMessageDelay', 0))
 
         return cls(
             midi_output_backend=data.get('midi_output_backend', data.get('midiOutputBackend', 'rtmidi')),
@@ -71,8 +68,8 @@ class MidiConfig:
             midi_input_exclude=exclude_list,
             jack_client_name=data.get('jack_client_name', data.get('jackClientName', 'sketchatone')),
             jack_auto_connect=data.get('jack_auto_connect', data.get('jackAutoConnect', 'chain0')),
-            note_duration=data.get('note_duration', data.get('noteDuration', 1.5)),
-            midi_inter_message_delay=float(delay or 0)
+            default_note_duration=data.get('default_note_duration', data.get('defaultNoteDuration', data.get('note_duration', data.get('noteDuration', 1.5)))),
+            midi_inter_message_delay=float(delay or 0),
         )
     
     @classmethod
@@ -91,8 +88,8 @@ class MidiConfig:
             'midiInputExclude': self.midi_input_exclude,
             'jackClientName': self.jack_client_name,
             'jackAutoConnect': self.jack_auto_connect,
-            'noteDuration': self.note_duration,
-            'midiInterMessageDelay': self.midi_inter_message_delay
+            'defaultNoteDuration': self.default_note_duration,
+            'midiInterMessageDelay': self.midi_inter_message_delay,
         }
     
     def to_json_file(self, path: str) -> None:

@@ -178,7 +178,7 @@ class MidiStrummer(TabletReaderBase):
         if midi_port is not None:
             self.config.midi_output_id = midi_port
         if note_duration is not None:
-            self.config.note_duration = note_duration
+            self.config.midi.default_note_duration = note_duration
         if jack_client_name is not None:
             self.config.jack_client_name = jack_client_name
         if jack_auto_connect is not None:
@@ -315,7 +315,10 @@ class MidiStrummer(TabletReaderBase):
                 )
             else:
                 from sketchatone.midi.rtmidi_backend import RtMidiBackend
-                self.backend = RtMidiBackend(channel=self.config.channel, inter_message_delay=delay)
+                self.backend = RtMidiBackend(
+                    channel=self.config.channel,
+                    inter_message_delay=delay,
+                )
 
             # Connect backend
             port = self.config.midi_output_id

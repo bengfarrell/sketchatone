@@ -7,3 +7,4 @@ export { SketchatoneTabletApp } from './sketchatone-tablet-app/sketchatone-table
 export { SketchatoneWebApp } from './sketchatone-web-app/sketchatone-web-app.js';
 export { SketchatoneDashboard } from './sketchatone-dashboard/sketchatone-dashboard.js';
 export { ActionRulesConfigComponent } from './action-rules-config/action-rules-config.js';
+export { MidiDevicesConfig } from './midi-devices-config/midi-devices-config.js';

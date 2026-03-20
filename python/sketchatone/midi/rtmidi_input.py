@@ -6,6 +6,7 @@ Listens to MIDI input from external devices (keyboards, controllers).
 """
 
 import threading
+import time
 from typing import Optional, List, Dict, Callable, Union, TypedDict
 
 try:
@@ -70,8 +71,14 @@ class RtMidiInput:
         input.connect_all()
     """
 
-    def __init__(self):
-        """Initialize the MIDI input backend."""
+    def __init__(self, device_monitoring: Union[int, bool] = False):
+        """
+        Initialize the MIDI input backend.
+
+        Args:
+            device_monitoring: Device monitoring disabled by default (False).
+                Users must manually refresh the device list.
+        """
         if rtmidi is None:
             raise ImportError(
                 "python-rtmidi not installed. "
@@ -85,6 +92,19 @@ class RtMidiInput:
         self._connected_ports: List[MidiInputPort] = []
         self._note_callbacks: List[Callable[[MidiInputNoteEvent], None]] = []
         self._lock = threading.Lock()
+
+        # Device monitoring
+        # Normalize: False or 0 means disabled, otherwise convert to seconds
+        if device_monitoring is False or device_monitoring == 0:
+            self._device_monitoring = False
+        else:
+            self._device_monitoring = float(device_monitoring) / 1000.0  # Convert ms to seconds
+        self._monitoring_timer: Optional[threading.Timer] = None
+        self._last_requested_port: Optional[Union[int, str]] = None
+        self._connect_all_mode = False
+        self._last_exclude_ports: Optional[List[str]] = None
+        self._last_available_ports: List[str] = []
+        self._device_change_callback: Optional[Callable[[], None]] = None
 
     @property
     def is_connected(self) -> bool:
@@ -114,6 +134,15 @@ class RtMidiInput:
         if callback in self._note_callbacks:
             self._note_callbacks.remove(callback)
 
+    def on_device_change(self, callback: Callable[[], None]) -> None:
+        """
+        Register a callback to be called when MIDI devices change.
+
+        Args:
+            callback: Function to call when devices are added/removed
+        """
+        self._device_change_callback = callback
+
     def _emit_note_event(self, event: MidiInputNoteEvent) -> None:
         """Emit note event to all registered callbacks"""
         for callback in self._note_callbacks:
@@ -125,7 +154,15 @@ class RtMidiInput:
     def get_available_ports(self) -> List[MidiInputPort]:
         """Get list of available MIDI input ports."""
         try:
+            # Create a fresh MidiIn instance to force port list refresh
+            # On macOS, rtmidi sometimes caches the port list, so we need to
+            # create a new instance each time to see newly connected devices
             temp_in = rtmidi.MidiIn()
+
+            # Small delay to allow the system to enumerate devices
+            # This helps on macOS where device detection can be delayed
+            time.sleep(0.01)
+
             ports: List[MidiInputPort] = []
             port_count = temp_in.get_port_count()
             for i in range(port_count):
@@ -193,9 +230,12 @@ class RtMidiInput:
 
             self._is_connected = True
             self._current_input_name = f"All ports ({connected_count})"
+            self._connect_all_mode = True
+            self._last_exclude_ports = exclude_ports
             with self._lock:
                 self._notes = []
 
+            self._start_hot_swap_monitoring()
             return True
         except Exception as e:
             print(f"[RtMidiInput] Failed to connect to all ports: {e}")
@@ -258,10 +298,13 @@ class RtMidiInput:
             self._connected_ports.append({'id': port_index, 'name': port_name})
             self._is_connected = True
             self._current_input_name = port_name
+            self._connect_all_mode = False
+            self._last_requested_port = input_port
             with self._lock:
                 self._notes = []
 
             print(f"[RtMidiInput] Connected to port {port_index}: {port_name}")
+            self._start_hot_swap_monitoring()
 
             return True
         except Exception as e:
@@ -270,6 +313,8 @@ class RtMidiInput:
 
     def disconnect(self) -> None:
         """Disconnect from all MIDI inputs"""
+        self._stop_hot_swap_monitoring()
+
         for midi_in in self._midi_inputs.values():
             try:
                 midi_in.close_port()
@@ -348,3 +393,112 @@ class RtMidiInput:
             'removed': note_str,
             'port_name': port_name,
         })
+
+    def _start_hot_swap_monitoring(self) -> None:
+        """Start device monitoring for device changes."""
+        if self._device_monitoring is False:
+            return
+
+        self._stop_hot_swap_monitoring()
+        self._schedule_next_check()
+
+    def _stop_hot_swap_monitoring(self) -> None:
+        """Stop device monitoring."""
+        if self._monitoring_timer:
+            self._monitoring_timer.cancel()
+            self._monitoring_timer = None
+
+    def _schedule_next_check(self) -> None:
+        """Schedule the next device check."""
+        if self._device_monitoring is False:
+            return
+
+        self._monitoring_timer = threading.Timer(
+            self._device_monitoring,
+            self._check_device_changes
+        )
+        self._monitoring_timer.daemon = True
+        self._monitoring_timer.start()
+
+    def _check_device_changes(self) -> None:
+        """Check for device changes and attempt reconnection if needed."""
+        try:
+            available_ports = self.get_available_ports()
+            current_port_names = [p['name'] for p in available_ports]
+            devices_changed = False
+
+            # Check if any connected devices are still present
+            if self._is_connected:
+                connected_names = [p['name'] for p in self._connected_ports]
+                disconnected = [name for name in connected_names if name not in current_port_names]
+
+                if disconnected:
+                    print(f"[RtMidiInput] Device(s) disconnected: {', '.join(disconnected)}")
+                    # Close disconnected ports
+                    for port_id in list(self._midi_inputs.keys()):
+                        port_info = next((p for p in self._connected_ports if p['id'] == port_id), None)
+                        if port_info and port_info['name'] in disconnected:
+                            try:
+                                self._midi_inputs[port_id].close_port()
+                                del self._midi_inputs[port_id]
+                            except Exception:
+                                pass
+
+                    # Update connected ports list
+                    self._connected_ports = [p for p in self._connected_ports if p['name'] not in disconnected]
+
+                    if not self._connected_ports:
+                        self._is_connected = False
+                        self._current_input_name = None
+
+                    devices_changed = True
+
+            # Check for new devices and attempt reconnection
+            if not self._is_connected:
+                new_ports = [p for p in current_port_names if p not in self._last_available_ports]
+                if new_ports:
+                    print(f"[RtMidiInput] New device(s) detected: {', '.join(new_ports)}")
+                    self._attempt_reconnection()
+                    devices_changed = True
+
+            # Check if device list changed (even if we're connected)
+            if set(current_port_names) != set(self._last_available_ports):
+                devices_changed = True
+
+            self._last_available_ports = current_port_names
+
+            # Notify callback if devices changed
+            if devices_changed and self._device_change_callback:
+                try:
+                    self._device_change_callback()
+                except Exception as e:
+                    print(f"[RtMidiInput] Error in device change callback: {e}")
+
+        except Exception as e:
+            print(f"[RtMidiInput] Error checking device changes: {e}")
+        finally:
+            # Schedule next check
+            self._schedule_next_check()
+
+    def _attempt_reconnection(self) -> None:
+        """Attempt to reconnect to the last requested port."""
+        if self._is_connected:
+            return
+
+        try:
+            if self._connect_all_mode:
+                print("[RtMidiInput] Attempting to reconnect to all ports")
+                success = self.connect_all(self._last_exclude_ports)
+            elif self._last_requested_port is not None:
+                print(f"[RtMidiInput] Attempting to reconnect to: {self._last_requested_port}")
+                success = self.connect(self._last_requested_port)
+            else:
+                return
+
+            if success:
+                print(f"[RtMidiInput] Successfully reconnected to: {self._current_input_name}")
+            else:
+                print("[RtMidiInput] Reconnection failed")
+
+        except Exception as e:
+            print(f"[RtMidiInput] Reconnection error: {e}")

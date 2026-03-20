@@ -6,7 +6,7 @@ MIDI output backend using python-rtmidi for cross-platform MIDI support.
 
 import threading
 import time
-from typing import Optional, List, Tuple, Set
+from typing import Optional, List, Tuple, Set, Union, Callable
 
 try:
     import rtmidi
@@ -31,7 +31,12 @@ class RtMidiBackend(MidiBackendProtocol):
         backend.disconnect()
     """
 
-    def __init__(self, channel: Optional[int] = None, inter_message_delay: float = 0.0):
+    def __init__(
+        self,
+        channel: Optional[int] = None,
+        inter_message_delay: float = 0.0,
+        device_monitoring: Union[int, bool] = False
+    ):
         """
         Initialize the rtmidi backend.
 
@@ -40,6 +45,8 @@ class RtMidiBackend(MidiBackendProtocol):
                 or None for omni mode (sends to all 16 channels). Note: CLI and user-facing interfaces use 1-16.
             inter_message_delay: Seconds to wait after each MIDI message (default 0).
                 Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick with direct USB (e.g. Juno DS).
+            device_monitoring: Device monitoring disabled by default (False).
+                Users must manually refresh the device list.
         """
         if rtmidi is None:
             raise ImportError(
@@ -63,6 +70,17 @@ class RtMidiBackend(MidiBackendProtocol):
         # State Guard: Track active notes to prevent "Note Shadowing" (sending Note On twice without Note Off)
         self._active_notes: Set[int] = set()
         self._last_send_time = 0.0
+
+        # Device monitoring
+        # Normalize: False or 0 means disabled, otherwise convert to seconds
+        if device_monitoring is False or device_monitoring == 0:
+            self._device_monitoring = False
+        else:
+            self._device_monitoring = float(device_monitoring) / 1000.0  # Convert ms to seconds
+        self._monitoring_timer: Optional[threading.Timer] = None
+        self._last_requested_port: Optional[int | str] = None
+        self._last_available_ports: List[str] = []
+        self._device_change_callback: Optional[Callable[[], None]] = None
 
     def _send(self, message) -> None:
         """
@@ -91,11 +109,20 @@ class RtMidiBackend(MidiBackendProtocol):
     def get_available_ports(self) -> List[str]:
         """Get list of available MIDI output ports."""
         try:
+            # Create a fresh MidiOut instance to force port list refresh
+            # On macOS, rtmidi sometimes caches the port list, so we need to
+            # create a new instance each time to see newly connected devices
             temp_out = rtmidi.MidiOut()
+
+            # Small delay to allow the system to enumerate devices
+            # This helps on macOS where device detection can be delayed
+            time.sleep(0.01)
+
             ports = temp_out.get_ports()
             del temp_out
             return ports
-        except Exception:
+        except Exception as e:
+            print(f"[RtMidi] Error getting available ports: {e}")
             return []
     
     def connect(self, output_port: Optional[str] = None) -> bool:
@@ -120,6 +147,8 @@ class RtMidiBackend(MidiBackendProtocol):
                 print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
                 self._current_output_name = "Sketchatone"
                 self._connected = True
+                self._last_requested_port = output_port
+                self._start_hot_swap_monitoring()
                 return True
 
             # Print available ports for debugging
@@ -137,6 +166,9 @@ class RtMidiBackend(MidiBackendProtocol):
             print(f"[RtMidi] Connected to: {self._current_output_name}")
             print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
             self._connected = True
+            self._last_requested_port = output_port
+            self._last_available_ports = available_ports
+            self._start_hot_swap_monitoring()
             return True
 
         except Exception as e:
@@ -181,6 +213,8 @@ class RtMidiBackend(MidiBackendProtocol):
     
     def disconnect(self) -> None:
         """Disconnect and clean up."""
+        self._stop_hot_swap_monitoring()
+
         for note_key in list(self._scheduled_note_keys):
             self._scheduler.cancel(note_key)
         self._scheduled_note_keys.clear()
@@ -405,3 +439,101 @@ class RtMidiBackend(MidiBackendProtocol):
                 self._send([0xE0 + ch, lsb, msb])
             if self._inter_message_delay > 0:
                 time.sleep(self._inter_message_delay)
+
+    def on_device_change(self, callback: Callable[[], None]) -> None:
+        """
+        Register a callback to be called when MIDI devices change.
+
+        Args:
+            callback: Function to call when devices are added/removed
+        """
+        self._device_change_callback = callback
+
+    def _start_hot_swap_monitoring(self) -> None:
+        """Start device monitoring for device changes."""
+        if self._device_monitoring is False:
+            return
+
+        self._stop_hot_swap_monitoring()
+        self._schedule_next_check()
+
+    def _stop_hot_swap_monitoring(self) -> None:
+        """Stop device monitoring."""
+        if self._monitoring_timer:
+            self._monitoring_timer.cancel()
+            self._monitoring_timer = None
+
+    def _schedule_next_check(self) -> None:
+        """Schedule the next device check."""
+        if self._device_monitoring is False:
+            return
+
+        self._monitoring_timer = threading.Timer(
+            self._device_monitoring,
+            self._check_device_changes
+        )
+        self._monitoring_timer.daemon = True
+        self._monitoring_timer.start()
+
+    def _check_device_changes(self) -> None:
+        """Check for device changes and attempt reconnection if needed."""
+        try:
+            current_ports = self.get_available_ports()
+            devices_changed = False
+
+            # Check if our device is still connected
+            if self._connected and self._current_output_name:
+                if self._current_output_name not in current_ports:
+                    print(f"[RtMidi] Device disconnected: {self._current_output_name}")
+                    self._connected = False
+                    if self._midi_out:
+                        try:
+                            self._midi_out.close_port()
+                        except Exception:
+                            pass
+                        self._midi_out = None
+                    devices_changed = True
+
+            # Check for new devices and attempt reconnection
+            if not self._connected:
+                new_ports = [p for p in current_ports if p not in self._last_available_ports]
+                if new_ports:
+                    print(f"[RtMidi] New device(s) detected: {', '.join(new_ports)}")
+                    self._attempt_reconnection()
+                    devices_changed = True
+
+            # Check if device list changed (even if we're connected)
+            if set(current_ports) != set(self._last_available_ports):
+                devices_changed = True
+
+            self._last_available_ports = current_ports
+
+            # Notify callback if devices changed
+            if devices_changed and self._device_change_callback:
+                try:
+                    self._device_change_callback()
+                except Exception as e:
+                    print(f"[RtMidi] Error in device change callback: {e}")
+
+        except Exception as e:
+            print(f"[RtMidi] Error checking device changes: {e}")
+        finally:
+            # Schedule next check
+            self._schedule_next_check()
+
+    def _attempt_reconnection(self) -> None:
+        """Attempt to reconnect to the last requested port."""
+        if self._connected:
+            return
+
+        try:
+            print(f"[RtMidi] Attempting to reconnect to: {self._last_requested_port}")
+            success = self.connect(self._last_requested_port)
+
+            if success:
+                print(f"[RtMidi] Successfully reconnected to: {self._current_output_name}")
+            else:
+                print("[RtMidi] Reconnection failed")
+
+        except Exception as e:
+            print(f"[RtMidi] Reconnection error: {e}")

@@ -25,7 +25,6 @@ import {
   TriggerType,
   GroupAction,
   GroupActionType,
-  getButtonLabel,
   generateRuleId,
 } from '../../models/action-rules.js';
 import { ActionDefinition } from '../../core/actions.js';
@@ -570,7 +569,7 @@ export class ActionRulesConfigComponent extends LitElement {
                   <div class="rule-item">
                     <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
                     <span class="rule-type-badge button">Button</span>
-                    <span class="rule-button-id">${getButtonLabel(rule.button, this.config?.buttonNames)}</span>
+                    <span class="rule-button-id">${rule.button}</span>
                     <span class="rule-arrow">→</span>
                     <span class="rule-action">${this.formatAction(rule.action)}</span>
                     <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
@@ -670,7 +669,7 @@ export class ActionRulesConfigComponent extends LitElement {
                     ${group.buttons.map((btn) => {
                       const isPressed = this.pressedButtons.has(btn);
                       return html`<span class="button-chip ${isPressed ? 'pressed' : ''}"
-                        >${getButtonLabel(btn, this.config?.buttonNames)}</span
+                        >${btn}</span
                       >`;
                     })}
                   </div>
@@ -790,7 +789,7 @@ export class ActionRulesConfigComponent extends LitElement {
               <sp-field-label>Button</sp-field-label>
               <div class="form-row">
                 <sp-picker value="${this.formButton}" @change=${(e: Event) => (this.formButton = (e.target as HTMLSelectElement).value as ButtonId)}>
-                  ${availableButtons.map((btn) => html`<sp-menu-item value="${btn}">${getButtonLabel(btn, this.config?.buttonNames)}</sp-menu-item>`)}
+                  ${availableButtons.map((btn) => html`<sp-menu-item value="${btn}">${btn}</sp-menu-item>`)}
                 </sp-picker>
                 <sp-button size="s" variant="secondary" class="${this.detecting ? 'detecting' : ''}" @click=${this.startDetecting}>
                   ${this.detecting ? 'Press a button...' : 'Detect'}
@@ -910,7 +909,7 @@ export class ActionRulesConfigComponent extends LitElement {
                 const isDetected = this.pressedButtons.has(btn);
                 return html`
                   <span class="button-chip ${isSelected ? 'selected' : ''} ${isDetected ? 'detected' : ''}" @click=${() => this.toggleGroupButton(btn)} style="cursor: pointer">
-                    ${getButtonLabel(btn, this.config?.buttonNames)}
+                    ${btn}
                   </span>
                 `;
               })}

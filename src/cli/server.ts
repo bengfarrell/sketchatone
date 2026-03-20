@@ -267,6 +267,12 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Set up notes
     this.setupNotes();
 
+    // Listen for notes_changed events to broadcast config updates
+    // This ensures the visualizer updates when actions change the chord
+    this.strummer.on('notes_changed', () => {
+      this.broadcastConfig();
+    });
+
     // Create Actions handler for stylus buttons
     // Pass the actual config object so Actions can access live values
     // (e.g., lowerSpread/upperSpread that may be updated via UI)
@@ -426,6 +432,45 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Register MIDI input callback for note events
+   * Extracted to allow re-registration after reconnection
+   */
+  private registerMidiInputCallback(): void {
+    if (!this.midiInput) return;
+
+    // Listen for note events with debounce logic
+    // Similar to browser-side implementation: only update strummer when notes are held,
+    // and use debounce to handle rapid releases when releasing a chord
+    this.midiInput.on<MidiInputNoteEvent>(MIDI_INPUT_NOTE_EVENT, (event) => {
+      // Broadcast MIDI input event to all clients (for UI display)
+      this.broadcastMidiInput(event);
+
+      // Clear any pending debounce timer
+      if (this.midiInputDebounceTimer) {
+        clearTimeout(this.midiInputDebounceTimer);
+        this.midiInputDebounceTimer = null;
+      }
+
+      if (event.added) {
+        // Note was added - update immediately
+        this.updateNotesFromMidiInput(event.notes);
+      } else if (event.removed) {
+        // Note was removed - debounce to handle rapid releases
+        this.midiInputDebounceTimer = setTimeout(() => {
+          this.midiInputDebounceTimer = null;
+          // Only update if there are still notes held
+          // If all notes released, keep the last chord
+          if (this.midiInput && this.midiInput.notes.length > 0) {
+            this.updateNotesFromMidiInput(this.midiInput.notes);
+          }
+        }, 100); // 100ms debounce
+      }
+    });
+
+    console.log(chalk.gray('[MIDI Input] Callback registered'));
+  }
+
+  /**
    * Initialize MIDI input for external keyboard
    * If inputPort is null, listens to ALL available MIDI inputs (discovery mode)
    * If inputPort is specified, connects only to that port
@@ -467,34 +512,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
         return false;
       }
 
-      // Listen for note events with debounce logic
-      // Similar to browser-side implementation: only update strummer when notes are held,
-      // and use debounce to handle rapid releases when releasing a chord
-      this.midiInput.on<MidiInputNoteEvent>(MIDI_INPUT_NOTE_EVENT, (event) => {
-        // Broadcast MIDI input event to all clients (for UI display)
-        this.broadcastMidiInput(event);
-
-        // Clear any pending debounce timer
-        if (this.midiInputDebounceTimer) {
-          clearTimeout(this.midiInputDebounceTimer);
-          this.midiInputDebounceTimer = null;
-        }
-
-        if (event.added) {
-          // Note was added - update immediately
-          this.updateNotesFromMidiInput(event.notes);
-        } else if (event.removed) {
-          // Note was removed - debounce to handle rapid releases
-          this.midiInputDebounceTimer = setTimeout(() => {
-            this.midiInputDebounceTimer = null;
-            // Only update if there are still notes held
-            // If all notes released, keep the last chord
-            if (this.midiInput && this.midiInput.notes.length > 0) {
-              this.updateNotesFromMidiInput(this.midiInput.notes);
-            }
-          }, 100); // 100ms debounce
-        }
-      });
+      // Register the callback for note events
+      this.registerMidiInputCallback();
 
       return true;
     } catch (error) {
@@ -577,6 +596,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Update the config's initialNotes
     this.config.strummer.strumming.initialNotes = noteStrings;
+
+    // Clear the chord property so setupNotes() uses initialNotes instead
+    // This allows MIDI input to override any preset chord
+    this.config.strummer.strumming.chord = undefined;
 
     // Reconfigure strummer with new notes
     this.setupNotes();
@@ -794,6 +817,48 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.actions.setActionRulesConfig(this.config.strummer.actionRules);
         // Re-execute startup rules to apply new chord progression
         this.actions.executeStartupRules();
+      }
+
+      // Reconnect MIDI output if port changed
+      if (path === 'midi.midiOutputId' && this.backend) {
+        console.log(chalk.cyan(`[MIDI Output] Reconnecting to port: ${value}`));
+        this.backend.disconnect();
+        this.backend.connect(value as string | number | null).then((success) => {
+          if (success) {
+            console.log(chalk.green(`[MIDI Output] Reconnected successfully`));
+          } else {
+            console.log(chalk.red(`[MIDI Output] Failed to reconnect`));
+          }
+        });
+      }
+
+      // Reconnect MIDI input if port changed
+      if (path === 'midi.midiInputId' && this.midiInput) {
+        console.log(chalk.cyan(`[MIDI Input] Reconnecting to port: ${value}`));
+        this.midiInput.disconnect();
+        if (value === null) {
+          // Connect to all ports
+          this.midiInput.connectAll().then((success) => {
+            if (success) {
+              console.log(chalk.green(`[MIDI Input] Reconnected to all ports`));
+              // Re-register callback after reconnection
+              this.registerMidiInputCallback();
+              // Broadcast device status to update UI
+              this.broadcastMidiDevices();
+            }
+          });
+        } else {
+          // Connect to specific port
+          this.midiInput.connect(value as string | number).then((success) => {
+            if (success) {
+              console.log(chalk.green(`[MIDI Input] Reconnected successfully`));
+              // Re-register callback after reconnection
+              this.registerMidiInputCallback();
+              // Broadcast device status to update UI
+              this.broadcastMidiDevices();
+            }
+          });
+        }
       }
 
       console.log(chalk.yellow(`Config updated: ${path} = ${JSON.stringify(value)}`));
@@ -1089,6 +1154,146 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.broadcastConfig();
     } catch (e) {
       console.error(chalk.red(`[Delete Config] Failed to delete config:`), e);
+    }
+  }
+
+  /**
+   * Handle get-midi-devices request
+   * Returns available MIDI input and output ports
+   */
+  private async handleGetMidiDevices(client: WebSocket): Promise<void> {
+    try {
+      const inputPorts: Array<{ id: number; name: string }> = [];
+      const outputPorts: Array<{ id: number; name: string }> = [];
+
+      // Get MIDI input ports
+      if (this.midiInput) {
+        const availableInputs = await this.midiInput.getAvailablePorts(false);
+        inputPorts.push(...availableInputs);
+      }
+
+      // Get MIDI output ports
+      if (this.backend) {
+        const availableOutputs = this.backend.getAvailablePorts();
+        availableOutputs.forEach((name: string, index: number) => {
+          outputPorts.push({ id: index, name });
+        });
+      }
+
+      // Get currently connected ports (not just config values)
+      // For input: return ALL connected port IDs (for "all ports" mode)
+      const currentInputPorts: number[] = [];
+      if (this.midiInput && this.midiInput.isConnected) {
+        const connectedPorts = this.midiInput.connectedPorts;
+        currentInputPorts.push(...connectedPorts.map(p => p.id));
+        console.log(chalk.gray(`[Get MIDI Devices] MIDI input connected: ${this.midiInput.isConnected}, ports: ${JSON.stringify(connectedPorts)}`));
+      } else {
+        console.log(chalk.gray(`[Get MIDI Devices] MIDI input not connected or not initialized`));
+      }
+
+      // Build exclusion list (same logic as setupMidiInput)
+      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
+      if (this.backend && this.backend.currentOutputName) {
+        excludedInputPorts.push(this.backend.currentOutputName);
+      }
+
+      // For output: find the port ID that matches the connected port name
+      let currentOutputPort: string | number | null = null;
+      if (this.backend && this.backend.isConnected && this.backend.currentOutputName) {
+        // Find the port index that matches the current output name
+        const outputName = this.backend.currentOutputName;
+        const matchingPort = outputPorts.find(port => port.name === outputName);
+        if (matchingPort) {
+          currentOutputPort = matchingPort.id;
+        }
+        console.log(chalk.gray(`[Get MIDI Devices] MIDI output connected: ${outputName}, matched port: ${currentOutputPort}`));
+      }
+
+      const response = {
+        type: 'midi-devices',
+        data: {
+          inputPorts,
+          outputPorts,
+          currentInputPorts,  // Array of connected input port IDs
+          currentOutputPort,
+          excludedInputPorts,  // Ports excluded from input to prevent feedback loops
+        },
+      };
+
+      console.log(chalk.gray(`[Get MIDI Devices] Sending response: ${JSON.stringify(response, null, 2)}`));
+      client.send(JSON.stringify(response));
+    } catch (error) {
+      console.error(chalk.red('[Get MIDI Devices] Error:'), error);
+    }
+  }
+
+  /**
+   * Broadcast MIDI devices status to all connected clients
+   * Similar to handleGetMidiDevices but broadcasts to all clients
+   */
+  private async broadcastMidiDevices(): Promise<void> {
+    if (!this.wss) return;
+
+    try {
+      const inputPorts: Array<{ id: number; name: string }> = [];
+      const outputPorts: Array<{ id: number; name: string }> = [];
+
+      // Get MIDI input ports
+      if (this.midiInput) {
+        const availableInputs = await this.midiInput.getAvailablePorts(false);
+        inputPorts.push(...availableInputs);
+      }
+
+      // Get MIDI output ports
+      if (this.backend) {
+        const availableOutputs = this.backend.getAvailablePorts();
+        availableOutputs.forEach((name: string, index: number) => {
+          outputPorts.push({ id: index, name });
+        });
+      }
+
+      // Get currently connected ports
+      const currentInputPorts: number[] = [];
+      if (this.midiInput && this.midiInput.isConnected) {
+        const connectedPorts = this.midiInput.connectedPorts;
+        currentInputPorts.push(...connectedPorts.map(p => p.id));
+      }
+
+      // Build exclusion list
+      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
+      if (this.backend && this.backend.currentOutputName) {
+        excludedInputPorts.push(this.backend.currentOutputName);
+      }
+
+      // For output: find the port ID that matches the connected port name
+      let currentOutputPort: string | number | null = null;
+      if (this.backend && this.backend.isConnected && this.backend.currentOutputName) {
+        const outputName = this.backend.currentOutputName;
+        const matchingPort = outputPorts.find(port => port.name === outputName);
+        if (matchingPort) {
+          currentOutputPort = matchingPort.id;
+        }
+      }
+
+      const message = JSON.stringify({
+        type: 'midi-devices',
+        data: {
+          inputPorts,
+          outputPorts,
+          currentInputPorts,
+          currentOutputPort,
+          excludedInputPorts,
+        },
+      });
+
+      console.log(chalk.gray(`[Broadcast MIDI Devices] Broadcasting to ${this.wss.clients.size} client(s)`));
+      this.wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    } catch (error) {
+      console.error(chalk.red('[Broadcast MIDI Devices] Error:'), error);
     }
   }
 
@@ -1579,6 +1784,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
             this.handleUploadConfig(parsed.configName, parsed.configData);
           } else if (parsed.type === 'delete-config' && typeof parsed.configName === 'string') {
             this.handleDeleteConfig(parsed.configName);
+          } else if (parsed.type === 'get-midi-devices') {
+            this.handleGetMidiDevices(ws);
           }
         } catch (e) {
           console.error(chalk.red('[WebSocket] Error processing message:'), e);

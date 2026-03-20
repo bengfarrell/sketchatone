@@ -221,18 +221,7 @@ def create_button_id(button_type: str, identifier: Union[str, int]) -> ButtonId:
     return f"button:{identifier}"
 
 
-def get_button_label(button_id: ButtonId, button_names: Optional[Dict[ButtonId, str]] = None) -> str:
-    """Get a human-readable label for a button ID"""
-    # Check for custom name first
-    if button_names and button_id in button_names:
-        return button_names[button_id]
-    
-    # Generate default label
-    parsed = parse_button_id(button_id)
-    if parsed['type'] == 'stylus':
-        return 'Primary Stylus' if parsed['identifier'] == 'primary' else 'Secondary Stylus'
-    
-    return f"Button {parsed['identifier']}"
+
 
 
 class ActionRulesConfig:
@@ -243,13 +232,11 @@ class ActionRulesConfig:
     
     def __init__(
         self,
-        button_names: Optional[Dict[ButtonId, str]] = None,
         rules: Optional[List[ActionRule]] = None,
         groups: Optional[List[ButtonGroup]] = None,
         group_rules: Optional[List[GroupRule]] = None,
         startup_rules: Optional[List[StartupRule]] = None
     ):
-        self.button_names: Dict[ButtonId, str] = button_names or {}
         self.rules: List[ActionRule] = rules or []
         self.groups: List[ButtonGroup] = groups or []
         self.group_rules: List[GroupRule] = group_rules or []
@@ -260,28 +247,24 @@ class ActionRulesConfig:
         """Create from a plain object (e.g., from JSON)"""
         if not data:
             return cls()
-        
-        # Parse button names (supports both snake_case and camelCase)
-        button_names = data.get('button_names', data.get('buttonNames', {}))
-        
+
         # Parse rules
         raw_rules = data.get('rules', [])
         rules = [ActionRule.from_dict(r) for r in raw_rules]
-        
+
         # Parse groups
         raw_groups = data.get('groups', [])
         groups = [ButtonGroup.from_dict(g) for g in raw_groups]
-        
+
         # Parse group rules (supports both snake_case and camelCase)
         raw_group_rules = data.get('group_rules', data.get('groupRules', []))
         group_rules = [GroupRule.from_dict(gr) for gr in raw_group_rules]
-        
+
         # Parse startup rules (supports both snake_case and camelCase)
         raw_startup_rules = data.get('startup_rules', data.get('startupRules', []))
         startup_rules = [StartupRule.from_dict(sr) for sr in raw_startup_rules]
-        
+
         return cls(
-            button_names=button_names,
             rules=rules,
             groups=groups,
             group_rules=group_rules,
@@ -291,7 +274,6 @@ class ActionRulesConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a plain object for JSON serialization (camelCase for webapp)"""
         return {
-            'buttonNames': self.button_names,
             'rules': [r.to_dict() for r in self.rules],
             'groups': [g.to_dict() for g in self.groups],
             'groupRules': [gr.to_dict() for gr in self.group_rules],
@@ -395,12 +377,7 @@ class ActionRulesConfig:
                 return True
         return False
 
-    def set_button_name(self, button_id: ButtonId, name: str) -> None:
-        """Set a button's name"""
-        if name:
-            self.button_names[button_id] = name
-        elif button_id in self.button_names:
-            del self.button_names[button_id]
+
 
     def get_rules_for_button(self, button_id: ButtonId) -> List[ActionRule]:
         """Get all rules for a specific button"""

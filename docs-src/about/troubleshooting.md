@@ -79,6 +79,27 @@ Add a delay between MIDI messages using `midiInterMessageDelay`:
 
 ---
 
+### MIDI Device Not Detected
+
+**Symptoms:**
+- Newly connected MIDI device doesn't appear in the dashboard
+- Device list is empty or outdated
+
+**Solution:**
+
+After connecting or disconnecting a MIDI device:
+
+**Via Dashboard:**
+1. Connect your MIDI device
+2. Click the **"Refresh Devices"** button in the MIDI configuration panel
+3. Your device should now appear in the list
+
+**Via Command Line:**
+- Restart the server to detect new devices
+- The server prints available MIDI ports on startup
+
+---
+
 ### MIDI Input Not Working
 
 **Symptoms:**

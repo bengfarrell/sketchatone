@@ -105,6 +105,8 @@ export interface MidiConfigData {
   useVirtualPorts: boolean;
   /** List of port name patterns to exclude from MIDI input auto-connect */
   inputExclude: string[];
+  /** Default note duration in seconds (fallback when strummer.noteDuration is not configured) */
+  defaultNoteDuration: number;
 }
 
 /**
@@ -125,6 +127,7 @@ export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
   channel: 0,
   useVirtualPorts: false,
   inputExclude: DEFAULT_MIDI_INPUT_EXCLUDE,
+  defaultNoteDuration: 1.5,
 };
 
 /**
@@ -136,6 +139,7 @@ export class MidiConfig implements MidiConfigData {
   channel: number;
   useVirtualPorts: boolean;
   inputExclude: string[];
+  defaultNoteDuration: number;
 
   constructor(data: Partial<MidiConfigData> = {}) {
     this.outputPort = data.outputPort ?? DEFAULT_MIDI_CONFIG.outputPort;
@@ -143,6 +147,7 @@ export class MidiConfig implements MidiConfigData {
     this.channel = data.channel ?? DEFAULT_MIDI_CONFIG.channel;
     this.useVirtualPorts = data.useVirtualPorts ?? DEFAULT_MIDI_CONFIG.useVirtualPorts;
     this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
+    this.defaultNoteDuration = data.defaultNoteDuration ?? DEFAULT_MIDI_CONFIG.defaultNoteDuration;
   }
 
   /**
@@ -155,6 +160,7 @@ export class MidiConfig implements MidiConfigData {
       channel: data.channel as number | undefined,
       useVirtualPorts: (data.use_virtual_ports ?? data.useVirtualPorts) as boolean | undefined,
       inputExclude: (data.input_exclude ?? data.inputExclude) as string[] | undefined,
+      defaultNoteDuration: (data.default_note_duration ?? data.defaultNoteDuration ?? data.note_duration ?? data.noteDuration) as number | undefined,
     });
   }
 
@@ -168,6 +174,7 @@ export class MidiConfig implements MidiConfigData {
       channel: this.channel,
       useVirtualPorts: this.useVirtualPorts,
       inputExclude: this.inputExclude,
+      defaultNoteDuration: this.defaultNoteDuration,
     };
   }
 }

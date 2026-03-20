@@ -40,6 +40,9 @@ import { ActionRulesConfigComponent } from '../action-rules-config/action-rules-
 import { ActionRulesConfig, type ButtonId } from '../../models/action-rules.js';
 import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
 
+// MIDI devices config component
+import '../midi-devices-config/midi-devices-config.js';
+
 // Panel visibility management
 import './panel-toggle-bar.js';
 import {
@@ -61,6 +64,7 @@ import {
   StrummerWebSocketClient,
   type ServerMidiInputEvent,
   type ServerMidiInputStatus,
+  type ServerMidiDevices,
   type ServerActionEvent,
 } from '../../utils/strummer-websocket-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
@@ -156,6 +160,22 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private lastMidiPortName: string | null = null;
 
+  // MIDI devices state
+  @state()
+  private midiInputPorts: Array<{ id: number; name: string }> = [];
+
+  @state()
+  private midiOutputPorts: Array<{ id: number; name: string }> = [];
+
+  @state()
+  private currentMidiInputPorts: number[] = [];  // Array of connected input port IDs
+
+  @state()
+  private excludedMidiInputPorts: string[] = [];  // Port names excluded from input
+
+  @state()
+  private currentMidiOutputPort: string | number | null = null;
+
   // Version info
   @state()
   private serverVersion: string | null = null;
@@ -198,7 +218,10 @@ export class SketchatoneDashboard extends LitElement {
   private setupClient() {
     this.client.onConnectionStateChange((state) => {
       this.websocketConnected = state === 'connected';
-      if (state === 'disconnected') {
+      if (state === 'connected') {
+        // Request MIDI devices list when connected
+        this.client.requestMidiDevices();
+      } else if (state === 'disconnected') {
         this.websocketServerInfo = '';
         this.strummerConfig = null;
         this.serverVersion = null;
@@ -233,6 +256,28 @@ export class SketchatoneDashboard extends LitElement {
       this.serverMidiNotes = event.notes.map((n) => Note.parseNotation(n));
       this.lastMidiPortName = event.portName ?? null;
       this.serverMidiConnected = true;
+    });
+
+    // Listen for MIDI devices list updates
+    this.client.onMidiDevices((devices: ServerMidiDevices) => {
+      console.log('[Dashboard] Received MIDI devices update:', devices);
+      this.midiInputPorts = devices.inputPorts;
+      this.midiOutputPorts = devices.outputPorts;
+      this.currentMidiInputPorts = devices.currentInputPorts;
+      this.currentMidiOutputPort = devices.currentOutputPort;
+      this.excludedMidiInputPorts = devices.excludedInputPorts;
+
+      // Update MIDI Input panel status based on whether any input ports are connected
+      this.serverMidiConnected = devices.currentInputPorts.length > 0;
+    });
+
+    // Listen for MIDI devices list from server
+    this.client.onMidiDevices((data) => {
+      this.midiInputPorts = data.inputPorts;
+      this.midiOutputPorts = data.outputPorts;
+      this.currentMidiInputPorts = data.currentInputPorts || [];  // Array of connected input port IDs
+      this.excludedMidiInputPorts = data.excludedInputPorts || [];  // Port names excluded from input
+      this.currentMidiOutputPort = data.currentOutputPort;
     });
 
     // Listen for action events (button presses and their actions)
@@ -598,6 +643,29 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
+   * Handle MIDI devices refresh
+   */
+  private handleMidiDevicesRefresh() {
+    this.client.requestMidiDevices();
+  }
+
+  /**
+   * Handle MIDI devices apply
+   */
+  private handleMidiDevicesApply(e: CustomEvent) {
+    const { inputPort, outputPort } = e.detail;
+
+    // Always update MIDI input port (server will reconnect)
+    // null = connect to all ports, number = connect to specific port
+    this.client.updateConfig('midi.midiInputId', inputPort);
+
+    // Update MIDI output port if changed
+    if (outputPort !== this.currentMidiOutputPort) {
+      this.client.updateConfig('midi.midiOutputId', outputPort);
+    }
+  }
+
+  /**
    * Handle config changes from curve-visualizer components
    */
   private handleCurveConfigChange(e: CustomEvent) {
@@ -650,6 +718,8 @@ export class SketchatoneDashboard extends LitElement {
     const { actionRules } = e.detail;
     this.updateConfig('strummer.actionRules', actionRules);
   }
+
+
 
   render() {
     const hasActiveConnection = this.websocketConnected;
@@ -842,30 +912,6 @@ export class SketchatoneDashboard extends LitElement {
             </dashboard-panel>
           ` : ''}
 
-          <!-- MIDI Input Panel -->
-          ${this.panelVisibility.midiInput ? html`
-            <dashboard-panel title="MIDI Input" panelId="midiInput" .closable=${true} .draggable=${false} .minimizable=${false}
-              @panel-close=${() => this.handlePanelClose('midiInput')}>
-              <div class="midi-panel-content">
-                <div class="midi-status-row">
-                  <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
-                    <span class="status-dot"></span>
-                    ${this.serverMidiConnected ? 'connected' : 'disconnected'}
-                  </div>
-                </div>
-                <div class="midi-notes compact">
-                  <span class="midi-notes-label">Notes:</span>
-                  <span class="midi-notes-value">${this.serverMidiNotes.length > 0
-                    ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
-                    : '—'}</span>
-                </div>
-                ${this.lastMidiPortName ? html`
-                  <div class="midi-source">from: ${this.lastMidiPortName}</div>
-                ` : ''}
-              </div>
-            </dashboard-panel>
-          ` : ''}
-
           <!-- Events Panel -->
           ${this.panelVisibility.events ? html`
             <dashboard-panel title="Events" panelId="events" .closable=${true} .draggable=${false} .minimizable=${false}
@@ -1045,6 +1091,45 @@ export class SketchatoneDashboard extends LitElement {
             </dashboard-panel>
           ` : ''}
 
+          <!-- MIDI Input Panel -->
+          ${this.panelVisibility.midiInput ? html`
+            <dashboard-panel title="MIDI Input" panelId="midiInput" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('midiInput')}>
+              <div class="midi-panel-content">
+                <div class="midi-status-row">
+                  <div class="status-badge small ${this.serverMidiConnected ? 'connected' : 'disconnected'}">
+                    <span class="status-dot"></span>
+                    ${this.serverMidiConnected ? 'connected' : 'disconnected'}
+                  </div>
+                </div>
+                <div class="midi-notes compact">
+                  <span class="midi-notes-label">Notes:</span>
+                  <span class="midi-notes-value">${this.serverMidiNotes.length > 0
+                    ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
+                    : '—'}</span>
+                </div>
+                ${this.lastMidiPortName ? html`
+                  <div class="midi-source">from: ${this.lastMidiPortName}</div>
+                ` : ''}
+              </div>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- MIDI Devices Panel -->
+          ${this.panelVisibility.midiDevices ? html`
+            <dashboard-panel title="MIDI Devices" panelId="midiDevices" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('midiDevices')}>
+              <midi-devices-config
+                .inputPorts=${this.midiInputPorts}
+                .outputPorts=${this.midiOutputPorts}
+                .currentInputPorts=${this.currentMidiInputPorts}
+                .excludedInputPorts=${this.excludedMidiInputPorts}
+                .currentOutputPort=${this.currentMidiOutputPort}
+                @refresh-devices=${this.handleMidiDevicesRefresh}
+                @apply-devices=${this.handleMidiDevicesApply}>
+              </midi-devices-config>
+            </dashboard-panel>
+          ` : ''}
 
         </div>
         `}

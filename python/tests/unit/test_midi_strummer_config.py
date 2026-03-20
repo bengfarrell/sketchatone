@@ -129,8 +129,8 @@ class TestMidiStrummerConfigBackwardCompatibility:
         config.midi.midi_input_id = 'input_port'
         config.midi.jack_client_name = 'test_client'
         config.midi.jack_auto_connect = 'chain1'
-        config.midi.note_duration = 2.0
-        
+        config.midi.default_note_duration = 2.0
+
         assert config.midi_output_backend == 'jack'
         assert config.midi_output_id == 'my_port'
         assert config.midi_input_id == 'input_port'
@@ -234,7 +234,7 @@ class TestMidiStrummerConfigRoundtrip:
                 'midi_input_id': None,
                 'jack_client_name': 'sketchatone',
                 'jack_auto_connect': 'chain0',
-                'note_duration': 1.5
+                'default_note_duration': 1.5
             }
         }
 

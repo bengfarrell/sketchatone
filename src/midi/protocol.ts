@@ -19,6 +19,11 @@ export interface MidiBackendProtocol {
   readonly isConnected: boolean;
 
   /**
+   * Get the name of the currently connected output port (if any).
+   */
+  readonly currentOutputName: string | null;
+
+  /**
    * Connect to MIDI output.
    *
    * @param outputPort - Optional port identifier (name or index)
@@ -119,4 +124,12 @@ export interface MidiBackendOptions {
    * Works with both RtMidi and JACK backends.
    */
   interMessageDelay?: number;
+
+  /**
+   * Device monitoring interval in milliseconds (default: 2000)
+   * Set to a number to enable monitoring and specify scan interval
+   * Set to 0 or false to disable device monitoring
+   * When enabled, automatically detects device disconnections and reconnects when available
+   */
+  device_monitoring?: number | false;
 }
