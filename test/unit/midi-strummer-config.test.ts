@@ -132,7 +132,7 @@ describe('ServerConfig', () => {
         deviceFindingPollInterval: 2000,
       });
       const dict = original.toDict();
-      const restored = ServerConfig.fromDict(dict);
+      const restored = ServerConfig.fromDict(dict as unknown as Record<string, unknown>);
       expect(restored.device).toBe(original.device);
       expect(restored.httpPort).toBe(original.httpPort);
       expect(restored.wsPort).toBe(original.wsPort);
@@ -272,14 +272,12 @@ describe('MidiStrummerConfig', () => {
         strummer: new StrummerConfig({
           strumming: new StrummingConfig({
             pressureThreshold: 0.3,
-            pluckVelocityScale: 4.0,
             initialNotes: ['G4', 'B4', 'D5'],
             chord: 'G',
           }),
         }),
       });
       expect(config.pressureThreshold).toBe(0.3);
-      expect(config.velocityScale).toBe(4.0);
       expect(config.notes).toEqual(['G4', 'B4', 'D5']);
       expect(config.chord).toBe('G');
     });
@@ -387,7 +385,6 @@ describe('MidiStrummerConfig', () => {
         strummer: new StrummerConfig({
           strumming: new StrummingConfig({
             pressureThreshold: 0.18,
-            pluckVelocityScale: 3.5,
             initialNotes: ['C4', 'E4', 'G4', 'B4'],
             chord: 'Cmaj7',
             midiChannel: 2,
@@ -400,9 +397,8 @@ describe('MidiStrummerConfig', () => {
         }),
       });
       const dict = original.toDict();
-      const restored = MidiStrummerConfig.fromDict(dict);
+      const restored = MidiStrummerConfig.fromDict(dict as unknown as Record<string, unknown>);
       expect(restored.strummer.strumming.pressureThreshold).toBe(0.18);
-      expect(restored.strummer.strumming.pluckVelocityScale).toBe(3.5);
       expect(restored.strummer.strumming.initialNotes).toEqual(['C4', 'E4', 'G4', 'B4']);
       expect(restored.strummer.strumming.chord).toBe('Cmaj7');
       expect(restored.midi.outputPort).toBe('Roundtrip Port');
@@ -421,7 +417,7 @@ describe('MidiStrummerConfig', () => {
         }),
       });
       const dict = original.toDict();
-      const restored = MidiStrummerConfig.fromDict(dict);
+      const restored = MidiStrummerConfig.fromDict(dict as unknown as Record<string, unknown>);
       expect(restored.server.device).toBe('/opt/sketchatone/configs/devices');
       expect(restored.server.httpPort).toBe(3000);
       expect(restored.server.wsPort).toBe(8081);

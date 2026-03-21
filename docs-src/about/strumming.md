@@ -24,7 +24,7 @@ The tablet surface is divided into virtual "strings" based on your chord configu
     "chord": "Am",
     "midi_channel": 0,
     "pressure_threshold": 0.1,
-    "pluck_velocity_scale": 4.0,
+    "pressure_buffer_size": 10,
     "upper_note_spread": 2,
     "lower_note_spread": 2
   }
@@ -39,9 +39,15 @@ The tablet surface is divided into virtual "strings" based on your chord configu
 | `initial_notes` | string[] | ["C4","E4","G4"] | Explicit note list (used if no chord) |
 | `midi_channel` | number | null | MIDI channel (0-15), null for omni |
 | `pressure_threshold` | number | 0.1 | Minimum pressure to trigger (0-1) |
-| `pluck_velocity_scale` | number | 4.0 | Velocity multiplier for plucks |
+| `pressure_buffer_size` | number | 10 | Pressure samples to buffer before first note triggers |
 | `upper_note_spread` | number | 3 | Octave notes above chord |
 | `lower_note_spread` | number | 3 | Octave notes below chord |
+
+### Pressure Buffer Size
+
+The `pressure_buffer_size` controls how many samples are collected before the initial note of a strum fires. Increasing this value allows the pressure sensor to register more of the pen strike force, producing louder and more accurate velocity on taps and the first note of a strum. The tradeoff is a small increase in latency before the first note sounds.
+
+If the pen is lifted before the buffer fills (a quick tap), the note fires immediately on release using the peak pressure from whatever samples were collected — quick taps are never dropped.
 
 ## Chord vs Initial Notes
 

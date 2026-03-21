@@ -106,7 +106,6 @@ class TestMidiStrummerConfigBackwardCompatibility:
         """Test strummer-related properties."""
         config = MidiStrummerConfig()
         config.strummer.strumming.pressure_threshold = 0.25
-        config.strummer.strumming.pluck_velocity_scale = 3.0
         config.strummer.strumming.initial_notes = ['A3', 'C4', 'E4']
         config.strummer.strumming.chord = 'Am'
         config.strummer.strumming.lower_note_spread = 2
@@ -114,7 +113,6 @@ class TestMidiStrummerConfigBackwardCompatibility:
         config.strummer.strumming.midi_channel = 10
         
         assert config.pressure_threshold == 0.25
-        assert config.velocity_scale == 3.0
         assert config.notes == ['A3', 'C4', 'E4']
         assert config.chord == 'Am'
         assert config.lower_spread == 2

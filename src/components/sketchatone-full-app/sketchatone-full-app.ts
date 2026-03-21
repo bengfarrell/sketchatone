@@ -398,7 +398,7 @@ export class SketchatoneFullApp extends LitElement {
     for (let i = 1; i <= 30; i++) {
       const buttonKey = `button${i}` as keyof typeof processed;
       if (processed[buttonKey] !== undefined) {
-        (event as Record<string, unknown>)[`button${i}`] = Boolean(processed[buttonKey]);
+        (event as unknown as Record<string, unknown>)[`button${i}`] = Boolean(processed[buttonKey]);
       }
     }
 
@@ -480,8 +480,8 @@ export class SketchatoneFullApp extends LitElement {
   }
 
   private handleStylusButtons() {
-    const config = this.strummerConfig.stylusButtons;
-    if (!config.active) return;
+    const config = (this.strummerConfig as any).stylusButtons;
+    if (!config?.active) return;
 
     // Handle primary button
     if (this.tabletData.primaryButtonPressed) {
@@ -536,8 +536,8 @@ export class SketchatoneFullApp extends LitElement {
     let notes = Note.fillNoteSpread(baseNotes, lower, upper);
 
     // Apply transpose if active
-    if (this.transposeActive && this.strummerConfig.transpose.active) {
-      notes = notes.map((note: NoteObject) => Note.transpose(note, this.strummerConfig.transpose.semitones));
+    if (this.transposeActive && (this.strummerConfig as any).transpose?.active) {
+      notes = notes.map((note: NoteObject) => Note.transpose(note, (this.strummerConfig as any).transpose.semitones));
     }
 
     this.strummerNotes = notes;
@@ -1022,14 +1022,14 @@ export class SketchatoneFullApp extends LitElement {
               <dashboard-panel title="Strumming Settings" size="medium" .draggable=${false} .minimizable=${false}>
                 <div class="settings-form">
                   <div class="setting-row">
-                    <label>Pluck Velocity Scale</label>
-                    <sp-number-field value="${config.strumming.pluckVelocityScale}" step="0.1" min="0.1" max="10"
-                      @change=${(e: Event) => this.updateConfig('strumming.pluckVelocityScale', Number((e.target as HTMLInputElement).value))}></sp-number-field>
-                  </div>
-                  <div class="setting-row">
                     <label>Pressure Threshold</label>
                     <sp-number-field value="${config.strumming.pressureThreshold}" step="0.01" min="0" max="1"
                       @change=${(e: Event) => this.updateConfig('strumming.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  </div>
+                  <div class="setting-row">
+                    <label>Pressure Buffer Size</label>
+                    <sp-number-field value="${config.strumming.pressureBufferSize}" step="1" min="2" max="40"
+                      @change=${(e: Event) => this.updateConfig('strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                   </div>
                   <div class="setting-row">
                     <label>Upper Note Spread</label>
@@ -1053,12 +1053,12 @@ export class SketchatoneFullApp extends LitElement {
 
               <dashboard-panel title="Stylus Buttons" size="medium" .draggable=${false} .minimizable=${false}
                 .hasActiveControl=${true}
-                .active=${config.stylusButtons.active}
+                .active=${(config as any).stylusButtons?.active}
                 @active-change=${(e: CustomEvent) => this.updateConfig('stylusButtons.active', e.detail.active)}>
                 <div class="settings-form">
                   <div class="setting-row">
                     <label>Primary Button</label>
-                    <sp-picker label="Action" value="${config.stylusButtons.primaryButtonAction}"
+                    <sp-picker label="Action" value="${(config as any).stylusButtons?.primaryButtonAction}"
                       @change=${(e: Event) => this.updateConfig('stylusButtons.primaryButtonAction', (e.target as HTMLInputElement).value)}>
                       <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
                       <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
@@ -1069,7 +1069,7 @@ export class SketchatoneFullApp extends LitElement {
                   </div>
                   <div class="setting-row">
                     <label>Secondary Button</label>
-                    <sp-picker label="Action" value="${config.stylusButtons.secondaryButtonAction}"
+                    <sp-picker label="Action" value="${(config as any).stylusButtons?.secondaryButtonAction}"
                       @change=${(e: Event) => this.updateConfig('stylusButtons.secondaryButtonAction', (e.target as HTMLInputElement).value)}>
                       <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
                       <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
@@ -1083,12 +1083,12 @@ export class SketchatoneFullApp extends LitElement {
 
               <dashboard-panel title="Transpose" size="medium" .draggable=${false} .minimizable=${false}
                 .hasActiveControl=${true}
-                .active=${config.transpose.active}
+                .active=${(config as any).transpose?.active}
                 @active-change=${(e: CustomEvent) => this.updateConfig('transpose.active', e.detail.active)}>
                 <div class="settings-form">
                   <div class="setting-row">
                     <label>Semitones</label>
-                    <sp-number-field value="${config.transpose.semitones}" step="1" min="-24" max="24"
+                    <sp-number-field value="${(config as any).transpose?.semitones}" step="1" min="-24" max="24"
                       @change=${(e: Event) => this.updateConfig('transpose.semitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                   </div>
                 </div>

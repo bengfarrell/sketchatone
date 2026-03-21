@@ -72,7 +72,7 @@ describe('StrumReleaseConfig', () => {
       velocityMultiplier: 1.1,
     });
     const dict = original.toDict();
-    const restored = StrumReleaseConfig.fromDict(dict);
+    const restored = StrumReleaseConfig.fromDict(dict as unknown as Record<string, unknown>);
     expect(restored.active).toBe(original.active);
     expect(restored.midiNote).toBe(original.midiNote);
     expect(restored.midiChannel).toBe(original.midiChannel);

@@ -262,7 +262,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Create strummer
     this.strummer = new Strummer();
-    this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+    this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
 
     // Set up notes
     this.setupNotes();
@@ -804,7 +804,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Re-apply strummer settings if relevant
       if (path.startsWith('strummer.strumming.')) {
-        this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+        this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
       }
 
       // Re-setup notes if chord or note spread changed
@@ -946,7 +946,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.currentConfigName = configName;
 
       // Re-apply strummer settings
-      this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+      this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
       this.setupNotes();
       this.actions.setActionRulesConfig(this.config.strummer.actionRules);
 
@@ -1105,7 +1105,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.config = parsedConfig;
 
       // Re-apply settings from the new config
-      this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+      this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
       this.setupNotes();
       this.actions.setActionRulesConfig(this.config.strummer.actionRules);
 

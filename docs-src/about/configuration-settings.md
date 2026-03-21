@@ -193,14 +193,28 @@ Core strumming configuration.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `pluck_velocity_scale` | number | 4.0 | Scale factor for pluck velocity |
 | `pressure_threshold` | number | 0.1 | Minimum pressure to trigger strum |
+| `pressure_buffer_size` | number | 10 | Number of pressure samples to buffer before triggering the initial note (see below) |
 | `midi_channel` | number\|null | null | MIDI channel (1-16), null for omni |
 | `initial_notes` | string[] | ["C4","E4","G4"] | List of note strings |
 | `chord` | string\|null | null | Chord notation (e.g., "Am", "Gmaj7") |
 | `upper_note_spread` | number | 3 | Notes to add above chord |
 | `lower_note_spread` | number | 3 | Notes to add below chord |
 | `invert_x` | boolean | false | Invert X axis for left-handed use |
+
+### Pressure Buffer Size
+
+The `pressure_buffer_size` setting controls how many pressure samples are collected before the first note of a strum fires. The velocity of that note is based on the **peak pressure** seen during the buffer window.
+
+A larger buffer gives the pressure sensor more time to register the full force of a pen strike, resulting in more accurate and louder velocity on taps and initial strum contact. However, it also introduces a small amount of latency before the first note sounds (each sample is roughly 10ms at typical tablet report rates).
+
+If the pen is lifted before the buffer fills (a quick tap), the note fires immediately on release using the peak pressure from whatever samples were collected. This means quick taps are never silently dropped regardless of buffer size.
+
+| Buffer Size | Approx. Latency | Best For |
+|-------------|-----------------|----------|
+| 2-5 | ~20-50ms | Minimal latency, lower initial velocity |
+| 10 (default) | ~100ms | Good balance of responsiveness and velocity |
+| 15-40 | ~150-400ms | Maximum velocity accuracy, noticeable latency |
 
 ---
 

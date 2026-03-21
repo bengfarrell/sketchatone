@@ -8,7 +8,6 @@ import {
 describe('StrummingConfig', () => {
   it('should have correct default values', () => {
     const config = new StrummingConfig();
-    expect(config.pluckVelocityScale).toBe(4.0);
     expect(config.pressureThreshold).toBe(0.1);
     expect(config.midiChannel).toBeNull();
     expect(config.initialNotes).toEqual(['C4', 'E4', 'G4']);
@@ -19,7 +18,6 @@ describe('StrummingConfig', () => {
 
   it('should create from dictionary with snake_case', () => {
     const config = StrummingConfig.fromDict({
-      pluck_velocity_scale: 2.0,
       pressure_threshold: 0.2,
       midi_channel: 5, // Config file uses 1-16
       initial_notes: ['D4', 'F#4', 'A4'],
@@ -27,7 +25,6 @@ describe('StrummingConfig', () => {
       upper_note_spread: 2,
       lower_note_spread: 1,
     });
-    expect(config.pluckVelocityScale).toBe(2.0);
     expect(config.pressureThreshold).toBe(0.2);
     expect(config.midiChannel).toBe(4); // Internally stored as 0-15 (5 - 1 = 4)
     expect(config.initialNotes).toEqual(['D4', 'F#4', 'A4']);
@@ -38,7 +35,6 @@ describe('StrummingConfig', () => {
 
   it('should create from dictionary with camelCase', () => {
     const config = StrummingConfig.fromDict({
-      pluckVelocityScale: 3.0,
       pressureThreshold: 0.15,
       midiChannel: 3, // Config file uses 1-16
       initialNotes: ['E4', 'G#4', 'B4'],
@@ -46,7 +42,6 @@ describe('StrummingConfig', () => {
       upperNoteSpread: 4,
       lowerNoteSpread: 2,
     });
-    expect(config.pluckVelocityScale).toBe(3.0);
     expect(config.pressureThreshold).toBe(0.15);
     expect(config.midiChannel).toBe(2); // Internally stored as 0-15 (3 - 1 = 2)
     expect(config.initialNotes).toEqual(['E4', 'G#4', 'B4']);
@@ -57,7 +52,6 @@ describe('StrummingConfig', () => {
 
   it('should convert to dictionary', () => {
     const config = new StrummingConfig({
-      pluckVelocityScale: 5.0,
       pressureThreshold: 0.25,
       midiChannel: 7, // Internally stored as 0-15
       initialNotes: ['A4', 'C#5', 'E5'],
@@ -66,7 +60,6 @@ describe('StrummingConfig', () => {
       lowerNoteSpread: 4,
     });
     const dict = config.toDict();
-    expect(dict.pluckVelocityScale).toBe(5.0);
     expect(dict.pressureThreshold).toBe(0.25);
     expect(dict.midiChannel).toBe(8); // Config file uses 1-16 (7 + 1 = 8)
     expect(dict.initialNotes).toEqual(['A4', 'C#5', 'E5']);
@@ -133,13 +126,6 @@ describe('StrummerConfig', () => {
       expect(config.pressureThreshold).toBe(0.25);
     });
 
-    it('should provide velocityScale property', () => {
-      const config = new StrummerConfig({
-        strumming: new StrummingConfig({ pluckVelocityScale: 5.0 }),
-      });
-      expect(config.velocityScale).toBe(5.0);
-    });
-
     it('should provide notes property', () => {
       const config = new StrummerConfig({
         strumming: new StrummingConfig({ initialNotes: ['F4', 'A4', 'C5'] }),
@@ -185,7 +171,6 @@ describe('StrummerConfig', () => {
       const configData = {
         strumming: {
           pressure_threshold: 0.15,
-          pluck_velocity_scale: 0.8,
           initial_notes: ['E4', 'G#4', 'B4'],
           chord: 'E',
         },
@@ -194,7 +179,6 @@ describe('StrummerConfig', () => {
 
       const config = StrummerConfig.fromJsonFile(configPath);
       expect(config.pressureThreshold).toBe(0.15);
-      expect(config.velocityScale).toBe(0.8);
       expect(config.notes).toEqual(['E4', 'G#4', 'B4']);
       expect(config.chord).toBe('E');
 

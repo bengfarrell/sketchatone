@@ -469,7 +469,6 @@ describe('StrummerWebSocketClient', () => {
       mockWebSocketInstances[0].simulateOpen();
 
       const configData: ServerConfigData = {
-        mode: 'tablet',
         throttleMs: 16,
         notes: [
           { notation: 'C', octave: 4 },

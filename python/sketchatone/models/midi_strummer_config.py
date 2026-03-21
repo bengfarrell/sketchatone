@@ -41,10 +41,6 @@ class MidiStrummerConfig:
         return self.strummer.pressure_threshold
 
     @property
-    def velocity_scale(self) -> float:
-        return self.strummer.velocity_scale
-
-    @property
     def notes(self):
         return self.strummer.notes
 

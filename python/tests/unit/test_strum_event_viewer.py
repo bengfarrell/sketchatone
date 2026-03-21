@@ -199,7 +199,6 @@ class TestStrumEventViewerInit:
         config = {
             "strumming": {
                 "pressure_threshold": 0.2,
-                "pluck_velocity_scale": 0.8,
                 "initial_notes": ["D4", "F#4", "A4", "D5"],
                 "chord": None
             }
@@ -235,7 +234,6 @@ class TestStrumEventViewerInit:
 
         # Should use custom strummer config
         assert viewer.strummer_config.pressure_threshold == 0.2
-        assert viewer.strummer_config.velocity_scale == 0.8
         assert viewer.strummer_config.notes == ["D4", "F#4", "A4", "D5"]
 
     @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
@@ -262,7 +260,6 @@ class TestStrumEventViewerInit:
 
         # Strummer should be configured with values from config
         assert viewer.strummer.pressure_threshold == 0.2
-        assert viewer.strummer.velocity_scale == 0.8
 
 
 class TestStrumEventViewerSetupNotes:

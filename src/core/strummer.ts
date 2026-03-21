@@ -67,12 +67,11 @@ export class Strummer extends EventEmitter {
   lastTimestamp = 0.0;
   pressureVelocity = 0.0; // Rate of pressure change
   pressureThreshold = 0.1; // Minimum pressure to trigger a strum
-  velocityScale = 4.0; // Scale factor for pressure velocity to MIDI velocity
   lastStrumVelocity = 0; // Last calculated velocity for release event
 
   // Pressure buffering for accurate velocity sensing on quick taps
   pressureBuffer: Array<{ pressure: number; timestamp: number }> = [];
-  bufferMaxSamples = 3; // Number of samples to collect before triggering
+  bufferMaxSamples = 10; // Number of samples to collect before triggering
   pendingTapIndex = -1; // Index of pending tap waiting for buffer
 
   constructor() {
@@ -137,6 +136,29 @@ export class Strummer extends EventEmitter {
 
       // Handle pressure release - return release event with last velocity
       if (pressureUp) {
+        // Pen lifted before buffer filled — fire the note with whatever we have
+        if (this.pendingTapIndex !== -1 && this.pressureBuffer.length > 0) {
+          const peakPressure = Math.max(...this.pressureBuffer.map((s) => s.pressure));
+          let normalizedPressure =
+            (peakPressure - this.pressureThreshold) / (1.0 - this.pressureThreshold);
+          normalizedPressure = Math.max(0.0, Math.min(1.0, normalizedPressure));
+          let midiVelocity = Math.floor(20 + normalizedPressure * 107);
+          midiVelocity = Math.max(20, Math.min(127, midiVelocity));
+
+          const note = this._notes[this.pendingTapIndex];
+
+          // Reset state
+          this.lastStrummedIndex = -1;
+          this.lastPressure = pressure;
+          this.lastTimestamp = currentTime;
+          this.pressureVelocity = 0.0;
+          this.pressureBuffer = [];
+          this.pendingTapIndex = -1;
+          this.lastStrumVelocity = 0;
+
+          return { type: 'strum', notes: [{ note, velocity: midiVelocity }] };
+        }
+
         // Store the last velocity before resetting
         const releaseVelocity = this.lastStrumVelocity;
 
@@ -193,15 +215,14 @@ export class Strummer extends EventEmitter {
 
         // Once buffer is full, trigger the note with calculated velocity
         if (this.pressureBuffer.length >= this.bufferMaxSamples) {
-          // Use current pressure as the main velocity indicator
-          // This is more intuitive - harder press = louder note
-          // Map pressure (0.0-1.0) to MIDI velocity (20-127)
-          const currentPressure = pressure;
+          // Use peak pressure from the buffer for velocity
+          // On quick hard taps, pressure peaks early then declines —
+          // using the last sample would undercount the strike force
+          const peakPressure = Math.max(...this.pressureBuffer.map((s) => s.pressure));
 
-          // Apply velocity scaling and map to MIDI range
           // Pressure range: 0.1 (threshold) to 1.0 → Velocity: 20 to 127
           let normalizedPressure =
-            (currentPressure - this.pressureThreshold) / (1.0 - this.pressureThreshold);
+            (peakPressure - this.pressureThreshold) / (1.0 - this.pressureThreshold);
           normalizedPressure = Math.max(0.0, Math.min(1.0, normalizedPressure));
 
           // Scale to velocity range (20-127)
@@ -288,9 +309,9 @@ export class Strummer extends EventEmitter {
   /**
    * Configure strummer parameters
    */
-  configure(pluckVelocityScale = 4.0, pressureThreshold = 0.1): void {
-    this.velocityScale = pluckVelocityScale;
+  configure(pressureThreshold = 0.1, pressureBufferSize = 10): void {
     this.pressureThreshold = pressureThreshold;
+    this.bufferMaxSamples = pressureBufferSize;
   }
 
   /**

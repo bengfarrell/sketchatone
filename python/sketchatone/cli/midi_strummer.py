@@ -187,8 +187,8 @@ class MidiStrummer(TabletReaderBase):
         # Create strummer
         self.strummer = Strummer()
         self.strummer.configure(
-            pluck_velocity_scale=self.config.velocity_scale,
-            pressure_threshold=self.config.pressure_threshold
+            pressure_threshold=self.config.pressure_threshold,
+            pressure_buffer_size=self.config.strummer.strumming.pressure_buffer_size
         )
 
         # Set up notes

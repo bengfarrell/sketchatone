@@ -27,10 +27,10 @@ import {
  * Core strumming configuration data
  */
 export interface StrummingConfigData {
-  /** Scale factor for pluck velocity calculation */
-  pluckVelocityScale: number;
   /** Minimum pressure to trigger a strum (0-1) */
   pressureThreshold: number;
+  /** Number of pressure samples to buffer before triggering initial note (higher = more velocity, more latency) */
+  pressureBufferSize: number;
   /** MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, null for omni) */
   midiChannel: number | null;
   /** List of note strings for the strum (e.g., ["C4", "E4", "G4"]) */
@@ -49,8 +49,8 @@ export interface StrummingConfigData {
  * Default strumming configuration values
  */
 export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
-  pluckVelocityScale: 4.0,
   pressureThreshold: 0.1,
+  pressureBufferSize: 10,
   midiChannel: null,
   initialNotes: ['C4', 'E4', 'G4'],
   chord: undefined,
@@ -63,8 +63,8 @@ export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
  * Core strumming configuration class
  */
 export class StrummingConfig implements StrummingConfigData {
-  pluckVelocityScale: number;
   pressureThreshold: number;
+  pressureBufferSize: number;
   midiChannel: number | null;
   initialNotes: string[];
   chord?: string;
@@ -73,8 +73,8 @@ export class StrummingConfig implements StrummingConfigData {
   invertX: boolean;
 
   constructor(data: Partial<StrummingConfigData> = {}) {
-    this.pluckVelocityScale = data.pluckVelocityScale ?? DEFAULT_STRUMMING_CONFIG.pluckVelocityScale;
     this.pressureThreshold = data.pressureThreshold ?? DEFAULT_STRUMMING_CONFIG.pressureThreshold;
+    this.pressureBufferSize = data.pressureBufferSize ?? DEFAULT_STRUMMING_CONFIG.pressureBufferSize;
     this.midiChannel = data.midiChannel ?? DEFAULT_STRUMMING_CONFIG.midiChannel;
     this.initialNotes = data.initialNotes ?? [...DEFAULT_STRUMMING_CONFIG.initialNotes];
     this.chord = data.chord;
@@ -98,8 +98,8 @@ export class StrummingConfig implements StrummingConfigData {
     }
 
     return new StrummingConfig({
-      pluckVelocityScale: (data.pluck_velocity_scale ?? data.pluckVelocityScale) as number | undefined,
       pressureThreshold: (data.pressure_threshold ?? data.pressureThreshold) as number | undefined,
+      pressureBufferSize: (data.pressure_buffer_size ?? data.pressureBufferSize) as number | undefined,
       midiChannel,
       initialNotes: (data.initial_notes ?? data.initialNotes) as string[] | undefined,
       chord: data.chord as string | undefined,
@@ -121,8 +121,8 @@ export class StrummingConfig implements StrummingConfigData {
     }
 
     return {
-      pluckVelocityScale: this.pluckVelocityScale,
       pressureThreshold: this.pressureThreshold,
+      pressureBufferSize: this.pressureBufferSize,
       midiChannel: midiChannelForConfig,
       initialNotes: this.initialNotes,
       chord: this.chord,
@@ -184,10 +184,6 @@ export class StrummerConfig {
   // Convenience properties for backward compatibility
   get pressureThreshold(): number {
     return this.strumming.pressureThreshold;
-  }
-
-  get velocityScale(): number {
-    return this.strumming.pluckVelocityScale;
   }
 
   get notes(): string[] {

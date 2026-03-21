@@ -37,12 +37,11 @@ class Strummer(EventEmitter):
         self.last_timestamp: float = 0.0
         self.pressure_velocity: float = 0.0  # Rate of pressure change
         self.pressure_threshold: float = 0.1  # Minimum pressure to trigger a strum
-        self.velocity_scale: float = 4.0  # Scale factor for pressure velocity to MIDI velocity
         self.last_strum_velocity: int = 0  # Last calculated velocity for release event
         
         # Pressure buffering for accurate velocity sensing on quick taps
         self.pressure_buffer: List[Tuple[float, float]] = []  # List of (pressure, timestamp) tuples
-        self.buffer_max_samples: int = 3  # Number of samples to collect before triggering
+        self.buffer_max_samples: int = 10  # Number of samples to collect before triggering
         self.pending_tap_index: int = -1  # Index of pending tap waiting for buffer
 
     @property
@@ -106,6 +105,27 @@ class Strummer(EventEmitter):
             
             # Handle pressure release - return release event with last velocity
             if pressure_up:
+                # Pen lifted before buffer filled — fire the note with whatever we have
+                if self.pending_tap_index != -1 and len(self.pressure_buffer) > 0:
+                    peak_pressure = max(p for p, t in self.pressure_buffer)
+                    normalized_pressure = (peak_pressure - self.pressure_threshold) / (1.0 - self.pressure_threshold)
+                    normalized_pressure = max(0.0, min(1.0, normalized_pressure))
+                    midi_velocity = int(20 + normalized_pressure * 107)
+                    midi_velocity = max(20, min(127, midi_velocity))
+
+                    note = self._notes[self.pending_tap_index]
+
+                    # Reset state
+                    self.last_strummed_index = -1
+                    self.last_pressure = pressure
+                    self.last_timestamp = current_time
+                    self.pressure_velocity = 0.0
+                    self.pressure_buffer.clear()
+                    self.pending_tap_index = -1
+                    self.last_strum_velocity = 0
+
+                    return {'type': 'strum', 'notes': [{'note': note, 'velocity': midi_velocity}]}
+
                 # Store the last velocity before resetting
                 release_velocity = self.last_strum_velocity
                 
@@ -155,14 +175,13 @@ class Strummer(EventEmitter):
                 
                 # Once buffer is full, trigger the note with calculated velocity
                 if len(self.pressure_buffer) >= self.buffer_max_samples:
-                    # Use current pressure as the main velocity indicator
-                    # This is more intuitive - harder press = louder note
-                    # Map pressure (0.0-1.0) to MIDI velocity (20-127)
-                    current_pressure = pressure
-                    
-                    # Apply velocity scaling and map to MIDI range
+                    # Use peak pressure from the buffer for velocity
+                    # On quick hard taps, pressure peaks early then declines —
+                    # using the last sample would undercount the strike force
+                    peak_pressure = max(p for p, t in self.pressure_buffer)
+
                     # Pressure range: 0.1 (threshold) to 1.0 → Velocity: 20 to 127
-                    normalized_pressure = (current_pressure - self.pressure_threshold) / (1.0 - self.pressure_threshold)
+                    normalized_pressure = (peak_pressure - self.pressure_threshold) / (1.0 - self.pressure_threshold)
                     normalized_pressure = max(0.0, min(1.0, normalized_pressure))
                     
                     # Scale to velocity range (20-127)
@@ -197,7 +216,7 @@ class Strummer(EventEmitter):
                     # Moving right/forward
                     indices = range(self.last_strummed_index + 1, index + 1)
                 else:
-                    # Moving left/backward  
+                    # Moving left/backward
                     indices = range(self.last_strummed_index - 1, index - 1, -1)
                 
                 for i in indices:
@@ -225,10 +244,10 @@ class Strummer(EventEmitter):
         self.pressure_buffer.clear()
         self.pending_tap_index = -1
 
-    def configure(self, pluck_velocity_scale: float = 4.0, pressure_threshold: float = 0.1) -> None:
+    def configure(self, pressure_threshold: float = 0.1, pressure_buffer_size: int = 5) -> None:
         """Configure strummer parameters"""
-        self.velocity_scale = pluck_velocity_scale
         self.pressure_threshold = pressure_threshold
+        self.buffer_max_samples = pressure_buffer_size
 
     def update_bounds(self, width: float, height: float) -> None:
         """Update the bounds of the strummer"""

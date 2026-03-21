@@ -294,10 +294,6 @@ export class MidiStrummerConfig {
     return this._strummer.pressureThreshold;
   }
 
-  get velocityScale(): number {
-    return this._strummer.velocityScale;
-  }
-
   get notes(): string[] {
     return this._strummer.notes;
   }

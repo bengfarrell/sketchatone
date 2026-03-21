@@ -272,7 +272,7 @@ def print_live_dashboard(
 
             if is_strummed:
                 # Calculate velocity based on pressure
-                velocity = min(127, int(pressure * strummer.velocity_scale * 127))
+                velocity = min(127, int(pressure * 127))
                 vel_label = colored(f"v{velocity:3d}", Colors.CYAN)
             else:
                 vel_label = '    '
@@ -337,8 +337,8 @@ class StrumEventViewer(TabletReaderBase):
         # Create strummer
         self.strummer = Strummer()
         self.strummer.configure(
-            pluck_velocity_scale=self.strummer_config.velocity_scale,
-            pressure_threshold=self.strummer_config.pressure_threshold
+            pressure_threshold=self.strummer_config.pressure_threshold,
+            pressure_buffer_size=self.strummer_config.strumming.pressure_buffer_size
         )
 
         # Set up notes

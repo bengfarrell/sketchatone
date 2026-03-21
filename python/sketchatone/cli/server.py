@@ -453,7 +453,7 @@ class StrummerWebSocketServer(TabletReaderBase):
 
         # Create strummer
         self.strummer = Strummer()
-        self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+        self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
 
         # Listen for notes_changed events to broadcast config updates
         # Store the callback as an instance method to prevent garbage collection
@@ -1252,7 +1252,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                 self.config.notes.append(note_config)
         
         # Reconfigure strummer
-        self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+        self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
         self._setup_notes()
 
         print(colored('Config updated from client', Colors.GREEN))
@@ -1272,7 +1272,7 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             # Re-apply strummer settings if relevant
             if path.startswith('strummer.strumming.'):
-                self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+                self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
 
             # Re-setup notes if chord or note spread changed
             if 'chord' in path.lower() or 'spread' in path.lower() or 'initialNotes' in path:
@@ -1383,7 +1383,7 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.current_config_name = config_name
 
             # Re-apply strummer settings
-            self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+            self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
             self._setup_notes()
             self.actions.set_action_rules_config(self.config.strummer.action_rules)
             self.actions.execute_startup_rules()
@@ -1525,7 +1525,7 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.config = parsed_config
 
             # Re-apply settings from the new config
-            self.strummer.configure(self.config.velocity_scale, self.config.pressure_threshold)
+            self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
             self._setup_notes()
             self.actions.set_action_rules_config(self.config.strummer.action_rules)
             self.actions.execute_startup_rules()
@@ -2166,8 +2166,24 @@ class StrummerWebSocketServer(TabletReaderBase):
                 await self._http_server.wait_closed()
                 print(colored('✓ HTTP server closed', Colors.GREEN))
             if self._ws_server:
+                # Close all client connections with a timeout to avoid hanging
+                if self.clients:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(
+                                *[client.close() for client in list(self.clients)],
+                                return_exceptions=True
+                            ),
+                            timeout=2.0
+                        )
+                    except asyncio.TimeoutError:
+                        pass  # Force close below will handle it
+                    self.clients.clear()
                 self._ws_server.close()
-                await self._ws_server.wait_closed()
+                try:
+                    await asyncio.wait_for(self._ws_server.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    pass  # Don't block shutdown
                 print(colored('✓ WebSocket server closed', Colors.GREEN))
             if self.backend:
                 self.backend.disconnect()

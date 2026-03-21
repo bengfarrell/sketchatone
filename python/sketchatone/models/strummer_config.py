@@ -21,7 +21,6 @@ class StrummingConfig:
     Core strumming configuration.
 
     Attributes:
-        pluck_velocity_scale: Scale factor for pluck velocity calculation
         pressure_threshold: Minimum pressure to trigger a strum (0-1)
         midi_channel: MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, None for omni)
         initial_notes: List of note strings for the strum (e.g., ["C4", "E4", "G4"])
@@ -30,8 +29,8 @@ class StrummingConfig:
         lower_note_spread: Number of notes to add below the chord
         invert_x: Invert X axis for left-handed use (flips which notes are on which side)
     """
-    pluck_velocity_scale: float = 4.0
     pressure_threshold: float = 0.1
+    pressure_buffer_size: int = 10
     midi_channel: Optional[int] = None
     initial_notes: List[str] = field(default_factory=lambda: ["C4", "E4", "G4"])
     chord: Optional[str] = None
@@ -52,8 +51,8 @@ class StrummingConfig:
             midi_channel = channel_from_config - 1  # Convert 1-16 to 0-15
 
         return cls(
-            pluck_velocity_scale=data.get('pluck_velocity_scale', data.get('pluckVelocityScale', 4.0)),
             pressure_threshold=data.get('pressure_threshold', data.get('pressureThreshold', 0.1)),
+            pressure_buffer_size=data.get('pressure_buffer_size', data.get('pressureBufferSize', 10)),
             midi_channel=midi_channel,
             initial_notes=data.get('initial_notes', data.get('initialNotes', ["C4", "E4", "G4"])),
             chord=data.get('chord'),
@@ -73,8 +72,8 @@ class StrummingConfig:
             midi_channel_for_config = self.midi_channel + 1  # Convert 0-15 to 1-16
 
         return {
-            'pluckVelocityScale': self.pluck_velocity_scale,
             'pressureThreshold': self.pressure_threshold,
+            'pressureBufferSize': self.pressure_buffer_size,
             'midiChannel': midi_channel_for_config,
             'initialNotes': self.initial_notes,
             'chord': self.chord,
@@ -117,10 +116,6 @@ class StrummerConfig:
     @property
     def pressure_threshold(self) -> float:
         return self.strumming.pressure_threshold
-
-    @property
-    def velocity_scale(self) -> float:
-        return self.strumming.pluck_velocity_scale
 
     @property
     def notes(self) -> List[str]:

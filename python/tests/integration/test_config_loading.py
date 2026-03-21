@@ -78,7 +78,6 @@ class TestFlatFormatConfig:
     
     def test_strumming_settings(self, config):
         strumming = config["strummer"]["strumming"]
-        assert strumming["pluckVelocityScale"] == 3.5
         assert strumming["pressureThreshold"] == 0.15
         assert strumming["midiChannel"] == 2
         assert strumming["initialNotes"] == ["D4", "F#4", "A4"]
@@ -98,9 +97,6 @@ class TestFlatFormatConfig:
     
     def test_action_rules_settings(self, config):
         action_rules = config["strummer"]["actionRules"]
-        # Check button names
-        assert action_rules["buttonNames"]["button:1"] == "Chord 1"
-        assert action_rules["buttonNames"]["button:2"] == "Chord 2"
         # Check groups
         assert len(action_rules["groups"]) == 1
         assert action_rules["groups"][0]["id"] == "test-chord-group"

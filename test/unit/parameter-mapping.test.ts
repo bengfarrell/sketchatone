@@ -70,7 +70,7 @@ describe('ParameterMapping', () => {
         default: 0.6,
       });
       const dict = original.toDict();
-      const restored = ParameterMapping.fromDict(dict);
+      const restored = ParameterMapping.fromDict(dict as unknown as Record<string, unknown>);
       expect(restored.min).toBe(original.min);
       expect(restored.max).toBe(original.max);
       expect(restored.multiplier).toBe(original.multiplier);

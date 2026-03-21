@@ -12,22 +12,20 @@ from sketchatone.models.parameter_mapping import ParameterMapping
 
 class TestStrummingConfig:
     """Test StrummingConfig model."""
-    
+
     def test_default_values(self):
         """Test default values."""
         config = StrummingConfig()
-        assert config.pluck_velocity_scale == 4.0
         assert config.pressure_threshold == 0.1
         assert config.midi_channel is None
         assert config.initial_notes == ["C4", "E4", "G4"]
         assert config.chord is None
         assert config.upper_note_spread == 3
         assert config.lower_note_spread == 3
-    
+
     def test_from_dict_snake_case(self):
         """Test creating from snake_case dictionary."""
         data = {
-            'pluck_velocity_scale': 2.0,
             'pressure_threshold': 0.2,
             'midi_channel': 5,  # Config file uses 1-16
             'initial_notes': ['A3', 'C4', 'E4'],
@@ -36,18 +34,16 @@ class TestStrummingConfig:
             'lower_note_spread': 1
         }
         config = StrummingConfig.from_dict(data)
-        assert config.pluck_velocity_scale == 2.0
         assert config.pressure_threshold == 0.2
         assert config.midi_channel == 4  # Internally stored as 0-15 (5 - 1 = 4)
         assert config.initial_notes == ['A3', 'C4', 'E4']
         assert config.chord == 'Am'
         assert config.upper_note_spread == 2
         assert config.lower_note_spread == 1
-    
+
     def test_from_dict_camel_case(self):
         """Test creating from camelCase dictionary."""
         data = {
-            'pluckVelocityScale': 3.0,
             'pressureThreshold': 0.15,
             'midiChannel': 10,  # Config file uses 1-16
             'initialNotes': ['G3', 'B3', 'D4'],
@@ -56,18 +52,16 @@ class TestStrummingConfig:
             'lowerNoteSpread': 2
         }
         config = StrummingConfig.from_dict(data)
-        assert config.pluck_velocity_scale == 3.0
         assert config.pressure_threshold == 0.15
         assert config.midi_channel == 9  # Internally stored as 0-15 (10 - 1 = 9)
         assert config.initial_notes == ['G3', 'B3', 'D4']
         assert config.chord == 'G'
         assert config.upper_note_spread == 4
         assert config.lower_note_spread == 2
-    
+
     def test_to_dict(self):
         """Test converting to dictionary (camelCase for webapp)."""
         config = StrummingConfig(
-            pluck_velocity_scale=5.0,
             pressure_threshold=0.05,
             midi_channel=1,  # Internal value is 0-15
             initial_notes=['C3'],
@@ -76,7 +70,6 @@ class TestStrummingConfig:
             lower_note_spread=5
         )
         d = config.to_dict()
-        assert d['pluckVelocityScale'] == 5.0
         assert d['pressureThreshold'] == 0.05
         assert d['midiChannel'] == 2  # Exported as 1-16 (1 + 1 = 2)
         assert d['initialNotes'] == ['C3']
@@ -87,7 +80,7 @@ class TestStrummingConfig:
 
 class TestStrummerConfigNewFormat:
     """Test StrummerConfig with new nested format."""
-    
+
     def test_default_values(self):
         """Test default values."""
         config = StrummerConfig()
@@ -146,31 +139,25 @@ class TestStrummerConfigNewFormat:
 
 class TestStrummerConfigBackwardCompatibility:
     """Test backward compatibility properties."""
-    
+
     def test_pressure_threshold_property(self):
         """Test pressure_threshold property."""
         config = StrummerConfig()
         config.strumming.pressure_threshold = 0.25
         assert config.pressure_threshold == 0.25
-    
-    def test_velocity_scale_property(self):
-        """Test velocity_scale property."""
-        config = StrummerConfig()
-        config.strumming.pluck_velocity_scale = 3.0
-        assert config.velocity_scale == 3.0
-    
+
     def test_notes_property(self):
         """Test notes property."""
         config = StrummerConfig()
         config.strumming.initial_notes = ['A3', 'C4', 'E4']
         assert config.notes == ['A3', 'C4', 'E4']
-    
+
     def test_chord_property(self):
         """Test chord property."""
         config = StrummerConfig()
         config.strumming.chord = 'Gmaj7'
         assert config.chord == 'Gmaj7'
-    
+
     def test_spread_properties(self):
         """Test lower_spread and upper_spread properties."""
         config = StrummerConfig()
@@ -178,7 +165,7 @@ class TestStrummerConfigBackwardCompatibility:
         config.strumming.upper_note_spread = 5
         assert config.lower_spread == 4
         assert config.upper_spread == 5
-    
+
     def test_channel_property(self):
         """Test channel property."""
         config = StrummerConfig()
@@ -188,7 +175,7 @@ class TestStrummerConfigBackwardCompatibility:
 
 class TestStrummerConfigFileIO:
     """Test file I/O operations."""
-    
+
     def test_from_json_file_new_format(self):
         """Test loading from JSON file (new format)."""
         data = {
@@ -198,14 +185,14 @@ class TestStrummerConfigFileIO:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             json.dump(data, f)
             temp_path = f.name
-        
+
         try:
             config = StrummerConfig.from_json_file(temp_path)
             assert config.strumming.chord == 'Em'
             assert config.note_duration.control == 'tiltXY'
         finally:
             os.unlink(temp_path)
-    
+
     def test_to_json_file(self):
         """Test saving to JSON file."""
         config = StrummerConfig()

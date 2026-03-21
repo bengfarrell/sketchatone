@@ -87,7 +87,7 @@ describe('formatNote', () => {
 });
 
 describe('printStrumEvent', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let consoleSpy: any;
 
   beforeEach(() => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -105,7 +105,7 @@ describe('printStrumEvent', () => {
     };
     printStrumEvent(event);
 
-    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const output = consoleSpy.mock.calls.map((call: string[]) => call.join(' ')).join('\n');
     expect(output).toContain('STRUM');
     expect(output).toContain('C4');
     expect(output).toContain('100');
@@ -118,7 +118,7 @@ describe('printStrumEvent', () => {
     };
     printStrumEvent(event);
 
-    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const output = consoleSpy.mock.calls.map((call: string[]) => call.join(' ')).join('\n');
     expect(output).toContain('RELEASE');
     expect(output).toContain('80');
   });
@@ -128,7 +128,6 @@ describe('StrummerConfig', () => {
   it('should create default config', () => {
     const config = new StrummerConfig();
     expect(config.pressureThreshold).toBe(0.1);
-    expect(config.velocityScale).toBe(4.0); // New default pluckVelocityScale
     expect(config.notes).toEqual(['C4', 'E4', 'G4']); // New default notes
   });
 
@@ -142,7 +141,6 @@ describe('StrummerConfig', () => {
     });
     expect(config.pressureThreshold).toBe(0.2);
     expect(config.notes).toEqual(['D4', 'F#4', 'A4']);
-    expect(config.velocityScale).toBe(4.0); // default pluckVelocityScale
   });
 
   it('should load config from JSON file', () => {
@@ -152,7 +150,6 @@ describe('StrummerConfig', () => {
     const configData = {
       strumming: {
         pressure_threshold: 0.15,
-        pluck_velocity_scale: 0.8,
         initial_notes: ['E4', 'G#4', 'B4'],
         chord: 'E',
       },
@@ -161,7 +158,7 @@ describe('StrummerConfig', () => {
 
     const config = StrummerConfig.fromJsonFile(configPath);
     expect(config.pressureThreshold).toBe(0.15);
-    expect(config.velocityScale).toBe(0.8);
+    expect(config.strumming.pressureThreshold).toBe(0.15);
     expect(config.notes).toEqual(['E4', 'G#4', 'B4']);
     expect(config.chord).toBe('E');
 
@@ -175,14 +172,12 @@ describe('Strummer', () => {
   it('should initialize with default values', () => {
     const strummer = new Strummer();
     expect(strummer.pressureThreshold).toBe(0.1);
-    expect(strummer.velocityScale).toBe(4.0);
     expect(strummer.notes).toEqual([]);
   });
 
   it('should configure with custom values', () => {
     const strummer = new Strummer();
-    strummer.configure(2.0, 0.2);
-    expect(strummer.velocityScale).toBe(2.0);
+    strummer.configure(0.2);
     expect(strummer.pressureThreshold).toBe(0.2);
   });
 
@@ -231,6 +226,7 @@ describe('Strummer', () => {
 
   it('should detect release when pressure drops below threshold', () => {
     const strummer = new Strummer();
+    strummer.bufferMaxSamples = 3; // Use small buffer for test
     strummer.notes = [createNote('C', 4), createNote('E', 4), createNote('G', 4), createNote('C', 5)];
     strummer.updateBounds(1.0, 1.0);
 
@@ -238,7 +234,6 @@ describe('Strummer', () => {
     strummer.strum(0.1, 0.05);
     strummer.strum(0.1, 0.15);
     strummer.strum(0.1, 0.2);
-    strummer.strum(0.1, 0.25);
 
     // Now release
     const result = strummer.strum(0.1, 0.05);
@@ -283,6 +278,7 @@ describe('Strummer', () => {
 
   it('should trigger release event when pressure drops', () => {
     const strummer = new Strummer();
+    strummer.bufferMaxSamples = 3; // Use small buffer for test
     strummer.notes = [createNote('C', 4), createNote('E', 4), createNote('G', 4), createNote('C', 5)];
     strummer.updateBounds(1.0, 1.0);
 
@@ -290,7 +286,6 @@ describe('Strummer', () => {
     strummer.strum(0.5, 0.05);
     strummer.strum(0.5, 0.15);
     strummer.strum(0.5, 0.2);
-    strummer.strum(0.5, 0.25);
 
     // Now release pressure
     const result = strummer.strum(0.5, 0.05);
@@ -312,6 +307,7 @@ describe('Strummer', () => {
 
   it('should strum across multiple strings', () => {
     const strummer = new Strummer();
+    strummer.bufferMaxSamples = 3; // Use small buffer for test
     strummer.notes = [createNote('C', 4), createNote('E', 4), createNote('G', 4)];
     strummer.updateBounds(1.0, 1.0);
 
@@ -319,7 +315,6 @@ describe('Strummer', () => {
     strummer.strum(0.1, 0.05);
     strummer.strum(0.1, 0.15);
     strummer.strum(0.1, 0.2);
-    strummer.strum(0.1, 0.25);
 
     // Now move to last string while maintaining pressure
     const result = strummer.strum(0.9, 0.5);

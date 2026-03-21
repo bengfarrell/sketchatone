@@ -204,7 +204,7 @@ function printLiveDashboard(
       let velLabel: string;
       if (isStrummed) {
         // Calculate velocity based on pressure
-        const velocity = Math.min(127, Math.floor(pressure * strummer.velocityScale * 127));
+        const velocity = Math.min(127, Math.floor(pressure * 127));
         velLabel = chalk.cyan(`v${velocity.toString().padStart(3)}`);
       } else {
         velLabel = '    ';
@@ -273,7 +273,7 @@ class StrumEventViewer extends TabletReaderBase {
 
     // Create strummer
     this.strummer = new Strummer();
-    this.strummer.configure(this.strummerConfig.velocityScale, this.strummerConfig.pressureThreshold);
+    this.strummer.configure(this.strummerConfig.pressureThreshold, this.strummerConfig.strumming.pressureBufferSize);
 
     // Set up notes
     this.setupNotes();

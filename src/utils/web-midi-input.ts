@@ -189,7 +189,7 @@ export class WebMidiInput extends EventEmitter {
       console.log(`[WebMidiInput] Connected to: ${this._currentInputName}`);
 
       // Listen for device changes
-      this.midiAccess.onstatechange = this.handleStateChange.bind(this);
+      this.midiAccess.onstatechange = this.handleStateChange.bind(this) as EventListener;
 
       this.emitConnectionEvent(true, this._currentInputName);
       return true;
@@ -322,6 +322,7 @@ export class WebMidiInput extends EventEmitter {
    */
   private handleStateChange(event: MIDIConnectionEvent): void {
     const port = event.port;
+    if (!port) return;
     console.log(
       `[WebMidiInput] MIDI port ${port.name} ${port.state} (${port.connection})`
     );

@@ -72,7 +72,6 @@ describe('Config Loading Integration Tests', () => {
     it('should correctly load strumming settings', () => {
       config = dumpConfig(configPath);
       const strumming = (config.strummer as Record<string, unknown>).strumming as Record<string, unknown>;
-      expect(strumming.pluckVelocityScale).toBe(3.5);
       expect(strumming.pressureThreshold).toBe(0.15);
       expect(strumming.midiChannel).toBe(2);
       expect(strumming.initialNotes).toEqual(['D4', 'F#4', 'A4']);

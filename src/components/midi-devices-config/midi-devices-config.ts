@@ -207,7 +207,7 @@ export class MidiDevicesConfig extends LitElement {
   outputPorts: MidiDevicePort[] = [];
 
   @property({ type: Array })
-  currentInputPorts: number[] = [];  // Array of connected input port IDs
+  currentInputPorts: (string | number)[] = [];  // Array of connected input port IDs
 
   @property({ type: Array })
   excludedInputPorts: string[] = [];  // Port names excluded from input (to prevent feedback)

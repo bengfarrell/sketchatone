@@ -31,14 +31,12 @@ class TestStrummerInitialization:
         assert strummer.last_strummed_index == -1
         assert strummer.last_pressure == 0.0
         assert strummer.pressure_threshold == 0.1
-        assert strummer.velocity_scale == 4.0
-    
+
     def test_configure(self):
         """Test strummer configuration."""
         strummer = Strummer()
-        strummer.configure(pluck_velocity_scale=5.0, pressure_threshold=0.2)
-        
-        assert strummer.velocity_scale == 5.0
+        strummer.configure(pressure_threshold=0.2)
+
         assert strummer.pressure_threshold == 0.2
 
 
@@ -150,9 +148,7 @@ class TestStrummerStrum:
     
     def test_strum_triggers_after_buffer(self):
         """Test that strum triggers after buffer is full."""
-        # Simulate pressure down and buffering
-        # Buffer needs 3 samples. When pressure goes from below to above threshold,
-        # it starts with 2 samples (previous + current), so we need one more.
+        self.strummer.buffer_max_samples = 3  # Use small buffer for test
         self.strummer.strum(0.5, 0.05)  # Below threshold
         self.strummer.strum(0.5, 0.15)  # Above threshold - starts buffering with 2 samples
         result = self.strummer.strum(0.5, 0.2)   # Third sample - buffer full, should trigger
@@ -196,11 +192,11 @@ class TestStrummerRelease:
     
     def test_release_event_on_pressure_up(self):
         """Test that release event is triggered when pressure drops."""
+        self.strummer.buffer_max_samples = 3  # Use small buffer for test
         # Trigger a strum first
         self.strummer.strum(0.5, 0.05)
         self.strummer.strum(0.5, 0.15)
-        self.strummer.strum(0.5, 0.2)
-        self.strummer.strum(0.5, 0.25)  # Triggers strum
+        self.strummer.strum(0.5, 0.2)  # Triggers strum
         
         # Now release pressure
         result = self.strummer.strum(0.5, 0.05)  # Below threshold
@@ -209,15 +205,17 @@ class TestStrummerRelease:
         assert result['type'] == 'release'
         assert 'velocity' in result
     
-    def test_no_release_without_prior_strum(self):
-        """Test that no release event without prior strum."""
-        # Just go above and below threshold without completing strum
+    def test_tap_on_release_before_buffer_fills(self):
+        """Test that pen up before buffer fills triggers a tap from buffered data."""
         self.strummer.strum(0.5, 0.05)
         self.strummer.strum(0.5, 0.15)  # Start buffering
-        result = self.strummer.strum(0.5, 0.05)  # Drop pressure
-        
-        # Should not trigger release since strum wasn't completed
-        assert result is None
+        result = self.strummer.strum(0.5, 0.05)  # Drop pressure before buffer fills
+
+        # Should trigger a strum (tap) using peak pressure from incomplete buffer
+        assert result is not None
+        assert result['type'] == 'strum'
+        assert len(result['notes']) == 1
+        assert result['notes'][0]['velocity'] >= 20
 
 
 class TestStrummerVelocity:
@@ -236,8 +234,7 @@ class TestStrummerVelocity:
     
     def test_velocity_range(self):
         """Test that velocity is within MIDI range."""
-        # Trigger a strum with high pressure
-        # Buffer needs 3 samples: below threshold, above threshold (2 samples), then trigger
+        self.strummer.buffer_max_samples = 3  # Use small buffer for test
         self.strummer.strum(0.5, 0.05)  # Below threshold
         self.strummer.strum(0.5, 0.5)   # Above threshold - starts buffering with 2 samples
         result = self.strummer.strum(0.5, 0.8)  # Third sample - triggers
@@ -249,8 +246,7 @@ class TestStrummerVelocity:
     
     def test_minimum_velocity(self):
         """Test minimum velocity with low pressure."""
-        # Trigger a strum with pressure just above threshold
-        # Buffer needs 3 samples
+        self.strummer.buffer_max_samples = 3  # Use small buffer for test
         self.strummer.strum(0.5, 0.05)  # Below threshold
         self.strummer.strum(0.5, 0.11)  # Above threshold - starts buffering with 2 samples
         result = self.strummer.strum(0.5, 0.12)  # Third sample - triggers
@@ -276,6 +272,7 @@ class TestStrummerStringCrossing:
     
     def test_strum_across_strings(self):
         """Test strumming across multiple strings."""
+        self.strummer.buffer_max_samples = 3  # Use small buffer for test
         # First, trigger initial strum on first string
         self.strummer.strum(0.1, 0.05)  # Low pressure
         self.strummer.strum(0.1, 0.15)  # Start buffering

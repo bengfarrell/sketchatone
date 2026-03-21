@@ -351,7 +351,7 @@ export class SketchatoneDashboard extends LitElement {
     for (let i = 1; i <= 30; i++) {
       const buttonKey = `button${i}` as keyof typeof data;
       if (data[buttonKey] !== undefined) {
-        (event as Record<string, unknown>)[`button${i}`] = data[buttonKey];
+        (event as unknown as Record<string, unknown>)[`button${i}`] = data[buttonKey];
       }
     }
 
@@ -689,7 +689,7 @@ export class SketchatoneDashboard extends LitElement {
    */
   private getActionRulesConfig(): ActionRulesConfig | undefined {
     if (!this.fullConfig?.strummer?.actionRules) return undefined;
-    return ActionRulesConfig.fromDict(this.fullConfig.strummer.actionRules);
+    return ActionRulesConfig.fromDict(this.fullConfig.strummer.actionRules as unknown as Record<string, unknown>);
   }
 
   /**
@@ -982,14 +982,14 @@ export class SketchatoneDashboard extends LitElement {
               @panel-close=${() => this.handlePanelClose('strummingSettings')}>
               <div class="settings-form">
                 <div class="setting-row">
-                  <label>Pluck Velocity Scale</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pluckVelocityScale ?? 4.0}" step="0.1" min="0.1" max="10"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pluckVelocityScale', (e.target as HTMLInputElement).value)}></sp-number-field>
-                </div>
-                <div class="setting-row">
                   <label>Pressure Threshold</label>
                   <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
                     @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}></sp-number-field>
+                </div>
+                <div class="setting-row">
+                  <label>Pressure Buffer Size</label>
+                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureBufferSize ?? 10}" step="1" min="2" max="40"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}></sp-number-field>
                 </div>
                 <div class="setting-row">
                   <label>MIDI Channel</label>

@@ -124,7 +124,7 @@ class MidiStrummer extends TabletReaderBase {
 
     // Create strummer
     this.strummer = new Strummer();
-    this.strummer.configure(this.config.velocityScale, this.config.pressureThreshold);
+    this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
 
     // Set up notes
     this.setupNotes();
