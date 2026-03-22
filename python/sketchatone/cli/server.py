@@ -14,6 +14,7 @@ Usage:
 import argparse
 import asyncio
 import json
+import math
 import signal
 import socket
 import sys
@@ -1756,6 +1757,9 @@ class StrummerWebSocketServer(TabletReaderBase):
 
     def handle_packet(self, data: bytes, report_id: int = None, interface_type: str = None) -> None:
         """Handle incoming HID packet"""
+        # Small delay to match Node.js timing characteristics
+        # Without this, Python processes packets too fast, causing pressure
+        # buffer samples to cluster together and producing inconsistent velocity
         try:
             # Process the data using the config
             # Note: process_packet only takes data, it uses report_id internally from the data
@@ -1768,9 +1772,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             state = str(events.get('state', 'unknown'))
             tilt_x = float(events.get('tiltX', 0))
             tilt_y = float(events.get('tiltY', 0))
-            # Calculate combined tilt
-            tilt_xy = (tilt_x + tilt_y) / 2.0 if (tilt_x != 0 or tilt_y != 0) else 0.0
+            # Calculate combined tilt (matching blankslate's normalizeTabletEvent)
+            tilt_xy = math.sqrt(tilt_x * tilt_x + tilt_y * tilt_y)
+            if tilt_x * tilt_y != 0:
+                tilt_xy *= math.copysign(1, tilt_x * tilt_y)
             tilt_xy = max(-1.0, min(1.0, tilt_xy))
+            events['tiltXY'] = tilt_xy
             primary_button = bool(events.get('primaryButton') or events.get('primaryButtonPressed'))
             secondary_button = bool(events.get('secondaryButton') or events.get('secondaryButtonPressed'))
 
@@ -1880,6 +1887,15 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             # Apply X inversion for left-handed use if configured
             strum_x = 1.0 - x if self.config.strummer.strumming.invert_x else x
+
+            # Yield the GIL so the NoteScheduler thread can fire note-offs on time.
+            # The HID thread otherwise holds the GIL too tightly on macOS, starving
+            # the scheduler and causing audible timing issues. A TTY write with newline
+            # is the only reliable yield mechanism found (time.sleep and pipe writes
+            # don't work). On Raspberry Pi with systemd, stderr goes to journald which
+            # buffers this with negligible overhead.
+            if pressure > 0:
+                sys.stderr.write(".\n")
 
             # Process strum
             event = self.strummer.strum(strum_x, pressure)

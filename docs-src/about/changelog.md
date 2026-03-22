@@ -12,6 +12,7 @@ description: Release notes and version history
 - **Configurable pressure buffer size** (`pressure_buffer_size`): Controls how many pressure samples are collected before the initial note fires. A larger buffer gives the pressure sensor more time to register strike force, producing louder and more consistent velocity on taps and initial strum contact. Configurable via the dashboard UI or config file (default: 10, range: 2-40).
 - **Peak pressure velocity**: The initial note velocity is now based on the highest pressure seen during the buffer window, rather than the last sample. This prevents velocity from dropping on quick hard taps where pressure peaks early then declines.
 - **Tap-on-release**: If the pen is lifted before the pressure buffer fills (a quick tap), the note fires immediately on release using the peak pressure from whatever samples were collected. Quick taps are never silently dropped regardless of buffer size.
+- **Fixed tiltXY calculation** (Python): The combined tilt value used for note duration control now uses the correct magnitude formula (`sqrt(tiltX² + tiltY²)`) matching the Node.js implementation, instead of a simple average that produced shorter durations.
 
 ### Shutdown Fixes
 
