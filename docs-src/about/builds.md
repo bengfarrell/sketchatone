@@ -64,10 +64,6 @@ The app bundle is self-contained with:
 
 No additional Python packages need to be installed on the target system.
 
-## Windows
-
-*Coming soon* - Windows installer
-
 ## Linux / Raspberry Pi / Zynthian
 
 Sketchatone provides a `.deb` package installer for Linux systems, with special support for Zynthian and Raspberry Pi.

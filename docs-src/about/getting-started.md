@@ -9,7 +9,7 @@ This guide will help you get Sketchatone running with your graphics tablet.
 
 ## Prerequisites
 
-- A graphics tablet (Wacom, XP-Pen, Huion, etc.)
+- A graphics tablet (XP-Pen Deco 640, Huion Inspiroy 2M, ideally others but no promises )
 - A MIDI-capable application (DAW, synthesizer, virtual instrument)
 
 ## Installation
@@ -41,10 +41,6 @@ sudo ./install-sketchatone.sh
 
 See **[Raspberry Pi Installation Guide](/about/builds/#linux-raspberry-pi-zynthian)** for details.
 
-### Windows
-
-**Coming soon** - Windows installer in development
-
 ### From Source
 
 For developers or other platforms, see **[Building from Source](/about/builds/)**.
@@ -68,7 +64,6 @@ If your tablet isn't recognized, you may need to create a device configuration f
 Make sure you have a MIDI destination ready:
 
 - **macOS**: Enable IAC Driver in Audio MIDI Setup (built-in virtual MIDI)
-- **Windows**: Install loopMIDI or use a DAW
 - **Linux/Raspberry Pi**: Connect a USB MIDI device or use ALSA virtual ports
 - **Zynthian**: JACK MIDI is configured automatically
 

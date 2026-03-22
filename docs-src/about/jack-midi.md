@@ -22,7 +22,7 @@ Use JACK MIDI if you:
 
 Use standard rtmidi if you:
 
-- ✅ Run Sketchatone on macOS or Windows
+- ✅ Run Sketchatone on macOS
 - ✅ Use a DAW without JACK integration
 - ✅ Need simple MIDI output to one device
 
@@ -145,7 +145,7 @@ jack_lsp -c
 | Setup | Simple | Requires JACK server |
 | Zynthian Integration | Limited | Full integration |
 | Latency | Low | Very low |
-| macOS/Windows | Native | Requires JACK install |
+| macOS | Native | Requires JACK install |
 
 ## See Also
 
