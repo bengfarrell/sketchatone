@@ -244,7 +244,7 @@ class MidiStrummer extends TabletReaderBase {
     console.log();
     console.log(chalk.white.bold('MIDI Config:'));
     // Display channel as 1-16 for users (internally stored as 0-15), or 'omni' if undefined
-    const channelDisplay = this.config.channel !== undefined && this.config.channel !== null ? (this.config.channel + 1).toString() : 'omni';
+    const channelDisplay = this.config.channel !== undefined && this.config.channel !== null ? (this.config.channel + 1).toString() : '1 (default)';
     console.log(chalk.cyan('  Channel: ') + chalk.white(channelDisplay));
     if (this.config.outputPort !== null) {
       console.log(chalk.cyan('  Output Port: ') + chalk.white(String(this.config.outputPort)));

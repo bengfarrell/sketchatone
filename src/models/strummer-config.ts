@@ -31,7 +31,7 @@ export interface StrummingConfigData {
   pressureThreshold: number;
   /** Number of pressure samples to buffer before triggering initial note (higher = more velocity, more latency) */
   pressureBufferSize: number;
-  /** MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, null for omni) */
+  /** MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, null for channel 1 (default)) */
   midiChannel: number | null;
   /** List of note strings for the strum (e.g., ["C4", "E4", "G4"]) */
   initialNotes: string[];

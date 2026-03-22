@@ -25,7 +25,7 @@ description: Release notes and version history
 
 - **Removed automatic device monitoring**: Background MIDI port scanning has been replaced with manual refresh via the dashboard UI. This eliminates race conditions and reduces system complexity.
 - **Manual device refresh**: New "Refresh Devices" button in the dashboard for updating the MIDI device list.
-
+- **Removed "omni mode"**: Removed Omnimode, or sending notes on all MIDI channels. There was some weird behavior on Python that made the strum sound bad, and it's not clear we actually need this feature anyway. It'll be a future improvement if we do
 ### Bug Fixes
 
 - **MIDI channel off-by-one**: Standardized MIDI channels to be 0-indexed internally and 1-indexed in user-facing config files and UI.

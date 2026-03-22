@@ -94,7 +94,7 @@ class MidiBackendProtocol(ABC):
         Set the default MIDI channel.
 
         Args:
-            channel: MIDI channel (0-15), or None for omni/all channels
+            channel: MIDI channel (0-15), or None for channel 1 (default)
         """
         pass
     

@@ -78,7 +78,7 @@ export interface MidiBackendProtocol {
   /**
    * Set the default MIDI channel.
    *
-   * @param channel - MIDI channel (0-15), or undefined for omni/all channels
+   * @param channel - MIDI channel (0-15), or undefined for channel 1 (default)
    */
   setChannel(channel?: number): void;
 
@@ -103,7 +103,7 @@ export interface MidiBackendProtocol {
 export interface MidiBackendOptions {
   /**
    * Default MIDI channel (0-15 internal representation, displayed as 1-16 to users)
-   * or undefined for omni mode (sends to all 16 channels).
+   * or undefined to default to channel 1.
    * Note: CLI and user-facing interfaces use 1-16
    */
   channel?: number;

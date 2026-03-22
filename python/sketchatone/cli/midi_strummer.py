@@ -356,7 +356,7 @@ class MidiStrummer(TabletReaderBase):
         print(colored('  Backend: ', Colors.CYAN) +
               colored(self.config.midi_output_backend, Colors.WHITE))
         # Display channel as 1-16 for users (internally stored as 0-15)
-        channel_display = str(self.config.channel + 1) if self.config.channel is not None else 'omni'
+        channel_display = str(self.config.channel + 1) if self.config.channel is not None else '1 (default)'
         print(colored('  Channel: ', Colors.CYAN) +
               colored(channel_display, Colors.WHITE))
         if self.config.midi_output_id is not None:

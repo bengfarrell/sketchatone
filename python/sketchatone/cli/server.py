@@ -639,7 +639,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         print(colored('  Backend: ', Colors.CYAN) +
               colored(self.config.midi_output_backend, Colors.WHITE))
         # Display channel as 1-16 for users (internally stored as 0-15)
-        channel_display = str(self.config.channel + 1) if self.config.channel is not None else 'omni'
+        channel_display = str(self.config.channel + 1) if self.config.channel is not None else '1 (default)'
         print(colored('  Channel: ', Colors.CYAN) +
               colored(channel_display, Colors.WHITE))
         if self.config.midi_output_id is not None:
@@ -1887,15 +1887,6 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             # Apply X inversion for left-handed use if configured
             strum_x = 1.0 - x if self.config.strummer.strumming.invert_x else x
-
-            # Yield the GIL so the NoteScheduler thread can fire note-offs on time.
-            # The HID thread otherwise holds the GIL too tightly on macOS, starving
-            # the scheduler and causing audible timing issues. A TTY write with newline
-            # is the only reliable yield mechanism found (time.sleep and pipe writes
-            # don't work). On Raspberry Pi with systemd, stderr goes to journald which
-            # buffers this with negligible overhead.
-            if pressure > 0:
-                sys.stderr.write(".\n")
 
             # Process strum
             event = self.strummer.strum(strum_x, pressure)

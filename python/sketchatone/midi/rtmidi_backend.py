@@ -42,7 +42,7 @@ class RtMidiBackend(MidiBackendProtocol):
 
         Args:
             channel: Default MIDI channel (0-15 internal representation, displayed as 1-16 to users),
-                or None for omni mode (sends to all 16 channels). Note: CLI and user-facing interfaces use 1-16.
+                or None to default to channel 1. Note: CLI and user-facing interfaces use 1-16.
             inter_message_delay: Seconds to wait after each MIDI message (default 0).
                 Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick with direct USB (e.g. Juno DS).
             device_monitoring: Device monitoring disabled by default (False).
@@ -246,13 +246,13 @@ class RtMidiBackend(MidiBackendProtocol):
         print("[RtMidi] Disconnected")
     
     def set_channel(self, channel: Optional[int]) -> None:
-        """Set default MIDI channel (0-15, 0-based) or None for omni (all channels)."""
+        """Set default MIDI channel (0-15, 0-based) or None to default to channel 1."""
         self._channel = channel
         if channel is not None:
             # Display as 1-based for user-friendliness
             print(f"[RtMidi] Channel set to: {channel + 1}")
         else:
-            print("[RtMidi] Channel set to: ALL (omni)")
+            print("[RtMidi] Channel set to: 1 (default)")
     
     def _get_channels(self, channel: Optional[int] = None) -> List[int]:
         """
@@ -271,8 +271,8 @@ class RtMidiBackend(MidiBackendProtocol):
             # Default channel is also 0-based
             return [self._channel]
         else:
-            # None = omni mode (all 16 channels)
-            return list(range(16))
+            # No channel specified - default to channel 0 (MIDI channel 1)
+            return [0]
     
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
         """

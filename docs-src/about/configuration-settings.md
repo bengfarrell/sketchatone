@@ -195,7 +195,7 @@ Core strumming configuration.
 |----------|------|---------|-------------|
 | `pressure_threshold` | number | 0.1 | Minimum pressure to trigger strum |
 | `pressure_buffer_size` | number | 10 | Number of pressure samples to buffer before triggering the initial note (see below) |
-| `midi_channel` | number\|null | null | MIDI channel (1-16), null for omni |
+| `midi_channel` | number\|null | null | MIDI channel (1-16), null for channel 1 (default) |
 | `initial_notes` | string[] | ["C4","E4","G4"] | List of note strings |
 | `chord` | string\|null | null | Chord notation (e.g., "Am", "Gmaj7") |
 | `upper_note_spread` | number | 3 | Notes to add above chord |

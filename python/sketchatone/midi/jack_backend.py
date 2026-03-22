@@ -42,7 +42,7 @@ class JackMidiBackend(MidiBackendProtocol):
 
         Args:
             channel: Default MIDI channel (0-15 internal representation, displayed as 1-16 to users),
-                or None for all channels. Note: CLI and user-facing interfaces use 1-16.
+                or None to default to channel 1. Note: CLI and user-facing interfaces use 1-16.
             client_name: JACK client name
             auto_connect: Auto-connect mode: "chain0", "all-chains", or "none"
             inter_message_delay: Seconds to wait after each MIDI message (default 0).
@@ -262,12 +262,12 @@ class JackMidiBackend(MidiBackendProtocol):
         self._connected = False
     
     def set_channel(self, channel: Optional[int]) -> None:
-        """Set default MIDI channel (0-15) or None for all."""
+        """Set default MIDI channel (0-15) or None to default to channel 1."""
         self._channel = channel
         if channel is not None:
             print(f"[JackMidi] Channel set to: {channel}")
         else:
-            print("[JackMidi] Channel set to: ALL (omni)")
+            print("[JackMidi] Channel set to: 1 (default)")
     
     def _get_channels(self, channel: Optional[int] = None) -> List[int]:
         """Get list of 0-based channel indices to send on."""
@@ -276,8 +276,9 @@ class JackMidiBackend(MidiBackendProtocol):
         elif self._channel is not None:
             return [self._channel]
         else:
-            return list(range(16))
-    
+            # No channel specified - default to channel 0 (MIDI channel 1)
+            return [0]
+
     def send_note_on(self, note: NoteObject, velocity: int, channel: Optional[int] = None) -> None:
         """
         Send note-on message with State Guard protection.

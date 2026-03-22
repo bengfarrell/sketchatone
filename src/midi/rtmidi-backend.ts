@@ -63,7 +63,7 @@ export class RtMidiBackend implements MidiBackendProtocol {
   private _lastAvailablePorts: string[] = [];
 
   constructor(options: MidiBackendOptions = {}) {
-    this._channel = options.channel; // undefined = omni mode (all 16 channels)
+    this._channel = options.channel; // undefined = default to channel 1
     this._useVirtualPorts = options.useVirtualPorts ?? false;
     this._virtualPortName = options.virtualPortName ?? 'Sketchatone';
     this._interMessageDelay = options.interMessageDelay ?? 0;
@@ -228,8 +228,8 @@ export class RtMidiBackend implements MidiBackendProtocol {
     if (this._channel !== undefined) {
       return [this._channel];
     }
-    // undefined = omni mode (all 16 channels)
-    return Array.from({ length: 16 }, (_, i) => i);
+    // undefined = default to channel 1 (0-based: 0)
+    return [0];
   }
 
   /**

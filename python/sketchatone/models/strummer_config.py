@@ -22,7 +22,7 @@ class StrummingConfig:
 
     Attributes:
         pressure_threshold: Minimum pressure to trigger a strum (0-1)
-        midi_channel: MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, None for omni)
+        midi_channel: MIDI channel (stored internally as 0-15, but 1-16 in config files and CLI, None for channel 1 (default))
         initial_notes: List of note strings for the strum (e.g., ["C4", "E4", "G4"])
         chord: Optional chord notation (e.g., "Am", "Gmaj7")
         upper_note_spread: Number of notes to add above the chord
