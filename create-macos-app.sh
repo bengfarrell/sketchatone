@@ -288,3 +288,29 @@ chmod +x "dist/Run Sketchatone (sudo).command"
 
 echo "Also created: dist/Run Sketchatone (sudo).command"
 echo "  (Double-click this to run with sudo after installing)"
+echo ""
+
+# Create versioned zip file
+ZIP_NAME="sketchatone-osx-${VERSION}.zip"
+ZIP_PATH="dist/${ZIP_NAME}"
+
+echo "📦 Creating distribution package..."
+cd dist
+rm -f "$ZIP_NAME" 2>/dev/null || true
+zip -r -q "$ZIP_NAME" "${APP_NAME}.app" "Run Sketchatone (sudo).command"
+cd ..
+
+ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+
+echo ""
+echo "=========================================="
+echo "📦 Distribution package created!"
+echo "=========================================="
+echo ""
+echo "Package: $ZIP_PATH"
+echo "Size: $ZIP_SIZE"
+echo ""
+echo "Contents:"
+echo "  - ${APP_NAME}.app"
+echo "  - Run Sketchatone (sudo).command"
+echo ""
