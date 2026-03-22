@@ -4,6 +4,11 @@
   "description": "Sketchatone - Node.js, Python, and Web implementation",
   "main": "dist/cli/index.js",
   "type": "module",
+  "license": "CC-BY-NC-SA-4.0",
+  "author": {
+    "name": "Ben Farrell",
+    "email": "ben@benfarrell.com"
+  },
   "workspaces": [
     "../../spectrumizer"
   ],
