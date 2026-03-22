@@ -291,7 +291,7 @@ echo "  (Double-click this to run with sudo after installing)"
 echo ""
 
 # Create versioned zip file
-ZIP_NAME="sketchatone-osx-${VERSION}.zip"
+ZIP_NAME="sketchatone-${VERSION}-osx-pkg.zip"
 ZIP_PATH="dist/${ZIP_NAME}"
 
 echo "📦 Creating distribution package..."
