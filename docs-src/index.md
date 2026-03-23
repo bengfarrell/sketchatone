@@ -48,6 +48,12 @@ looking at around 30 tactile feeling buttons to map to different chords and acti
 
 If you end up trying this project out, I hope you have fun playing!
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/iXwvTR0crbg?si=UvxQ8YH8_fonOQxT" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/4iBmuIM1GNM?si=uNVCOMxTt8Sblrlt" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/_h9KkgAcsuk?si=XElALXI6GTfSWq66" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 
 ### Key Features
 
