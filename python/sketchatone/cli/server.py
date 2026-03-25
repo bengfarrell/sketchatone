@@ -481,7 +481,8 @@ class StrummerWebSocketServer(TabletReaderBase):
         # (e.g., lower_spread/upper_spread that may be updated via UI)
         self.actions = Actions(
             config=self.config,
-            strummer=self.strummer
+            strummer=self.strummer,
+            custom_chord_progressions=self.config.strummer.custom_chord_progressions
         )
 
         # Configure action rules so button-to-action mapping works

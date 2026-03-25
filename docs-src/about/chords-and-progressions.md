@@ -146,6 +146,63 @@ Map button groups to progressions:
 }
 ```
 
+## Custom Chord Progressions
+
+You can define your own chord progressions in the configuration file using the `customChordProgressions` field. Custom progressions can be used anywhere a preset progression is used, and they take precedence over built-in presets if they share the same name.
+
+### Defining Custom Progressions
+
+Add a `customChordProgressions` object at the root level of your configuration:
+
+```json
+{
+  "customChordProgressions": {
+    "my-custom-song": ["Am", "F", "C", "G"],
+    "my-jazz-tune": ["Cmaj7", "Am7", "Dm7", "G7"],
+    "my-blues": ["A7", "D7", "E7", "A7"]
+  }
+}
+```
+
+### Using Custom Progressions
+
+Reference your custom progressions by name in action rules:
+
+```json
+{
+  "action_rules": {
+    "groups": [
+      {
+        "id": "chord-buttons",
+        "name": "Chord Buttons",
+        "buttons": ["button:1", "button:2", "button:3", "button:4"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "my-song-progression",
+        "name": "My Custom Song",
+        "group_id": "chord-buttons",
+        "trigger": "press",
+        "action": {
+          "type": "chord-progression",
+          "progression": "my-custom-song",
+          "octave": 4
+        }
+      }
+    ]
+  }
+}
+```
+
+### Notes
+
+- Custom progression names can use any string (e.g., `"my-song"`, `"verse-1"`, `"chorus"`)
+- Each progression is an array of chord notations
+- Custom progressions override built-in presets with the same name
+- You can have any number of chords in a progression
+- All standard chord notations are supported (see [Chord Notation](#chord-notation) above)
+
 ## See Also
 
 - **[Action Rules](/about/action-rules/)** - Button-to-chord mapping

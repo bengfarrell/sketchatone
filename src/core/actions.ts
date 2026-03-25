@@ -7,7 +7,7 @@
 
 import { EventEmitter } from '../utils/event-emitter.js';
 import { Note, type NoteObject } from '../models/note.js';
-import { CHORD_PROGRESSION_PRESETS } from '../models/strummer-features.js';
+import { CHORD_PROGRESSION_PRESETS, mergeChordProgressions } from '../models/strummer-features.js';
 import type { Strummer } from './strummer.js';
 import type { ActionRulesConfig, ButtonId, TriggerType } from '../models/action-rules.js';
 
@@ -19,6 +19,18 @@ export class ChordProgressionState {
   progressionName: string | null = null;
   chords: string[] = [];
   currentIndex = 0;
+  private availableProgressions: Record<string, string[]>;
+
+  constructor(customProgressions?: Record<string, string[]>) {
+    this.availableProgressions = mergeChordProgressions(customProgressions);
+  }
+
+  /**
+   * Update available progressions (e.g., when config changes).
+   */
+  updateProgressions(customProgressions?: Record<string, string[]>): void {
+    this.availableProgressions = mergeChordProgressions(customProgressions);
+  }
 
   /**
    * Load a chord progression by name.
@@ -27,9 +39,9 @@ export class ChordProgressionState {
    * @returns True if progression was loaded, False if not found
    */
   loadProgression(name: string): boolean {
-    if (name in CHORD_PROGRESSION_PRESETS) {
+    if (name in this.availableProgressions) {
       this.progressionName = name;
-      this.chords = [...CHORD_PROGRESSION_PRESETS[name]];
+      this.chords = [...this.availableProgressions[name]];
       this.currentIndex = 0;
       console.log(`[PROGRESSION] Loaded '${name}' with ${this.chords.length} chords`);
       return true;
@@ -154,6 +166,7 @@ export class Actions extends EventEmitter {
   private actionHandlers: Map<string, ActionHandler>;
   progressionState: ChordProgressionState;
   private actionRulesConfig: ActionRulesConfig | null = null;
+  private customChordProgressions: Record<string, string[]> = {};
 
   // Internal state for repeater and transpose (managed by actions, not config)
   private repeaterState: RepeaterState = {
@@ -171,11 +184,13 @@ export class Actions extends EventEmitter {
    *
    * @param config - Configuration instance that will be modified by actions
    * @param strummer - Optional Strummer instance for setting notes
+   * @param customChordProgressions - Optional custom chord progressions from config
    */
-  constructor(config: ActionsConfig, strummer: Strummer | null = null) {
+  constructor(config: ActionsConfig, strummer: Strummer | null = null, customChordProgressions?: Record<string, string[]>) {
     super();
     this.config = config;
     this.strummer = strummer;
+    this.customChordProgressions = customChordProgressions ?? {};
 
     // Map action names to handler methods
     this.actionHandlers = new Map<string, ActionHandler>([
@@ -189,8 +204,8 @@ export class Actions extends EventEmitter {
       ['set-group-progression', this.setGroupProgression.bind(this)],
     ]);
 
-    // Chord progression state
-    this.progressionState = new ChordProgressionState();
+    // Chord progression state with custom progressions
+    this.progressionState = new ChordProgressionState(this.customChordProgressions);
   }
 
   /**
@@ -206,6 +221,15 @@ export class Actions extends EventEmitter {
    */
   getActionRulesConfig(): ActionRulesConfig | null {
     return this.actionRulesConfig;
+  }
+
+  /**
+   * Update custom chord progressions.
+   * This allows dynamically updating the available progressions.
+   */
+  setCustomChordProgressions(customProgressions: Record<string, string[]>): void {
+    this.customChordProgressions = customProgressions;
+    this.progressionState.updateProgressions(customProgressions);
   }
 
   /**
@@ -723,8 +747,9 @@ export class Actions extends EventEmitter {
       return;
     }
 
-    // Validate progression exists
-    if (!(progressionName in CHORD_PROGRESSION_PRESETS)) {
+    // Validate progression exists (check both presets and custom progressions)
+    const allProgressions = mergeChordProgressions(this.customChordProgressions);
+    if (!(progressionName in allProgressions)) {
       console.log(`[ACTIONS] Error: Unknown progression '${progressionName}'`);
       return;
     }

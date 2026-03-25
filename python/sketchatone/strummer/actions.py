@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, Union, List, Callable, TYPE_CHECKING
 
 from ..utils.event_emitter import EventEmitter
 from ..models.note import Note, NoteObject
-from ..models.strummer_features import CHORD_PROGRESSION_PRESETS
+from ..models.strummer_features import CHORD_PROGRESSION_PRESETS, merge_chord_progressions
 
 if TYPE_CHECKING:
     from ..models.action_rules import ActionRulesConfig, TriggerType, ButtonId
@@ -20,12 +20,22 @@ class ChordProgressionState:
     Manages the state of a chord progression.
     Tracks the current progression name, chords, and index.
     """
-    
-    def __init__(self):
+
+    def __init__(self, custom_progressions: Optional[Dict[str, List[str]]] = None):
         self.progression_name: Optional[str] = None
         self.chords: List[str] = []
         self.current_index: int = 0
-    
+        self.available_progressions = merge_chord_progressions(custom_progressions)
+
+    def update_progressions(self, custom_progressions: Optional[Dict[str, List[str]]] = None) -> None:
+        """
+        Update available progressions (e.g., when config changes).
+
+        Args:
+            custom_progressions: Custom chord progressions from config
+        """
+        self.available_progressions = merge_chord_progressions(custom_progressions)
+
     def load_progression(self, name: str) -> bool:
         """
         Load a chord progression by name.
@@ -36,9 +46,9 @@ class ChordProgressionState:
         Returns:
             True if progression was loaded, False if not found
         """
-        if name in CHORD_PROGRESSION_PRESETS:
+        if name in self.available_progressions:
             self.progression_name = name
-            self.chords = list(CHORD_PROGRESSION_PRESETS[name])
+            self.chords = list(self.available_progressions[name])
             self.current_index = 0
             print(f"[PROGRESSION] Loaded '{name}' with {len(self.chords)} chords")
             return True
@@ -101,17 +111,19 @@ class Actions(EventEmitter):
         - 'config_changed': When an action modifies the configuration
     """
 
-    def __init__(self, config: Any, strummer: Any = None):
+    def __init__(self, config: Any, strummer: Any = None, custom_chord_progressions: Optional[Dict[str, List[str]]] = None):
         """
         Initialize Actions with a configuration instance.
 
         Args:
             config: Configuration instance that will be modified by actions
             strummer: Optional Strummer instance for setting notes
+            custom_chord_progressions: Optional custom chord progressions from config
         """
         super().__init__()
         self.config = config
         self.strummer = strummer
+        self.custom_chord_progressions = custom_chord_progressions or {}
 
         # Map action names to handler methods
         self._action_handlers: Dict[str, Callable] = {
@@ -124,8 +136,8 @@ class Actions(EventEmitter):
             'increment-chord-in-progression': self.increment_chord_in_progression,
         }
 
-        # Chord progression state
-        self.progression_state = ChordProgressionState()
+        # Chord progression state with custom progressions
+        self.progression_state = ChordProgressionState(self.custom_chord_progressions)
 
         # Action rules configuration (set via set_action_rules_config)
         self._action_rules_config: Optional['ActionRulesConfig'] = None
@@ -154,6 +166,17 @@ class Actions(EventEmitter):
             config: ActionRulesConfig instance to use for button-to-action mapping
         """
         self._action_rules_config = config
+
+    def set_custom_chord_progressions(self, custom_progressions: Dict[str, List[str]]) -> None:
+        """
+        Update custom chord progressions.
+        This allows dynamically updating the available progressions.
+
+        Args:
+            custom_progressions: Custom chord progressions dictionary
+        """
+        self.custom_chord_progressions = custom_progressions
+        self.progression_state.update_progressions(custom_progressions)
 
     def handle_button_event(self, button_id: 'ButtonId', trigger: 'TriggerType') -> bool:
         """

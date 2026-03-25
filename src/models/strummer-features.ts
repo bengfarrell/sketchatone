@@ -135,3 +135,31 @@ export const CHORD_PROGRESSION_PRESETS: Record<string, string[]> = {
 export function getChordProgressionPresetNames(): string[] {
   return Object.keys(CHORD_PROGRESSION_PRESETS);
 }
+
+/**
+ * Merge custom chord progressions with built-in presets.
+ * Custom progressions take precedence over presets with the same name.
+ *
+ * @param customProgressions - Custom chord progressions from config
+ * @returns Merged progressions object
+ */
+export function mergeChordProgressions(customProgressions?: Record<string, string[]>): Record<string, string[]> {
+  if (!customProgressions || Object.keys(customProgressions).length === 0) {
+    return CHORD_PROGRESSION_PRESETS;
+  }
+
+  return {
+    ...CHORD_PROGRESSION_PRESETS,
+    ...customProgressions,
+  };
+}
+
+/**
+ * Get list of available progression names including custom progressions.
+ *
+ * @param customProgressions - Custom chord progressions from config
+ * @returns Array of all progression names
+ */
+export function getAllChordProgressionNames(customProgressions?: Record<string, string[]>): string[] {
+  return Object.keys(mergeChordProgressions(customProgressions));
+}

@@ -113,3 +113,36 @@ CHORD_PROGRESSION_PRESETS: Dict[str, List[str]] = {
 def get_chord_progression_preset_names() -> List[str]:
     """Get list of available chord progression preset names"""
     return list(CHORD_PROGRESSION_PRESETS.keys())
+
+
+def merge_chord_progressions(custom_progressions: Optional[Dict[str, List[str]]] = None) -> Dict[str, List[str]]:
+    """
+    Merge custom chord progressions with built-in presets.
+    Custom progressions take precedence over presets with the same name.
+
+    Args:
+        custom_progressions: Custom chord progressions from config
+
+    Returns:
+        Merged progressions dictionary
+    """
+    if not custom_progressions:
+        return CHORD_PROGRESSION_PRESETS.copy()
+
+    return {
+        **CHORD_PROGRESSION_PRESETS,
+        **custom_progressions
+    }
+
+
+def get_all_chord_progression_names(custom_progressions: Optional[Dict[str, List[str]]] = None) -> List[str]:
+    """
+    Get list of available progression names including custom progressions.
+
+    Args:
+        custom_progressions: Custom chord progressions from config
+
+    Returns:
+        List of all progression names
+    """
+    return list(merge_chord_progressions(custom_progressions).keys())

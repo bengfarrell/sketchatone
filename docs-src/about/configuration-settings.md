@@ -138,6 +138,7 @@ sudo systemctl restart sketchatone
 | `pitch_bend` | Pitch bend parameter mapping |
 | `strum_release` | Release trigger settings (drum sounds on pen lift) |
 | `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
+| `customChordProgressions` | Custom chord progressions (optional) |
 | `midi` | MIDI backend settings |
 | `server` | Server settings |
 
@@ -300,6 +301,65 @@ Used for chord progressions mapped to multiple buttons:
 ```
 
 See **[Action Rules](/about/action-rules/)** for complete action documentation.
+
+---
+
+## customChordProgressions
+
+Define custom chord progressions that can be used in action rules.
+
+### Format
+
+```json
+{
+  "customChordProgressions": {
+    "progression-name": ["Chord1", "Chord2", "Chord3", ...],
+    "another-progression": ["Am", "F", "C", "G"]
+  }
+}
+```
+
+### Example
+
+```json
+{
+  "customChordProgressions": {
+    "my-song-verse": ["Am", "F", "C", "G"],
+    "my-song-chorus": ["C", "G", "Am", "F"],
+    "my-jazz-tune": ["Cmaj7", "Am7", "Dm7", "G7"]
+  }
+}
+```
+
+### Usage
+
+Reference custom progressions by name in action rules:
+
+```json
+{
+  "action_rules": {
+    "group_rules": [
+      {
+        "id": "verse-progression",
+        "name": "Verse",
+        "group_id": "chord-buttons",
+        "trigger": "press",
+        "action": {
+          "type": "chord-progression",
+          "progression": "my-song-verse",
+          "octave": 4
+        }
+      }
+    ]
+  }
+}
+```
+
+**Notes:**
+- Custom progressions can override built-in presets with the same name
+- Progression names can be any string
+- Each progression is an array of chord notation strings
+- See **[Chords & Progressions](/about/chords-and-progressions/)** for supported chord notation
 
 ---
 

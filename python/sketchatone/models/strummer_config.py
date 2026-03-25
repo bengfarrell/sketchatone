@@ -93,6 +93,7 @@ class StrummerConfig:
     - Core strumming settings
     - Optional features (strum release)
     - Action rules for button-to-action mapping
+    - Custom chord progressions
 
     Note: Repeater and transpose state is now managed by the Actions class,
     not by config. Use action rules to configure these features.
@@ -104,6 +105,7 @@ class StrummerConfig:
         strumming: Core strumming configuration
         strum_release: Strum release feature configuration
         action_rules: Action rules for button-to-action mapping
+        custom_chord_progressions: Custom chord progressions (name -> list of chords)
     """
     note_duration: ParameterMapping = field(default_factory=default_note_duration)
     pitch_bend: ParameterMapping = field(default_factory=default_pitch_bend)
@@ -111,6 +113,7 @@ class StrummerConfig:
     strumming: StrummingConfig = field(default_factory=StrummingConfig)
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
     action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
+    custom_chord_progressions: Dict[str, List[str]] = field(default_factory=dict)
 
     # Convenience properties for backward compatibility
     @property
@@ -149,6 +152,7 @@ class StrummerConfig:
         strumming_data = data.get('strumming', {})
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
         action_rules_data = data.get('action_rules', data.get('actionRules', {}))
+        custom_chord_progressions_data = data.get('customChordProgressions', data.get('custom_chord_progressions', {}))
 
         return cls(
             note_duration=ParameterMapping.from_dict(note_duration_data) if note_duration_data else default_note_duration(),
@@ -156,7 +160,8 @@ class StrummerConfig:
             note_velocity=ParameterMapping.from_dict(note_velocity_data) if note_velocity_data else default_note_velocity(),
             strumming=StrummingConfig.from_dict(strumming_data) if strumming_data else StrummingConfig(),
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
-            action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig()
+            action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig(),
+            custom_chord_progressions=custom_chord_progressions_data
         )
 
     @classmethod
@@ -168,7 +173,7 @@ class StrummerConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (camelCase for webapp compatibility)"""
-        return {
+        result = {
             'noteDuration': self.note_duration.to_dict(),
             'pitchBend': self.pitch_bend.to_dict(),
             'noteVelocity': self.note_velocity.to_dict(),
@@ -176,6 +181,12 @@ class StrummerConfig:
             'strumRelease': self.strum_release.to_dict(),
             'actionRules': self.action_rules.to_dict()
         }
+
+        # Only include customChordProgressions if it has entries
+        if self.custom_chord_progressions:
+            result['customChordProgressions'] = self.custom_chord_progressions
+
+        return result
 
     def to_json_file(self, path: str) -> None:
         """Save the config to a JSON file"""
