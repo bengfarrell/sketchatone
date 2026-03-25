@@ -143,7 +143,7 @@ export interface StrummerConfigData {
   strumming: StrummingConfigData;
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
-  customChordProgressions?: Record<string, string[]>;
+  chordProgressions?: Record<string, string[]>;
 }
 
 /**
@@ -165,7 +165,7 @@ export class StrummerConfig {
   strumming: StrummingConfig;
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
-  customChordProgressions: Record<string, string[]>;
+  chordProgressions: Record<string, string[]>;
 
   constructor(data: {
     noteDuration?: ParameterMapping;
@@ -174,7 +174,7 @@ export class StrummerConfig {
     strumming?: StrummingConfig;
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
-    customChordProgressions?: Record<string, string[]>;
+    chordProgressions?: Record<string, string[]>;
   } = {}) {
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
     this.pitchBend = data.pitchBend ?? defaultPitchBend();
@@ -182,7 +182,7 @@ export class StrummerConfig {
     this.strumming = data.strumming ?? new StrummingConfig();
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
-    this.customChordProgressions = data.customChordProgressions ?? {};
+    this.chordProgressions = data.chordProgressions ?? {};
   }
 
   // Convenience properties for backward compatibility
@@ -221,7 +221,7 @@ export class StrummerConfig {
     const strummingData = (data.strumming ?? {}) as Record<string, unknown>;
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
-    const customChordProgressionsData = (data.customChordProgressions ?? data.custom_chord_progressions ?? {}) as Record<string, string[]>;
+    const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
 
     return new StrummerConfig({
       noteDuration: Object.keys(noteDurationData).length > 0
@@ -242,7 +242,7 @@ export class StrummerConfig {
       actionRules: Object.keys(actionRulesData).length > 0
         ? ActionRulesConfig.fromDict(actionRulesData)
         : new ActionRulesConfig(),
-      customChordProgressions: customChordProgressionsData,
+      chordProgressions: chordProgressionsData,
     });
   }
 
@@ -268,9 +268,9 @@ export class StrummerConfig {
       actionRules: this.actionRules.toDict(),
     };
 
-    // Only include customChordProgressions if it has entries
-    if (Object.keys(this.customChordProgressions).length > 0) {
-      result.customChordProgressions = this.customChordProgressions;
+    // Only include chordProgressions if it has entries
+    if (Object.keys(this.chordProgressions).length > 0) {
+      result.chordProgressions = this.chordProgressions;
     }
 
     return result;

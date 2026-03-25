@@ -28,7 +28,7 @@ import {
   generateRuleId,
 } from '../../models/action-rules.js';
 import { ActionDefinition } from '../../core/actions.js';
-import { CHORD_PROGRESSION_PRESETS, getChordProgressionPresetNames } from '../../models/strummer-features.js';
+import { CHORD_PROGRESSION_PRESETS, getChordProgressionPresetNames, getAllChordProgressionNames } from '../../models/strummer-features.js';
 
 // Import Spectrum components
 import '@spectrum-web-components/button/sp-button.js';
@@ -95,6 +95,10 @@ export class ActionRulesConfigComponent extends LitElement {
   @property({ type: Boolean })
   hasSecondaryButton: boolean = true;
 
+  /** Chord progressions from config */
+  @property({ type: Object })
+  chordProgressions: Record<string, string[]> = {};
+
   /** Map of triggered action rule IDs to timestamps (for status dot display) */
   @property({ type: Object })
   triggeredActions: Map<string, number> = new Map();
@@ -153,8 +157,10 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private formGroupButtons: ButtonId[] = [];
 
-  // Cache progression names to avoid recalculating on each render
-  private readonly progressionNames = getChordProgressionPresetNames();
+  // Get progression names from config
+  private get progressionNames(): string[] {
+    return getAllChordProgressionNames(this.chordProgressions);
+  }
 
   // Available actions
   private readonly actions: ActionDef[] = [
@@ -195,6 +201,8 @@ export class ActionRulesConfigComponent extends LitElement {
           label: 'Progression',
           type: 'select',
           defaultValue: 'c-major-pop',
+          // Note: This will use presets only. For full list including custom progressions,
+          // the dropdown is rendered dynamically in renderParamFields()
           options: getChordProgressionPresetNames().map((n) => ({ value: n, label: n })),
         },
       ],
@@ -703,11 +711,16 @@ export class ActionRulesConfigComponent extends LitElement {
       const value = this.formParams[index] ?? param.defaultValue;
 
       if (param.type === 'select' && param.options) {
+        // Special handling for progression parameter - use custom progressions
+        const options = param.key === 'progression'
+          ? this.progressionNames.map((n) => ({ value: n, label: n }))
+          : param.options;
+
         return html`
           <div class="form-field">
             <sp-field-label>${param.label}</sp-field-label>
             <sp-picker value="${value}" @change=${(e: Event) => this.handleParamChange(index, (e.target as HTMLSelectElement).value)}>
-              ${param.options.map((opt) => html`<sp-menu-item value="${opt.value}">${opt.label}</sp-menu-item>`)}
+              ${options.map((opt) => html`<sp-menu-item value="${opt.value}">${opt.label}</sp-menu-item>`)}
             </sp-picker>
           </div>
         `;

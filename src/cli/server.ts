@@ -276,7 +276,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Create Actions handler for stylus buttons
     // Pass the actual config object so Actions can access live values
     // (e.g., lowerSpread/upperSpread that may be updated via UI)
-    this.actions = new Actions(this.config, this.strummer, this.config.strummer.customChordProgressions);
+    this.actions = new Actions(this.config, this.strummer, this.config.strummer.chordProgressions);
 
     // Configure action rules so button-to-action mapping works
     this.actions.setActionRulesConfig(this.config.strummer.actionRules);

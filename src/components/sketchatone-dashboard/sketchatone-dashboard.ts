@@ -1061,6 +1061,7 @@ export class SketchatoneDashboard extends LitElement {
                 id="actions-config"
                 mode="actions"
                 .config=${this.getActionRulesConfig()}
+                .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .triggeredActions=${this.triggeredActions}
                 .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
@@ -1082,6 +1083,7 @@ export class SketchatoneDashboard extends LitElement {
                 id="groups-config"
                 mode="groups"
                 .config=${this.getActionRulesConfig()}
+                .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
                 .hasPrimaryButton=${true}
