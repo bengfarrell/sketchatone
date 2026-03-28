@@ -47,7 +47,6 @@ export interface ServerMidiDevices {
   outputPorts: ServerMidiInputPort[];
   currentInputPorts: number[];
   currentOutputPort: number | null;
-  excludedInputPorts: string[];
 }
 
 /** Action event from server */
@@ -482,7 +481,6 @@ export class StrummerWebSocketClient extends EventEmitter {
               outputPorts: message.data.outputPorts ?? [],
               currentInputPorts: message.data.currentInputPorts ?? [],
               currentOutputPort: message.data.currentOutputPort ?? null,
-              excludedInputPorts: message.data.excludedInputPorts ?? [],
             });
           }
           break;

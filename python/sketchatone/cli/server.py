@@ -714,10 +714,6 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Use exclusion list from config (which has sensible defaults)
                 exclude_ports: List[str] = list(self.config.midi.midi_input_exclude)
 
-                # Also exclude any RtMidi output if available
-                if self.backend and hasattr(self.backend, 'current_output_name') and self.backend.current_output_name:
-                    exclude_ports.append(self.backend.current_output_name)
-
                 print(colored(f'[MIDI Input] Connecting to all ports, excluding: {", ".join(exclude_ports)}', Colors.GRAY))
                 connected = self.midi_input.connect_all(exclude_ports=exclude_ports)
             else:
@@ -1600,8 +1596,6 @@ class StrummerWebSocketServer(TabletReaderBase):
 
         # Build exclusion list (same logic as _setup_midi_input)
         excluded_input_ports = list(self.config.midi.midi_input_exclude)
-        if self.backend and self.backend.current_output_name:
-            excluded_input_ports.append(self.backend.current_output_name)
 
         # For output: find the port ID that matches the connected port name
         current_output_port = None
@@ -2154,9 +2148,13 @@ class StrummerWebSocketServer(TabletReaderBase):
         print(colored('Press Ctrl+C to stop', Colors.GRAY))
 
         # Start reading tablet data in a separate thread
-        import threading
-        tablet_thread = threading.Thread(target=self._run_tablet_reader, daemon=True)
-        tablet_thread.start()
+        # Skip tablet reader if no device path and no polling (dev mode)
+        if self._tablet_initialized or self.poll_ms is not None:
+            import threading
+            tablet_thread = threading.Thread(target=self._run_tablet_reader, daemon=True)
+            tablet_thread.start()
+        else:
+            print(colored('⚠ Skipping tablet reader (dev mode)', Colors.YELLOW))
 
         # Keep server running
         try:
@@ -2312,6 +2310,12 @@ def main():
         help='Poll interval in milliseconds for waiting for device. If not set, quit if no device found.'
     )
 
+    parser.add_argument(
+        '--dev',
+        action='store_true',
+        help='Development mode: run without a tablet device (UI only, no tablet input)'
+    )
+
     # MIDI options
     parser.add_argument(
         '-j', '--jack',
@@ -2399,18 +2403,27 @@ def main():
     # Get device path from config (defaults to "devices" folder relative to config)
     device_path = config.server.device if config else None
 
-    # Resolve device config path (returns tuple: config_path or None, search_dir)
-    # Use config file's directory as base for resolving relative device paths
-    device_config_path, search_dir = resolve_device_config_path(
-        device_path,
-        base_dir=config_dir,
-        poll_ms=effective_poll
-    )
+    # In dev mode, skip device config entirely
+    if args.dev:
+        device_config_path = None
+        search_dir = None
+    else:
+        # Resolve device config path (returns tuple: config_path or None, search_dir)
+        # Use config file's directory as base for resolving relative device paths
+        device_config_path, search_dir = resolve_device_config_path(
+            device_path,
+            base_dir=config_dir,
+            poll_ms=effective_poll
+        )
 
     print(colored(f'=== Strummer WebSocket Server v{SKETCHATONE_VERSION} ===', Colors.CYAN))
+    if args.dev:
+        print(colored('⚠ DEV MODE: Running without tablet device (UI only)', Colors.YELLOW))
     if config_path:
         print(colored(f'Config: {config_path}', Colors.GRAY))
-    if device_config_path:
+    if args.dev:
+        print(colored(f'Device config: (dev mode - no device)', Colors.GRAY))
+    elif device_config_path:
         print(colored(f'Device config: {device_config_path}', Colors.GRAY))
     else:
         print(colored(f'Device config: (waiting for device)', Colors.YELLOW))

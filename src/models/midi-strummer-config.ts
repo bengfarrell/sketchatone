@@ -111,11 +111,16 @@ export interface MidiConfigData {
 
 /**
  * Default MIDI input exclusion patterns
- * These ports are excluded from auto-connect to prevent feedback loops
+ * These are system/internal ports that are typically not useful for user input
+ * Note: Users can now use the same device for input and output if desired
  */
 export const DEFAULT_MIDI_INPUT_EXCLUDE: string[] = [
   'sketchatone',      // Our own output port
   'Midi Through',     // ALSA Midi Through (loopback)
+  'ZynMidiRouter',    // Zynthian's internal MIDI router
+  'zynseq',           // Zynthian sequencer
+  'zynsmf',           // Zynthian SMF player
+  'ttymidi',          // Serial MIDI (often internal)
 ];
 
 /**

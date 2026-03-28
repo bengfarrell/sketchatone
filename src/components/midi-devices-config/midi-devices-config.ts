@@ -170,28 +170,6 @@ export class MidiDevicesConfig extends LitElement {
       font-family: monospace;
     }
 
-    .device-badge {
-      padding: 2px 8px;
-      font-size: 0.75rem;
-      border-radius: 4px;
-      font-weight: 600;
-    }
-
-    .device-badge.excluded {
-      background: var(--spectrum-orange-200);
-      color: var(--spectrum-orange-900);
-    }
-
-    .device-item.excluded {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .device-item.excluded:hover {
-      background: var(--spectrum-gray-100);
-      border-color: var(--spectrum-gray-300);
-    }
-
     .empty-message {
       padding: 20px;
       text-align: center;
@@ -209,15 +187,8 @@ export class MidiDevicesConfig extends LitElement {
   @property({ type: Array })
   currentInputPorts: (string | number)[] = [];  // Array of connected input port IDs
 
-  @property({ type: Array })
-  excludedInputPorts: string[] = [];  // Port names excluded from input (to prevent feedback)
-
   @property()
   currentOutputPort: string | number | null = null;
-
-  private isInputPortExcluded(portName: string): boolean {
-    return this.excludedInputPorts.some(excluded => portName.includes(excluded));
-  }
 
   private handleInputToggle(portId: string | number, event: Event): void {
     event.stopPropagation();
@@ -231,7 +202,7 @@ export class MidiDevicesConfig extends LitElement {
       composed: true,
       detail: {
         inputPort: newInputPort,
-        outputPort: this.currentOutputPort,
+        // Don't change output port when toggling input
       },
     }));
   }
@@ -247,7 +218,7 @@ export class MidiDevicesConfig extends LitElement {
       bubbles: true,
       composed: true,
       detail: {
-        inputPort: this.currentInputPorts.length > 0 ? this.currentInputPorts[0] : null,
+        // Don't change input port when toggling output
         outputPort: newOutputPort,
       },
     }));
@@ -282,14 +253,12 @@ export class MidiDevicesConfig extends LitElement {
               <div class="empty-message">No MIDI input devices found</div>
             ` : this.inputPorts.map(port => {
               const isConnected = this.currentInputPorts.includes(port.id);
-              const isExcluded = this.isInputPortExcluded(port.name);
               return html`
-                <div class="device-item ${isConnected ? 'connected' : ''} ${isExcluded ? 'excluded' : ''}">
+                <div class="device-item ${isConnected ? 'connected' : ''}">
                   <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       .checked=${isConnected}
-                      ?disabled=${isExcluded}
                       @change=${(e: Event) => this.handleInputToggle(port.id, e)}
                     />
                     <span class="toggle-slider"></span>
@@ -298,7 +267,6 @@ export class MidiDevicesConfig extends LitElement {
                     <span class="device-name">${port.name}</span>
                     <span class="device-index">Index: ${port.id}</span>
                   </div>
-                  ${isExcluded ? html`<span class="device-badge excluded">Excluded (Output Port)</span>` : ''}
                 </div>
               `;
             })}

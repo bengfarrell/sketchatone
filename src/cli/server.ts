@@ -487,13 +487,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
       console.log(chalk.gray(`[MIDI Input] Available ports: ${this.midiInputAvailablePorts.map(p => p.name).join(', ') || 'none'}`));
 
       // Build list of ports to exclude (to prevent feedback loops)
-      // Start with the configured exclusion list
+      // Use exclusion list from config (system/internal ports only)
       const excludePorts: string[] = [...this.config.midi.inputExclude];
-
-      // Also exclude our own output port if available
-      if (this.backend && 'currentOutputName' in this.backend && this.backend.currentOutputName) {
-        excludePorts.push(this.backend.currentOutputName as string);
-      }
 
       console.log(chalk.gray(`[MIDI Input] Excluding ports matching: ${excludePorts.join(', ')}`));
 
@@ -1193,9 +1188,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Build exclusion list (same logic as setupMidiInput)
       const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
-      if (this.backend && this.backend.currentOutputName) {
-        excludedInputPorts.push(this.backend.currentOutputName);
-      }
 
       // For output: find the port ID that matches the connected port name
       let currentOutputPort: string | number | null = null;

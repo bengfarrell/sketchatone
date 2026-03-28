@@ -43,6 +43,9 @@ import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
 // MIDI devices config component
 import '../midi-devices-config/midi-devices-config.js';
 
+// Chord progressions manager component
+import '../chord-progressions-manager/chord-progressions-manager.js';
+
 // Panel visibility management
 import './panel-toggle-bar.js';
 import {
@@ -171,9 +174,6 @@ export class SketchatoneDashboard extends LitElement {
   private currentMidiInputPorts: number[] = [];  // Array of connected input port IDs
 
   @state()
-  private excludedMidiInputPorts: string[] = [];  // Port names excluded from input
-
-  @state()
   private currentMidiOutputPort: string | number | null = null;
 
   // Version info
@@ -265,19 +265,9 @@ export class SketchatoneDashboard extends LitElement {
       this.midiOutputPorts = devices.outputPorts;
       this.currentMidiInputPorts = devices.currentInputPorts;
       this.currentMidiOutputPort = devices.currentOutputPort;
-      this.excludedMidiInputPorts = devices.excludedInputPorts;
 
       // Update MIDI Input panel status based on whether any input ports are connected
       this.serverMidiConnected = devices.currentInputPorts.length > 0;
-    });
-
-    // Listen for MIDI devices list from server
-    this.client.onMidiDevices((data) => {
-      this.midiInputPorts = data.inputPorts;
-      this.midiOutputPorts = data.outputPorts;
-      this.currentMidiInputPorts = data.currentInputPorts || [];  // Array of connected input port IDs
-      this.excludedMidiInputPorts = data.excludedInputPorts || [];  // Port names excluded from input
-      this.currentMidiOutputPort = data.currentOutputPort;
     });
 
     // Listen for action events (button presses and their actions)
@@ -655,12 +645,14 @@ export class SketchatoneDashboard extends LitElement {
   private handleMidiDevicesApply(e: CustomEvent) {
     const { inputPort, outputPort } = e.detail;
 
-    // Always update MIDI input port (server will reconnect)
+    // Update MIDI input port if specified (server will reconnect)
     // null = connect to all ports, number = connect to specific port
-    this.client.updateConfig('midi.midiInputId', inputPort);
+    if (inputPort !== undefined) {
+      this.client.updateConfig('midi.midiInputId', inputPort);
+    }
 
-    // Update MIDI output port if changed
-    if (outputPort !== this.currentMidiOutputPort) {
+    // Update MIDI output port if specified and changed
+    if (outputPort !== undefined && outputPort !== this.currentMidiOutputPort) {
       this.client.updateConfig('midi.midiOutputId', outputPort);
     }
   }
@@ -717,6 +709,14 @@ export class SketchatoneDashboard extends LitElement {
   private handleActionRulesConfigChange(e: CustomEvent) {
     const { actionRules } = e.detail;
     this.updateConfig('strummer.actionRules', actionRules);
+  }
+
+  /**
+   * Handle chord progressions changes
+   */
+  private handleChordProgressionsChange(e: CustomEvent) {
+    const { chordProgressions } = e.detail;
+    this.updateConfig('strummer.chordProgressions', chordProgressions);
   }
 
 
@@ -1125,11 +1125,21 @@ export class SketchatoneDashboard extends LitElement {
                 .inputPorts=${this.midiInputPorts}
                 .outputPorts=${this.midiOutputPorts}
                 .currentInputPorts=${this.currentMidiInputPorts}
-                .excludedInputPorts=${this.excludedMidiInputPorts}
                 .currentOutputPort=${this.currentMidiOutputPort}
                 @refresh-devices=${this.handleMidiDevicesRefresh}
                 @apply-devices=${this.handleMidiDevicesApply}>
               </midi-devices-config>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Chord Progressions Panel -->
+          ${this.panelVisibility.chordProgressions ? html`
+            <dashboard-panel title="Chord Progressions" panelId="chordProgressions" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('chordProgressions')}>
+              <chord-progressions-manager
+                .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
+                @progressions-change=${this.handleChordProgressionsChange}>
+              </chord-progressions-manager>
             </dashboard-panel>
           ` : ''}
 
