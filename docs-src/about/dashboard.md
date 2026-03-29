@@ -36,13 +36,13 @@ If you've enabled the web server in your config:
 ```json
 {
   "server": {
-    "http_port": 8080,
+    "http_port": 80,
     "ws_port": 8081
   }
 }
 ```
 
-Access from another device on your network: `http://<pi-hostname>:8080`
+Access from another device on your network: `http://<pi-hostname>` (or `http://<pi-ip-address>`)
 
 **Note:** For minimal resource usage, you can disable the dashboard by setting ports to `null`.
 
@@ -265,12 +265,12 @@ This minimizes resource usage. All configuration must be done via JSON files.
 
 **Check server is running:**
 ```bash
-# Look for "HTTP server listening on port 8080"
+# Look for "HTTP server listening on port XX"
 ```
 
 **Check firewall settings:**
 - macOS: Allow incoming connections for the app
-- Linux: Ensure port 8080 is not blocked
+- Linux: Ensure the HTTP port is not blocked (port 80 on Raspberry Pi hotspot mode)
 
 ### Changes Don't Apply
 
