@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sketchatone"
-version = "0.2.0-dev-customchords-2"
+version = "0.2.0-dev4"
 description = "Sketchatone - Python implementation"
 requires-python = ">=3.8"
 license = {text = "CC-BY-NC-SA-4.0"}

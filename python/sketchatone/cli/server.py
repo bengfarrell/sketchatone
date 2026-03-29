@@ -836,6 +836,16 @@ class StrummerWebSocketServer(TabletReaderBase):
                 if line == b'\r\n' or line == b'\n' or not line:
                     break
 
+            # Captive portal detection - respond to connectivity checks
+            # This prevents phones from using mobile data when connected to the hotspot
+            # Common endpoints used by Android, iOS, and other devices
+            url_path = path.split('?')[0]  # Remove query string for checking
+            if url_path in ('/generate_204', '/gen_204', '/connecttest.txt', '/success.txt'):
+                writer.write(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                return
+
             # Only handle GET requests
             if method != 'GET':
                 response = b'HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n'
@@ -843,8 +853,7 @@ class StrummerWebSocketServer(TabletReaderBase):
                 await writer.drain()
                 return
 
-            # Parse path
-            url_path = path.split('?')[0]  # Remove query string
+            # Parse path (already done above for captive portal check)
             if url_path == '/':
                 url_path = '/index.html'
 
