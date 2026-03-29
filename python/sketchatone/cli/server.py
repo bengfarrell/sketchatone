@@ -60,6 +60,7 @@ def generate_self_signed_cert(cert_file: str, key_file: str) -> bool:
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
         from datetime import datetime, timedelta
+        import ipaddress
 
         # Generate private key
         private_key = rsa.generate_private_key(
@@ -76,6 +77,10 @@ def generate_self_signed_cert(cert_file: str, key_file: str) -> bool:
             x509.NameAttribute(NameOID.COMMON_NAME, "sketchatone.local"),
         ])
 
+        # Generate timestamps
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+
         cert = x509.CertificateBuilder().subject_name(
             subject
         ).issuer_name(
@@ -85,14 +90,14 @@ def generate_self_signed_cert(cert_file: str, key_file: str) -> bool:
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.utcnow()
+            now
         ).not_valid_after(
-            datetime.utcnow() + timedelta(days=3650)  # Valid for 10 years
+            now + timedelta(days=3650)  # Valid for 10 years
         ).add_extension(
             x509.SubjectAlternativeName([
                 x509.DNSName("localhost"),
                 x509.DNSName("sketchatone.local"),
-                x509.IPAddress(socket.inet_aton("127.0.0.1")),
+                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
             ]),
             critical=False,
         ).sign(private_key, hashes.SHA256())
@@ -2309,6 +2314,10 @@ class StrummerWebSocketServer(TabletReaderBase):
                 self._http_server.close()
                 await self._http_server.wait_closed()
                 print(colored('✓ HTTP server closed', Colors.GREEN))
+            if self._https_server:
+                self._https_server.close()
+                await self._https_server.wait_closed()
+                print(colored('✓ HTTPS server closed', Colors.GREEN))
             if self._ws_server:
                 # Close all client connections with a timeout to avoid hanging
                 if self.clients:
@@ -2432,7 +2441,13 @@ def main():
         type=int,
         help='HTTP server port for serving webapps (optional)'
     )
-    
+
+    parser.add_argument(
+        '--https-port',
+        type=int,
+        help='HTTPS server port for captive portal detection on Android 10+ (optional)'
+    )
+
     parser.add_argument(
         '-t', '--throttle',
         type=int,
@@ -2531,7 +2546,9 @@ def main():
     effective_http_port = args.http_port or (
         config.http_port if config else None
     )
-    effective_https_port = config.https_port if config and hasattr(config, 'https_port') else None
+    effective_https_port = args.https_port or (
+        config.https_port if config and hasattr(config, 'https_port') else None
+    )
     effective_throttle = args.throttle if args.throttle != 150 else (
         config.ws_message_throttle if config else 150
     )

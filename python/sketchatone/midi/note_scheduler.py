@@ -70,9 +70,11 @@ class NoteScheduler:
             self._events.clear()
             self._event_map.clear()
             self._condition.notify_all()
-        
+
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                print("[NoteScheduler] Warning: Thread did not stop within timeout")
     
     def schedule(self, note_key: Tuple[int, Tuple[int, ...]], delay: float, 
                  callback: Callable[[], None]) -> None:
@@ -139,6 +141,9 @@ class NoteScheduler:
                 if not self._events:
                     # No events, wait indefinitely for new ones
                     self._condition.wait()
+                    # Check if we're still running after waking up
+                    if not self._running:
+                        break
                     continue
                 
                 # Get the next event
@@ -149,6 +154,9 @@ class NoteScheduler:
                 if wait_time > 0:
                     # Wait until the event is due (or we're notified of a new event)
                     self._condition.wait(timeout=wait_time)
+                    # Check if we're still running after waking up
+                    if not self._running:
+                        break
                     continue
                 
                 # Event is due - pop it
@@ -170,6 +178,8 @@ class NoteScheduler:
                 except Exception as e:
                     # Don't let callback errors crash the scheduler
                     print(f"[NoteScheduler] Callback error: {e}")
+
+        print("[NoteScheduler] Thread loop stopped")
 
 
 # Global scheduler instance (lazy initialization)
