@@ -31,6 +31,7 @@ dependencies = [
     "typing-extensions>=4.0.0; python_version<'3.10'",
     "inquirer>=3.1.0",
     "colorama>=0.4.6",
+    "cryptography>=41.0.0",
 ]
 
 [project.optional-dependencies]

@@ -104,6 +104,7 @@
   "server": {
     "device": "devices",
     "http_port": 80,
+    "https_port": 443,
     "ws_port": 8081,
     "ws_message_throttle": 150,
     "device_finding_poll_interval": 2000

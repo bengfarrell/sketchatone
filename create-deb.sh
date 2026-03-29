@@ -263,12 +263,14 @@ if [ "$INSTALL_MODE" = "zynthian" ]; then
     install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
     install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
     install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
+    install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
 else
     # ALSA: Install python-rtmidi for MIDI support
     install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
     install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
     install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
     install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
+    install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
 
     # Try to install python-rtmidi - first try apt, then pip
     echo "📦 Installing python-rtmidi..."

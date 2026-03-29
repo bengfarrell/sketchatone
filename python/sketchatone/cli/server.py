@@ -22,6 +22,7 @@ import os
 import time
 import threading
 import mimetypes
+import ssl
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
 from urllib.parse import unquote
@@ -38,6 +39,95 @@ def get_local_ip() -> Optional[str]:
         return ip
     except Exception:
         return None
+
+
+def generate_self_signed_cert(cert_file: str, key_file: str) -> bool:
+    """
+    Generate a self-signed SSL certificate for HTTPS support.
+    Used for captive portal detection on Android 10+.
+
+    Returns True if certificate was generated or already exists.
+    """
+    # Check if certificate already exists
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return True
+
+    try:
+        # Try to import cryptography for certificate generation
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+        from datetime import datetime, timedelta
+
+        # Generate private key
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+        )
+
+        # Create certificate
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "CA"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, "Local"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Sketchatone"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "sketchatone.local"),
+        ])
+
+        cert = x509.CertificateBuilder().subject_name(
+            subject
+        ).issuer_name(
+            issuer
+        ).public_key(
+            private_key.public_key()
+        ).serial_number(
+            x509.random_serial_number()
+        ).not_valid_before(
+            datetime.utcnow()
+        ).not_valid_after(
+            datetime.utcnow() + timedelta(days=3650)  # Valid for 10 years
+        ).add_extension(
+            x509.SubjectAlternativeName([
+                x509.DNSName("localhost"),
+                x509.DNSName("sketchatone.local"),
+                x509.IPAddress(socket.inet_aton("127.0.0.1")),
+            ]),
+            critical=False,
+        ).sign(private_key, hashes.SHA256())
+
+        # Ensure directory exists
+        cert_dir = os.path.dirname(cert_file)
+        if cert_dir and not os.path.exists(cert_dir):
+            os.makedirs(cert_dir, mode=0o755)
+
+        # Write certificate
+        with open(cert_file, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+        # Write private key
+        with open(key_file, "wb") as f:
+            f.write(private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            ))
+
+        # Set appropriate permissions (readable only by owner)
+        os.chmod(key_file, 0o600)
+        os.chmod(cert_file, 0o644)
+
+        return True
+
+    except ImportError:
+        print("Warning: cryptography package not found. HTTPS will not be available.")
+        print("Install with: pip install cryptography")
+        return False
+    except Exception as e:
+        print(f"Warning: Failed to generate SSL certificate: {e}")
+        return False
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -376,6 +466,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         strummer_config_path: Optional[str] = None,
         ws_port: int = 8081,
         http_port: Optional[int] = None,
+        https_port: Optional[int] = None,
         throttle_ms: int = 150,
         poll_ms: Optional[int] = None,
         search_dir: Optional[str] = None,
@@ -395,6 +486,7 @@ class StrummerWebSocketServer(TabletReaderBase):
 
         self.ws_port = ws_port
         self.http_port = http_port
+        self.https_port = https_port
         self.poll_ms = poll_ms
         self.search_dir = search_dir or DEFAULT_CONFIG_DIR
 
@@ -409,7 +501,17 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.server: Optional[websockets.WebSocketServer] = None
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
         self._http_server = None
+        self._https_server = None
         self._ws_server = None
+
+        # SSL certificate paths (for HTTPS)
+        # Store in user's home directory or /opt/sketchatone for system installs
+        if os.path.exists('/opt/sketchatone'):
+            ssl_dir = '/opt/sketchatone/ssl'
+        else:
+            ssl_dir = os.path.expanduser('~/.sketchatone/ssl')
+        self.ssl_cert_file = os.path.join(ssl_dir, 'cert.pem')
+        self.ssl_key_file = os.path.join(ssl_dir, 'key.pem')
 
         # Create event bus
         self.event_bus = StrummerEventBus(throttle_ms)
@@ -2141,6 +2243,33 @@ class StrummerWebSocketServer(TabletReaderBase):
             if local_ip:
                 print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://{local_ip}:{self.http_port}{RESET}')
 
+        # Start HTTPS server if port is configured
+        if self.https_port:
+            # Generate self-signed certificate if it doesn't exist
+            if generate_self_signed_cert(self.ssl_cert_file, self.ssl_key_file):
+                try:
+                    # Create SSL context
+                    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                    ssl_context.load_cert_chain(self.ssl_cert_file, self.ssl_key_file)
+
+                    # Start HTTPS server with SSL context
+                    self._https_server = await asyncio.start_server(
+                        self._handle_http_request,
+                        "0.0.0.0",
+                        self.https_port,
+                        ssl=ssl_context
+                    )
+                    print(colored(f'✓ HTTPS server listening on port {self.https_port}', Colors.GREEN))
+                    print(colored(f'  Certificate: {self.ssl_cert_file}', Colors.CYAN))
+                    print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}https://localhost:{self.https_port}{RESET}')
+                    if local_ip:
+                        print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}https://{local_ip}:{self.https_port}{RESET}')
+                    print(colored('  Note: Self-signed certificate will show browser warnings', Colors.YELLOW))
+                except Exception as e:
+                    print(colored(f'⚠ Failed to start HTTPS server: {e}', Colors.YELLOW))
+            else:
+                print(colored('⚠ HTTPS server disabled (certificate generation failed)', Colors.YELLOW))
+
         # Start WebSocket server
         self._ws_server = await websockets.serve(
             self._handle_client,
@@ -2402,6 +2531,7 @@ def main():
     effective_http_port = args.http_port or (
         config.http_port if config else None
     )
+    effective_https_port = config.https_port if config and hasattr(config, 'https_port') else None
     effective_throttle = args.throttle if args.throttle != 150 else (
         config.ws_message_throttle if config else 150
     )
@@ -2440,6 +2570,8 @@ def main():
     print(colored(f'WebSocket port: {effective_ws_port}', Colors.GRAY))
     if effective_http_port:
         print(colored(f'HTTP port: {effective_http_port}', Colors.GRAY))
+    if effective_https_port:
+        print(colored(f'HTTPS port: {effective_https_port}', Colors.GRAY))
     print(colored(f'Throttle: {effective_throttle}ms', Colors.GRAY))
     if effective_poll:
         print(colored(f'Poll interval: {effective_poll}ms', Colors.GRAY))
@@ -2459,6 +2591,7 @@ def main():
         strummer_config_path=config_path,
         ws_port=effective_ws_port,
         http_port=effective_http_port,
+        https_port=effective_https_port,
         throttle_ms=effective_throttle,
         poll_ms=effective_poll,
         search_dir=search_dir,

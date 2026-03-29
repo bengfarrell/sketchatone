@@ -101,6 +101,10 @@ class MidiStrummerConfig:
         return self.server.http_port
 
     @property
+    def https_port(self) -> Optional[int]:
+        return self.server.https_port
+
+    @property
     def ws_port(self) -> Optional[int]:
         return self.server.ws_port
 

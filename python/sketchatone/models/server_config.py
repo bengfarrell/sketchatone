@@ -17,12 +17,14 @@ class ServerConfig:
     Attributes:
         device: Path to device config file or directory for auto-detection (None = use default 'devices' folder)
         http_port: HTTP server port for serving webapps (None = disabled)
+        https_port: HTTPS server port for captive portal detection (None = disabled)
         ws_port: WebSocket server port (None = disabled)
         ws_message_throttle: WebSocket message throttle interval in milliseconds (default: 150)
         device_finding_poll_interval: Poll interval in milliseconds for waiting for device (None = quit if no device)
     """
     device: Optional[str] = None
     http_port: Optional[int] = None
+    https_port: Optional[int] = None
     ws_port: Optional[int] = None
     ws_message_throttle: int = 150
     device_finding_poll_interval: Optional[int] = None
@@ -34,6 +36,7 @@ class ServerConfig:
         return cls(
             device=data.get('device'),
             http_port=data.get('http_port', data.get('httpPort')),
+            https_port=data.get('https_port', data.get('httpsPort')),
             ws_port=data.get('ws_port', data.get('wsPort')),
             ws_message_throttle=data.get('ws_message_throttle', data.get('wsMessageThrottle', 150)),
             device_finding_poll_interval=data.get('device_finding_poll_interval', data.get('deviceFindingPollInterval'))
@@ -51,6 +54,7 @@ class ServerConfig:
         return {
             'device': self.device,
             'httpPort': self.http_port,
+            'httpsPort': self.https_port,
             'wsPort': self.ws_port,
             'wsMessageThrottle': self.ws_message_throttle,
             'deviceFindingPollInterval': self.device_finding_poll_interval
