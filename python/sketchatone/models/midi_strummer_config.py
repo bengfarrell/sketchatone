@@ -11,6 +11,7 @@ import json
 
 from .strummer_config import StrummerConfig
 from .midi_config import MidiConfig
+from .keyboard_config import KeyboardConfig
 from .server_config import ServerConfig
 
 
@@ -20,10 +21,11 @@ class MidiStrummerConfig:
     Combined configuration for MIDI strummer.
 
     Contains both the full strummer configuration (with all features),
-    MIDI backend settings, and server configuration.
+    MIDI backend settings, keyboard input configuration, and server configuration.
 
     Can be loaded from a single JSON file that contains strummer
     settings, a 'midi' section for MIDI backend configuration,
+    a 'keyboard' section for keyboard input configuration,
     and a 'server' section for HTTP/WebSocket server settings.
     """
     # Full strummer config (includes parameter mappings and features)
@@ -31,6 +33,9 @@ class MidiStrummerConfig:
 
     # MIDI backend settings
     midi: MidiConfig = field(default_factory=MidiConfig)
+
+    # Keyboard input settings
+    keyboard: KeyboardConfig = field(default_factory=KeyboardConfig)
 
     # Server settings
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -122,23 +127,25 @@ class MidiStrummerConfig:
         Create a MidiStrummerConfig from a dictionary.
 
         Supports both nested format (with 'strummer' key) and flat format (for backward compatibility).
-        - Nested format: { strummer: {...}, midi: {...}, server: {...} }
-        - Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
+        - Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...} }
+        - Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, keyboard: {...}, server: {...} }
         """
         # Check if this is nested format (has 'strummer' key) or flat format
         has_strummer_key = 'strummer' in data and isinstance(data.get('strummer'), dict)
 
         if has_strummer_key:
-            # Nested format: { strummer: {...}, midi: {...}, server: {...} }
+            # Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...} }
             strummer_data = data.get('strummer', {})
             midi_data = data.get('midi', {})
+            keyboard_data = data.get('keyboard', {})
             server_data = data.get('server', {})
         else:
-            # Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
-            # Extract midi and server, pass everything else to StrummerConfig
+            # Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, keyboard: {...}, server: {...} }
+            # Extract midi, keyboard, and server, pass everything else to StrummerConfig
             midi_data = data.get('midi', {})
+            keyboard_data = data.get('keyboard', {})
             server_data = data.get('server', {})
-            strummer_data = {k: v for k, v in data.items() if k not in ('midi', 'server')}
+            strummer_data = {k: v for k, v in data.items() if k not in ('midi', 'keyboard', 'server')}
 
         # Load strummer config
         strummer = StrummerConfig.from_dict(strummer_data) if strummer_data else StrummerConfig()
@@ -146,10 +153,13 @@ class MidiStrummerConfig:
         # Load MIDI config
         midi = MidiConfig.from_dict(midi_data) if midi_data else MidiConfig()
 
+        # Load keyboard config
+        keyboard = KeyboardConfig.from_dict(keyboard_data) if keyboard_data else KeyboardConfig()
+
         # Load server config
         server = ServerConfig.from_dict(server_data) if server_data else ServerConfig()
 
-        return cls(strummer=strummer, midi=midi, server=server)
+        return cls(strummer=strummer, midi=midi, keyboard=keyboard, server=server)
 
     @classmethod
     def from_json_file(cls, path: str) -> 'MidiStrummerConfig':
@@ -186,11 +196,17 @@ class MidiStrummerConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (matching Node.js structure)"""
-        return {
+        result = {
             'strummer': self.strummer.to_dict(),
             'midi': self.midi.to_dict(),
             'server': self.server.to_dict()
         }
+
+        # Only include keyboard config if it has mappings
+        if self.keyboard.enabled:
+            result['keyboard'] = self.keyboard.to_dict()
+
+        return result
 
     def to_json_file(self, path: str) -> None:
         """Save the config to a JSON file"""

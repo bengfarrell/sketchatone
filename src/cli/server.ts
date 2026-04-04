@@ -17,6 +17,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { fileURLToPath } from 'url';
 
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath, findConfigForDevice } from 'blankslate/cli/tablet-reader-base.js';
@@ -24,10 +25,13 @@ import type { HIDInterfaceType } from 'blankslate/core';
 
 // Default config directory for device configs
 const DEFAULT_CONFIG_DIR = './public/configs/devices';
+
+// Version (from package.json)
+const SKETCHATONE_VERSION = '0.2.0';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
-import { ActionRulesConfig } from '../models/action-rules.js';
+import { ActionRulesConfig, type ButtonId } from '../models/action-rules.js';
 import { StrumReleaseConfig } from '../models/strummer-features.js';
 import { StrummingConfig } from '../models/strummer-config.js';
 import { ParameterMapping } from '../models/parameter-mapping.js';
@@ -44,6 +48,7 @@ import {
   type StrumNoteEventData,
   type CombinedEventData,
 } from '../utils/strummer-event-bus.js';
+import { KeyboardListener } from '../utils/keyboard-listener.js';
 
 /**
  * WebSocket tablet event (matches blankslate format)
@@ -163,6 +168,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private midiInputAvailablePorts: { id: number; name: string }[] = [];
   public notesPlayed: number = 0;
   private actions: Actions;
+  private keyboardListener: KeyboardListener | null = null;
+  private keyboardButtonStates: Map<string, boolean> = new Map();
 
   // State tracking for stylus buttons
   private buttonState = {
@@ -198,7 +205,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private currentConfigName: string | undefined;
 
   constructor(
-    tabletConfigPath: string,
+    tabletConfigPath: string | null,
     options: TabletReaderOptions & {
       strummerConfigPath?: string;
       wsPort?: number;
@@ -210,7 +217,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
       noteDuration?: number;
     } = {}
   ) {
-    super(tabletConfigPath, options);
+    // In dev mode (tabletConfigPath is null), pass empty string to parent
+    // The parent class will handle missing device gracefully
+    super(tabletConfigPath ?? '', options);
 
     // Store the config path for saving later
     this.strummerConfigPath = options.strummerConfigPath;
@@ -288,6 +297,20 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Execute any startup rules defined in the config
     this.actions.executeStartupRules();
+
+    // Initialize keyboard listener if configured
+    if (this.config.keyboard.enabled && Object.keys(this.config.keyboard.mappings).length > 0) {
+      this.keyboardListener = new KeyboardListener({
+        enabled: this.config.keyboard.enabled,
+        mappings: this.config.keyboard.mappings,
+        onButtonPress: (buttonId) => {
+          this.handleKeyboardButtonPress(buttonId);
+        },
+        onButtonRelease: (buttonId) => {
+          this.handleKeyboardButtonRelease(buttonId);
+        },
+      });
+    }
   }
 
   /**
@@ -471,11 +494,12 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
-   * Initialize MIDI input for external keyboard
-   * If inputPort is null, listens to ALL available MIDI inputs (discovery mode)
-   * If inputPort is specified, connects only to that port
-   *
-   * Excludes the MIDI output port to prevent feedback loops.
+   * Initialize MIDI input for external keyboard.
+   * Supports multiple connection modes:
+   * - Array of port IDs: Connect to specific selected ports
+   * - Empty array: No connection (user has disabled all inputs)
+   * - null (legacy): Connect to all available ports with exclusions
+   * - Single value (legacy): Connect to specific port
    */
   private async setupMidiInput(): Promise<boolean> {
     try {
@@ -486,24 +510,32 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.midiInputAvailablePorts = await this.midiInput.getAvailablePorts(true);
       console.log(chalk.gray(`[MIDI Input] Available ports: ${this.midiInputAvailablePorts.map(p => p.name).join(', ') || 'none'}`));
 
-      // Build list of ports to exclude (to prevent feedback loops)
-      // Use exclusion list from config (system/internal ports only)
-      const excludePorts: string[] = [...this.config.midi.inputExclude];
-
-      console.log(chalk.gray(`[MIDI Input] Excluding ports matching: ${excludePorts.join(', ')}`));
-
       let connected = false;
-      if (inputPort === null || inputPort === undefined) {
-        // Discovery mode: listen to all ports (except excluded ones)
+
+      if (Array.isArray(inputPort)) {
+        // Array of port IDs - connect to multiple specific ports
+        if (inputPort.length === 0) {
+          // Empty array = user explicitly disabled all inputs
+          console.log(chalk.yellow('[MIDI Input] No ports selected - staying disconnected'));
+          connected = false;
+        } else {
+          // Connect to selected ports
+          console.log(chalk.cyan(`[MIDI Input] Connecting to selected ports: ${JSON.stringify(inputPort)}`));
+          connected = await this.midiInput.connectMultiple(inputPort);
+        }
+      } else if (inputPort === null || inputPort === undefined) {
+        // Legacy: Discovery mode - listen to all ports (except excluded ones)
+        const excludePorts: string[] = [...this.config.midi.inputExclude];
+        console.log(chalk.gray(`[MIDI Input] Connecting to all ports, excluding: ${excludePorts.join(', ')}`));
         connected = await this.midiInput.connectAll(excludePorts);
       } else {
-        // Specific port mode - restore saved port
+        // Legacy: Specific port mode - restore saved port
         console.log(chalk.cyan(`[MIDI Input] Restoring saved port: ${inputPort}`));
         connected = await this.midiInput.connect(inputPort);
       }
 
       if (!connected) {
-        console.log(chalk.yellow('[MIDI Input] No MIDI input ports available'));
+        console.log(chalk.yellow('[MIDI Input] No MIDI input ports connected'));
         return false;
       }
 
@@ -561,6 +593,69 @@ class StrummerWebSocketServer extends TabletReaderBase {
         client.send(data);
       }
     });
+  }
+
+  /**
+   * Handle keyboard button press event
+   * Updates button state, triggers actions, and emits synthetic tablet event
+   */
+  private handleKeyboardButtonPress(buttonId: ButtonId): void {
+    // Update keyboard button state
+    this.keyboardButtonStates.set(buttonId, true);
+
+    // Trigger action
+    this.actions.handleButtonEvent(buttonId, 'press');
+
+    // Emit synthetic tablet event with button state
+    this.emitKeyboardTabletEvent();
+  }
+
+  /**
+   * Handle keyboard button release event
+   * Updates button state, triggers actions, and emits synthetic tablet event
+   */
+  private handleKeyboardButtonRelease(buttonId: ButtonId): void {
+    // Update keyboard button state
+    this.keyboardButtonStates.set(buttonId, false);
+
+    // Trigger action
+    this.actions.handleButtonEvent(buttonId, 'release');
+
+    // Emit synthetic tablet event with button state
+    this.emitKeyboardTabletEvent();
+  }
+
+  /**
+   * Emit a synthetic tablet event showing current keyboard button states
+   * This makes keyboard button presses visible in the dashboard
+   */
+  private emitKeyboardTabletEvent(): void {
+    // Create a tablet event with neutral position and current button states
+    const tabletData: TabletEventData & Record<string, unknown> = {
+      x: 0.5,
+      y: 0.5,
+      pressure: 0.0,
+      tiltX: 0.0,
+      tiltY: 0.0,
+      tiltXY: 0.0,
+      primaryButtonPressed: false,
+      secondaryButtonPressed: false,
+      state: 'out-of-range',
+      timestamp: Date.now(),
+    };
+
+    // Add keyboard button states (e.g., button:1 -> button1)
+    for (const [buttonId, isPressed] of this.keyboardButtonStates.entries()) {
+      if (buttonId.startsWith('button:')) {
+        const buttonNum = buttonId.split(':')[1];
+        if (/^\d+$/.test(buttonNum)) {
+          tabletData[`button${buttonNum}`] = isPressed;
+        }
+      }
+    }
+
+    // Emit through event bus so it gets broadcast to WebSocket clients
+    this.eventBus.emitTabletEvent(tabletData);
   }
 
   /**
@@ -807,6 +902,16 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.setupNotes();
       }
 
+      // Update chord progressions in Actions if they changed
+      if (path === 'strummer.chordProgressions') {
+        this.actions.setChordProgressions(this.config.strummer.chordProgressions);
+      }
+
+      // Update action rules if they changed
+      if (path === 'strummer.actionRules') {
+        this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+      }
+
       // Re-apply action rules if they changed
       if (path.includes('actionRules') || path.includes('action_rules')) {
         this.actions.setActionRulesConfig(this.config.strummer.actionRules);
@@ -829,31 +934,40 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Reconnect MIDI input if port changed
       if (path === 'midi.midiInputId' && this.midiInput) {
-        console.log(chalk.cyan(`[MIDI Input] Reconnecting to port: ${value}`));
+        console.log(chalk.cyan(`[MIDI Input] Reconnecting to port(s): ${JSON.stringify(value)}`));
         this.midiInput.disconnect();
-        if (value === null) {
-          // Connect to all ports
-          this.midiInput.connectAll().then((success) => {
-            if (success) {
-              console.log(chalk.green(`[MIDI Input] Reconnected to all ports`));
-              // Re-register callback after reconnection
-              this.registerMidiInputCallback();
-              // Broadcast device status to update UI
-              this.broadcastMidiDevices();
-            }
-          });
+
+        let connectPromise: Promise<boolean>;
+
+        if (Array.isArray(value)) {
+          // Array of port IDs - connect to multiple specific ports
+          if (value.length === 0) {
+            // Empty array = disconnect all
+            console.log(chalk.yellow('[MIDI Input] Disconnecting all ports (empty selection)'));
+            connectPromise = Promise.resolve(false);
+          } else {
+            // Connect to selected ports
+            connectPromise = this.midiInput.connectMultiple(value);
+          }
+        } else if (value === null) {
+          // Legacy: Connect to all ports
+          const excludePorts = [...this.config.midi.inputExclude];
+          connectPromise = this.midiInput.connectAll(excludePorts);
         } else {
-          // Connect to specific port
-          this.midiInput.connect(value as string | number).then((success) => {
-            if (success) {
-              console.log(chalk.green(`[MIDI Input] Reconnected successfully`));
-              // Re-register callback after reconnection
-              this.registerMidiInputCallback();
-              // Broadcast device status to update UI
-              this.broadcastMidiDevices();
-            }
-          });
+          // Legacy: Single port
+          connectPromise = this.midiInput.connect(value as string | number);
         }
+
+        connectPromise.then((success) => {
+          if (success) {
+            const portCount = this.midiInput?.connectedPorts.length ?? 0;
+            console.log(chalk.green(`[MIDI Input] Reconnected to ${portCount} port(s)`));
+            // Re-register callback after reconnection
+            this.registerMidiInputCallback();
+          }
+          // Always broadcast device status to update UI (even on disconnect)
+          this.broadcastMidiDevices();
+        });
       }
 
       console.log(chalk.yellow(`Config updated: ${path} = ${JSON.stringify(value)}`));
@@ -1699,16 +1813,26 @@ class StrummerWebSocketServer extends TabletReaderBase {
     }
 
     // Initialize MIDI input (for external keyboard)
-    // If inputPort is null, listens to ALL ports (discovery mode)
-    // If inputPort is specified, connects only to that port
     console.log(chalk.gray('Initializing MIDI input...'));
     if (await this.setupMidiInput()) {
-      const portInfo = this.config.inputPort === null
-        ? `listening to all ports (${this.midiInput?.connectedPorts.length ?? 0} found)`
-        : this.midiInput?.currentInputName;
+      const inputPort = this.config.inputPort;
+      let portInfo: string;
+
+      if (Array.isArray(inputPort)) {
+        if (inputPort.length === 0) {
+          portInfo = 'no ports selected';
+        } else {
+          portInfo = `${inputPort.length} port(s) selected`;
+        }
+      } else if (inputPort === null) {
+        portInfo = `all ports (${this.midiInput?.connectedPorts.length ?? 0} found)`;
+      } else {
+        portInfo = this.midiInput?.currentInputName ?? String(inputPort);
+      }
+
       console.log(chalk.green(`✓ MIDI input: ${portInfo}`));
     } else {
-      console.log(chalk.yellow('⚠ No MIDI input ports available'));
+      console.log(chalk.yellow('⚠ No MIDI input ports connected'));
     }
 
     // Get local IP for LAN access URLs
@@ -1806,31 +1930,42 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Set up event subscriptions
     this.setupEventSubscriptions();
 
-    // Initialize tablet reader (may fail if no device connected)
-    console.log(chalk.gray('\nInitializing tablet reader...'));
-    try {
-      await this.initializeReader();
+    // Skip tablet reader if no device path provided (dev mode)
+    if (this.configData) {
+      // Initialize tablet reader (may fail if no device connected)
+      console.log(chalk.gray('\nInitializing tablet reader...'));
+      try {
+        await this.initializeReader();
 
-      if (this.reader) {
-        this.deviceConnected = true;
-        this.initializeTabletButtonState();
+        if (this.reader) {
+          this.deviceConnected = true;
+          this.initializeTabletButtonState();
 
-        // Start reading
-        this.reader.startReading((data, reportId, interfaceType) => {
-          this.handlePacket(data, reportId, interfaceType);
-        });
+          // Start reading
+          this.reader.startReading((data, reportId, interfaceType) => {
+            this.handlePacket(data, reportId, interfaceType);
+          });
 
-        console.log(chalk.green('✓ Started reading tablet data'));
+          console.log(chalk.green('✓ Started reading tablet data'));
+        }
+      } catch (e) {
+        // No device found at startup - this is OK, we'll wait for one
+        const error = e as Error;
+        console.log(chalk.yellow(`\n⚠ No tablet connected: ${error.message}`));
+        console.log(chalk.yellow('  Server is running - waiting for tablet to be connected...'));
+        this.deviceConnected = false;
+
+        // Start polling for device (uses parent class's polling mechanism)
+        this.startDevicePolling();
       }
-    } catch (e) {
-      // No device found at startup - this is OK, we'll wait for one
-      const error = e as Error;
-      console.log(chalk.yellow(`\n⚠ No tablet connected: ${error.message}`));
-      console.log(chalk.yellow('  Server is running - waiting for tablet to be connected...'));
+    } else {
+      console.log(chalk.yellow('⚠ Skipping tablet reader (dev mode)'));
       this.deviceConnected = false;
+    }
 
-      // Start polling for device (uses parent class's polling mechanism)
-      this.startDevicePolling();
+    // Start keyboard listener if configured
+    if (this.keyboardListener) {
+      this.keyboardListener.start();
     }
 
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
@@ -1848,6 +1983,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // Clean up event bus
     this.eventBus.cleanup();
+
+    // Stop keyboard listener
+    if (this.keyboardListener) {
+      this.keyboardListener.stop();
+    }
 
     // Close HTTP server
     if (this.httpServer) {
@@ -1876,6 +2016,7 @@ async function main(): Promise<void> {
     .option('--http-port <number>', 'HTTP server port for serving webapps', parseInt)
     .option('--throttle <ms>', 'Throttle interval in milliseconds (default: 150)', parseInt)
     .option('--poll <ms>', 'Poll interval in milliseconds for waiting for device. If not set, quit if no device found.', parseInt)
+    .option('--dev', 'Development mode: run without a tablet device (UI only, no tablet input)')
     // MIDI options
     .option('--channel <number>', 'MIDI channel (0-15)', parseInt)
     .option('-p, --port <port>', 'MIDI output port (name or index)')
@@ -1889,6 +2030,9 @@ async function main(): Promise<void> {
 Examples:
   # List available MIDI ports
   npm run server -- --list-ports
+
+  # Start in dev mode (no tablet device, UI only)
+  npm run server -- --dev --http-port 3000
 
   # Start with WebSocket only (default port 8081)
   npm run server
@@ -1918,6 +2062,7 @@ Examples:
     httpPort?: number;
     throttle?: number;
     poll?: number;
+    dev?: boolean;
     // MIDI options
     channel?: number;
     port?: string;
@@ -1932,14 +2077,18 @@ Examples:
     ? MidiStrummerConfig.fromJsonFile(configPath)
     : new MidiStrummerConfig();
 
-  // Get device path from config (defaults to DEFAULT_CONFIG_DIR if not specified)
-  const devicePath = strummerConfig.server.device ?? DEFAULT_CONFIG_DIR;
-  const configDir = configPath ? path.dirname(configPath) : process.cwd();
+  // In dev mode, skip device config entirely
+  let resolvedInput: string | null = null;
+  if (!options.dev) {
+    // Get device path from config (defaults to DEFAULT_CONFIG_DIR if not specified)
+    const devicePath = strummerConfig.server.device ?? DEFAULT_CONFIG_DIR;
+    const configDir = configPath ? path.dirname(configPath) : process.cwd();
 
-  // Resolve device path (absolute or relative to config file directory)
-  const resolvedInput = path.isAbsolute(devicePath)
-    ? devicePath
-    : path.resolve(configDir, devicePath);
+    // Resolve device path (absolute or relative to config file directory)
+    resolvedInput = path.isAbsolute(devicePath)
+      ? devicePath
+      : path.resolve(configDir, devicePath);
+  }
 
   // Handle --dump-config: print config as JSON and exit
   if (options.dumpConfig) {
@@ -1960,7 +2109,7 @@ Examples:
   }
 
   // Helper function to create and start the server with a given config path
-  const createAndStartServer = async (tabletConfigPath: string): Promise<void> => {
+  const createAndStartServer = async (tabletConfigPath: string | null): Promise<void> => {
     const server = new StrummerWebSocketServer(tabletConfigPath, {
       strummerConfigPath: configPath,
       wsPort: options.wsPort,
@@ -1975,19 +2124,37 @@ Examples:
     await server.start();
   };
 
+  // Print startup banner
+  console.log(chalk.cyan(`=== Strummer WebSocket Server v${SKETCHATONE_VERSION} ===`));
+  if (options.dev) {
+    console.log(chalk.yellow('⚠ DEV MODE: Running without tablet device (UI only)'));
+  }
+  if (configPath) {
+    console.log(chalk.gray('Config:'), configPath);
+  }
+  if (options.dev) {
+    console.log(chalk.gray('Device config: (dev mode - no device)'));
+  }
+
   try {
+    // In dev mode, run without tablet device
+    if (options.dev) {
+      await createAndStartServer(null as any); // Pass null for dev mode
+      return;
+    }
+
     // Check if the input is a file or directory
-    const stat = fs.existsSync(resolvedInput) ? fs.statSync(resolvedInput) : null;
+    const stat = fs.existsSync(resolvedInput!) ? fs.statSync(resolvedInput!) : null;
     const isDirectory = stat?.isDirectory() ?? false;
     const isFile = stat?.isFile() ?? false;
 
     if (isFile) {
       // User provided a specific config file - use it directly
       console.log(chalk.blue('[Config]'), `Using specified config file: ${resolvedInput}`);
-      await createAndStartServer(resolvedInput);
+      await createAndStartServer(resolvedInput!);
     } else if (isDirectory || !stat) {
       // Directory or default - need to auto-detect device
-      const configDir = isDirectory ? resolvedInput : path.resolve(DEFAULT_CONFIG_DIR);
+      const configDir = isDirectory ? resolvedInput! : path.resolve(DEFAULT_CONFIG_DIR);
 
       // Try to find a connected device
       let configPath = findConfigForDevice(configDir);
@@ -2039,7 +2206,6 @@ Examples:
 }
 
 // Only run main() when this file is executed directly
-import { fileURLToPath } from 'url';
 import * as nodePath from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const isMainModule = process.argv[1] && nodePath.resolve(process.argv[1]) === __filename;

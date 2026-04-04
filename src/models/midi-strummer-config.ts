@@ -20,6 +20,60 @@ import {
 import { StrumReleaseConfig } from './strummer-features.js';
 
 /**
+ * Keyboard input configuration data
+ */
+export interface KeyboardConfigData {
+  /** Map keyboard keys to button IDs (e.g., {"1": "button:1", "2": "button:2"}) */
+  mappings: Record<string, string>;
+}
+
+/**
+ * Default keyboard configuration
+ */
+export const DEFAULT_KEYBOARD_CONFIG: KeyboardConfigData = {
+  mappings: {},
+};
+
+/**
+ * Keyboard configuration class
+ *
+ * The presence of this config section enables the keyboard listener.
+ * To disable, remove the "keyboard" section from config or set mappings to empty.
+ */
+export class KeyboardConfig implements KeyboardConfigData {
+  mappings: Record<string, string>;
+
+  constructor(data: Partial<KeyboardConfigData> = {}) {
+    this.mappings = data.mappings ?? { ...DEFAULT_KEYBOARD_CONFIG.mappings };
+  }
+
+  /**
+   * Keyboard is enabled if there are any mappings
+   */
+  get enabled(): boolean {
+    return Object.keys(this.mappings).length > 0;
+  }
+
+  /**
+   * Create from dictionary
+   */
+  static fromDict(data: Record<string, unknown>): KeyboardConfig {
+    return new KeyboardConfig({
+      mappings: data.mappings as Record<string, string> | undefined,
+    });
+  }
+
+  /**
+   * Convert to dictionary for JSON serialization
+   */
+  toDict(): KeyboardConfigData {
+    return {
+      mappings: this.mappings,
+    };
+  }
+}
+
+/**
  * Server configuration data
  */
 export interface ServerConfigData {
@@ -190,6 +244,7 @@ export class MidiConfig implements MidiConfigData {
 export interface MidiStrummerConfigData {
   strummer: StrummerConfigData;
   midi: MidiConfigData;
+  keyboard?: KeyboardConfigData;
   server: ServerConfigData;
 }
 
@@ -199,20 +254,24 @@ export interface MidiStrummerConfigData {
  * This combines:
  * - Full strummer configuration (notes, mappings, features)
  * - MIDI configuration (ports, channels)
+ * - Keyboard configuration (for debugging/testing button actions)
  * - Server configuration (HTTP/WebSocket ports, throttle, poll)
  */
 export class MidiStrummerConfig {
   private _strummer: StrummerConfig;
   private _midi: MidiConfig;
+  private _keyboard: KeyboardConfig;
   private _server: ServerConfig;
 
   constructor(data: {
     strummer?: StrummerConfig;
     midi?: MidiConfig;
+    keyboard?: KeyboardConfig;
     server?: ServerConfig;
   } = {}) {
     this._strummer = data.strummer ?? new StrummerConfig();
     this._midi = data.midi ?? new MidiConfig();
+    this._keyboard = data.keyboard ?? new KeyboardConfig();
     this._server = data.server ?? new ServerConfig();
   }
 
@@ -271,6 +330,11 @@ export class MidiStrummerConfig {
 
   get useVirtualPorts(): boolean {
     return this._midi.useVirtualPorts;
+  }
+
+  // Keyboard config accessors
+  get keyboard(): KeyboardConfig {
+    return this._keyboard;
   }
 
   // Server config accessors
@@ -345,22 +409,26 @@ export class MidiStrummerConfig {
 
     let strummerData: Record<string, unknown>;
     let midiData: Record<string, unknown>;
+    let keyboardData: Record<string, unknown>;
     let serverData: Record<string, unknown>;
 
     if (hasStrummerKey) {
-      // Nested format: { strummer: {...}, midi: {...}, server: {...} }
+      // Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...} }
       strummerData = (data.strummer ?? {}) as Record<string, unknown>;
       midiData = (data.midi ?? {}) as Record<string, unknown>;
+      keyboardData = (data.keyboard ?? {}) as Record<string, unknown>;
       serverData = (data.server ?? {}) as Record<string, unknown>;
     } else {
-      // Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, server: {...} }
-      // Extract midi and server, pass the rest to strummer
+      // Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, keyboard: {...}, server: {...} }
+      // Extract midi, keyboard, and server, pass the rest to strummer
       midiData = (data.midi ?? {}) as Record<string, unknown>;
+      keyboardData = (data.keyboard ?? {}) as Record<string, unknown>;
       serverData = (data.server ?? {}) as Record<string, unknown>;
 
-      // Everything else goes to strummer (excluding midi and server)
+      // Everything else goes to strummer (excluding midi, keyboard, and server)
       strummerData = { ...data };
       delete strummerData.midi;
+      delete strummerData.keyboard;
       delete strummerData.server;
     }
 
@@ -371,6 +439,9 @@ export class MidiStrummerConfig {
       midi: Object.keys(midiData).length > 0
         ? MidiConfig.fromDict(midiData)
         : new MidiConfig(),
+      keyboard: Object.keys(keyboardData).length > 0
+        ? KeyboardConfig.fromDict(keyboardData)
+        : new KeyboardConfig(),
       server: Object.keys(serverData).length > 0
         ? ServerConfig.fromDict(serverData)
         : new ServerConfig(),
@@ -390,11 +461,18 @@ export class MidiStrummerConfig {
    * Convert to dictionary for JSON serialization
    */
   toDict(): MidiStrummerConfigData {
-    return {
+    const result: MidiStrummerConfigData = {
       strummer: this._strummer.toDict(),
       midi: this._midi.toDict(),
       server: this._server.toDict(),
     };
+
+    // Only include keyboard config if it has mappings
+    if (this._keyboard.enabled) {
+      result.keyboard = this._keyboard.toDict();
+    }
+
+    return result;
   }
 
   /**

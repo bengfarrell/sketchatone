@@ -107,6 +107,7 @@ export class RtMidiInput extends EventEmitter {
   private _deviceMonitoring: number | false;
   private _monitoringTimer: ReturnType<typeof setInterval> | null = null;
   private _lastRequestedPort: string | number | null | undefined = undefined;
+  private _lastRequestedPortIds: number[] = [];
   private _lastExcludePorts: string[] = [];
   private _lastAvailablePorts: MidiInputPort[] = [];
   private _connectAllMode = false;
@@ -355,6 +356,106 @@ export class RtMidiInput extends EventEmitter {
       return false;
     }
   }
+
+  /**
+   * Connect to multiple specific MIDI input ports by ID
+   *
+   * @param portIds - Array of port indices to connect to
+   */
+  async connectMultiple(portIds: number[]): Promise<boolean> {
+    try {
+      // Store parameters for reconnection
+      this._connectAllMode = false;
+      this._lastRequestedPortIds = portIds;
+
+      const midiModule = await loadMidi();
+
+      // Close existing connections (but don't stop monitoring)
+      const wasMonitoring = this._monitoringTimer !== null;
+      if (wasMonitoring) {
+        this._stopHotSwapMonitoring();
+      }
+
+      for (const [, input] of this._midiInputs) {
+        input.closePort();
+      }
+      this._midiInputs.clear();
+      this._connectedPorts = [];
+
+      // Get available ports
+      const tempInput = new midiModule.Input();
+      const portCount = tempInput.getPortCount();
+      tempInput.closePort();
+
+      if (portCount === 0) {
+        console.log('[RtMidiInput] No MIDI input ports available');
+        this._startHotSwapMonitoring();
+        return false;
+      }
+
+      if (portIds.length === 0) {
+        console.log('[RtMidiInput] No ports selected - disconnecting all');
+        this._startHotSwapMonitoring();
+        return false;
+      }
+
+      let connectedCount = 0;
+
+      // Connect to each specified port
+      for (const portId of portIds) {
+        if (portId < 0 || portId >= portCount) {
+          console.warn(`[RtMidiInput] Invalid port index: ${portId} (available: 0-${portCount - 1})`);
+          continue;
+        }
+
+        const input = new midiModule.Input();
+        const portName = input.getPortName(portId);
+
+        // Set up message callback with port info
+        input.on('message', (_deltaTime: number, message: number[]) => {
+          this.handleMidiMessage(message, portName);
+        });
+
+        input.openPort(portId);
+        this._midiInputs.set(portId, input);
+        this._connectedPorts.push({ id: portId, name: portName });
+        connectedCount++;
+
+        console.log(`[RtMidiInput] Connected to port ${portId}: ${portName}`);
+      }
+
+      if (connectedCount === 0) {
+        console.log('[RtMidiInput] No valid ports connected');
+        this._startHotSwapMonitoring();
+        return false;
+      }
+
+      this._isConnected = true;
+      this._currentInputName = connectedCount === 1
+        ? this._connectedPorts[0].name
+        : `${connectedCount} ports`;
+      this._notes = [];
+
+      // Update available ports list
+      this._lastAvailablePorts = await this.getAvailablePorts();
+
+      // Start hot-swap monitoring
+      this._startHotSwapMonitoring();
+
+      // Emit connection event
+      this.emit<MidiInputConnectionEvent>(MIDI_INPUT_CONNECTION_EVENT, {
+        connected: true,
+        inputPort: this._currentInputName,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('[RtMidiInput] Failed to connect to multiple ports:', error);
+      this._startHotSwapMonitoring();
+      return false;
+    }
+  }
+
 
   /**
    * Connect to a specific MIDI input port

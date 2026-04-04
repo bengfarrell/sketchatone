@@ -106,6 +106,7 @@
     "http_port": 80,
     "https_port": 443,
     "ws_port": 8081,
+    "wss_port": 8082,
     "ws_message_throttle": 150,
     "device_finding_poll_interval": 2000
   }

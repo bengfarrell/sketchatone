@@ -309,6 +309,88 @@ class JackMidiInput:
             self.disconnect()
             return False
 
+    def connect_multiple(self, port_ids: List[int]) -> bool:
+        """
+        Connect to multiple specific JACK MIDI output ports by their IDs.
+
+        Args:
+            port_ids: List of port indices to connect to
+
+        Returns:
+            True if at least one port was connected successfully
+        """
+        try:
+            # Close existing connections
+            self.disconnect()
+
+            if not port_ids:
+                print("[JackMidiInput] No ports specified - staying disconnected")
+                return False
+
+            # Create JACK client
+            self._jack_client = jack.Client(self._client_name)
+
+            # Register MIDI input port
+            self._midi_in_port = self._jack_client.midi_inports.register('midi_in')
+
+            # Set up process callback
+            self._jack_client.set_process_callback(self._process_callback)
+
+            # Activate client
+            self._jack_client.activate()
+
+            print(f"[JackMidiInput] Client activated: {self._jack_client.name}")
+            print(f"[JackMidiInput] MIDI input: {self._midi_in_port.name}")
+
+            # Get all MIDI output ports
+            all_ports = self._jack_client.get_ports(is_midi=True, is_output=True)
+
+            if not all_ports:
+                print("[JackMidiInput] No MIDI output ports available")
+                self.disconnect()
+                return False
+
+            connected_count = 0
+
+            # Connect to each specified port
+            for port_id in port_ids:
+                if not (0 <= port_id < len(all_ports)):
+                    print(f"[JackMidiInput] Skipping invalid port index: {port_id}")
+                    continue
+
+                port = all_ports[port_id]
+
+                try:
+                    # Connect the source port to our input port
+                    self._jack_client.connect(port, self._midi_in_port)
+                    self._connected_ports.append({'id': port_id, 'name': port.name})
+                    connected_count += 1
+                    print(f"[JackMidiInput] Connected to: {port.name}")
+                except Exception as e:
+                    print(f"[JackMidiInput] Could not connect to {port.name}: {e}")
+
+            if connected_count == 0:
+                print("[JackMidiInput] No valid ports were connected")
+                self.disconnect()
+                return False
+
+            self._is_connected = True
+            self._current_input_name = f"Selected ports ({connected_count})"
+            with self._lock:
+                self._notes = []
+
+            # Start event processing thread
+            self._running = True
+            self._event_thread = threading.Thread(target=self._event_processor, daemon=True)
+            self._event_thread.start()
+
+            return True
+
+        except Exception as e:
+            print(f"[JackMidiInput] Failed to connect to multiple ports: {e}")
+            self.disconnect()
+            return False
+
     def connect(self, input_port: Union[str, int]) -> bool:
         """
         Connect to a specific JACK MIDI output port (source).

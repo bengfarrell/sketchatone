@@ -36,7 +36,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'strumRelease', label: 'Release', icon: '🔔' },
   { id: 'actions', label: 'Actions', icon: '⚡' },
   { id: 'groups', label: 'Groups', icon: '📦' },
-  { id: 'chordProgressions', label: 'Progressions', icon: '🎼' },
+  { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
 ];
 
 export type PanelVisibility = Record<PanelId, boolean>;

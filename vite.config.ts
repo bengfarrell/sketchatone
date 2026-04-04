@@ -44,29 +44,10 @@ export default defineConfig({
       '@spectrum-web-components/popover',
       '@spectrum-web-components/tray',
     ],
-    alias: [
-      // Resolve blankslate CLI imports (for tablet-reader-base, node-hid-reader)
-      { find: 'blankslate/cli/tablet-reader-base.js', replacement: resolve(__dirname, '../blankslate/dist/cli/tablet-reader-base.js') },
-      { find: 'blankslate/cli/node-hid-reader.js', replacement: resolve(__dirname, '../blankslate/dist/cli/node-hid-reader.js') },
-      // Resolve blankslate component imports directly (more specific paths first)
-      { find: 'blankslate/components/hid-dashboard/hid-dashboard.js', replacement: resolve(__dirname, '../blankslate/dist/components/hid-dashboard/hid-dashboard.js') },
-      { find: 'blankslate/components/hid-data-reader/hid-data-reader.js', replacement: resolve(__dirname, '../blankslate/dist/components/hid-data-reader/hid-data-reader.js') },
-      { find: 'blankslate/components/tablet-visualizer/tablet-visualizer.js', replacement: resolve(__dirname, '../blankslate/dist/components/tablet-visualizer/tablet-visualizer.js') },
-      { find: 'blankslate/components/bytes-display/bytes-display.js', replacement: resolve(__dirname, '../blankslate/dist/components/bytes-display/bytes-display.js') },
-      { find: 'blankslate/components/events-display/events-display.js', replacement: resolve(__dirname, '../blankslate/dist/components/events-display/events-display.js') },
-      // Resolve blankslate subpath exports (browser-safe, no mockbytes)
-      { find: 'blankslate/models', replacement: resolve(__dirname, '../blankslate/dist/models/index.js') },
-      { find: 'blankslate/utils', replacement: resolve(__dirname, '../blankslate/dist/utils/index.js') },
-      // Use core/managers directly to avoid core/index.js which re-exports mockbytes
-      { find: 'blankslate/core/managers', replacement: resolve(__dirname, '../blankslate/dist/core/managers/index.js') },
-      { find: 'blankslate/core', replacement: resolve(__dirname, '../blankslate/dist/core/index.js') },
-      // Resolve blankslate main export - must be last (but avoid using this in browser code!)
-      { find: 'blankslate', replacement: resolve(__dirname, '../blankslate/dist/index.js') },
-    ],
   },
   optimizeDeps: {
-    // Exclude blankslate from pre-bundling so we always get fresh linked version
-    exclude: ['blankslate'],
+    // Include blankslate for pre-bundling from node_modules
+    include: ['blankslate'],
   },
   build: {
     outDir: 'dist/public',

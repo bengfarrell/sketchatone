@@ -194,14 +194,21 @@ export class MidiDevicesConfig extends LitElement {
     event.stopPropagation();
     const checkbox = event.target as HTMLInputElement;
 
-    // If turning on, apply this port. If turning off, apply null (all ports)
-    const newInputPort = checkbox.checked ? portId : null;
+    // Build array of selected ports
+    let newInputPorts: (string | number)[];
+    if (checkbox.checked) {
+      // Add this port to the selected list
+      newInputPorts = [...this.currentInputPorts, portId];
+    } else {
+      // Remove this port from the selected list
+      newInputPorts = this.currentInputPorts.filter(id => id !== portId);
+    }
 
     this.dispatchEvent(new CustomEvent('apply-devices', {
       bubbles: true,
       composed: true,
       detail: {
-        inputPort: newInputPort,
+        inputPorts: newInputPorts,  // Send array of port IDs
         // Don't change output port when toggling input
       },
     }));

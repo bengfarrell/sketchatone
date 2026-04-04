@@ -23,6 +23,7 @@ import time
 import threading
 import mimetypes
 import ssl
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
 from urllib.parse import unquote
@@ -146,6 +147,7 @@ from sketchatone.midi.bridge import MidiStrummerBridge
 from sketchatone.midi.protocol import MidiBackendProtocol
 from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
 from sketchatone.midi.jack_input import JackMidiInput
+from sketchatone.utils.keyboard_listener import KeyboardListener
 
 # Import blankslate's TabletReaderBase
 try:
@@ -470,6 +472,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         tablet_config_path: Optional[str],
         strummer_config_path: Optional[str] = None,
         ws_port: int = 8081,
+        wss_port: Optional[int] = None,
         http_port: Optional[int] = None,
         https_port: Optional[int] = None,
         throttle_ms: int = 150,
@@ -490,6 +493,7 @@ class StrummerWebSocketServer(TabletReaderBase):
             super().__init__(tablet_config_path)
 
         self.ws_port = ws_port
+        self.wss_port = wss_port
         self.http_port = http_port
         self.https_port = https_port
         self.poll_ms = poll_ms
@@ -508,6 +512,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         self._http_server = None
         self._https_server = None
         self._ws_server = None
+        self._wss_server = None
 
         # SSL certificate paths (for HTTPS)
         # Store in user's home directory or /opt/sketchatone for system installs
@@ -600,6 +605,18 @@ class StrummerWebSocketServer(TabletReaderBase):
 
         # Execute any startup rules defined in the config
         self.actions.execute_startup_rules()
+
+        # Initialize keyboard listener if configured
+        # Track keyboard button states to emit synthetic tablet events
+        self.keyboard_button_states: Dict[str, bool] = {}
+        self.keyboard_listener: Optional[KeyboardListener] = None
+        if self.config.keyboard.enabled and self.config.keyboard.mappings:
+            self.keyboard_listener = KeyboardListener(
+                enabled=self.config.keyboard.enabled,
+                mappings=self.config.keyboard.mappings,
+                on_button_press=self._handle_keyboard_button_press,
+                on_button_release=self._handle_keyboard_button_release
+            )
 
         # State tracking for stylus buttons
         self.button_state = {
@@ -799,11 +816,13 @@ class StrummerWebSocketServer(TabletReaderBase):
     def _setup_midi_input(self) -> bool:
         """
         Initialize MIDI input for external keyboard.
-        If midi_input_id is None, listens to ALL available MIDI inputs (discovery mode).
-        If midi_input_id is specified, connects only to that port.
+        Supports multiple connection modes:
+        - Array of port IDs: Connect to specific selected ports
+        - Empty array: No connection (user has disabled all inputs)
+        - None (legacy): Connect to all available ports with exclusions
+        - Single value (legacy): Connect to specific port
 
         Uses JackMidiInput when JACK backend is active, otherwise RtMidiInput.
-        Excludes the MIDI output port to prevent feedback loops.
         """
         try:
             # Use JACK MIDI input when JACK backend is active
@@ -813,23 +832,33 @@ class StrummerWebSocketServer(TabletReaderBase):
             else:
                 self.midi_input = RtMidiInput()
                 print(colored('[MIDI Input] Using RtMidi (ALSA) input', Colors.GRAY))
+
             input_port = self.config.midi.midi_input_id
 
             connected = False
-            if input_port is None or input_port == '':
-                # Auto-connect to all MIDI sources, excluding ports that could cause feedback
-                # Use exclusion list from config (which has sensible defaults)
-                exclude_ports: List[str] = list(self.config.midi.midi_input_exclude)
 
+            if isinstance(input_port, list):
+                # Array of port IDs - connect to multiple specific ports
+                if len(input_port) == 0:
+                    # Empty array = user explicitly disabled all inputs
+                    print(colored('[MIDI Input] No ports selected - staying disconnected', Colors.YELLOW))
+                    connected = False
+                else:
+                    # Connect to selected ports
+                    print(colored(f'[MIDI Input] Connecting to selected ports: {input_port}', Colors.CYAN))
+                    connected = self.midi_input.connect_multiple(input_port)
+            elif input_port is None or input_port == '':
+                # Legacy: Auto-connect to all MIDI sources, excluding ports that could cause feedback
+                exclude_ports: List[str] = list(self.config.midi.midi_input_exclude)
                 print(colored(f'[MIDI Input] Connecting to all ports, excluding: {", ".join(exclude_ports)}', Colors.GRAY))
                 connected = self.midi_input.connect_all(exclude_ports=exclude_ports)
             else:
-                # Specific port mode - restore from saved config
+                # Legacy: Single port mode - restore from saved config
                 print(colored(f'[MIDI Input] Restoring saved port: {input_port}', Colors.CYAN))
                 connected = self.midi_input.connect(input_port)
 
             if not connected:
-                print(colored('[MIDI Input] No MIDI input ports available', Colors.YELLOW))
+                print(colored('[MIDI Input] No MIDI input ports connected', Colors.YELLOW))
                 return False
 
             # Register note event callback
@@ -924,10 +953,27 @@ class StrummerWebSocketServer(TabletReaderBase):
 
     async def _handle_http_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle incoming HTTP request for static file serving"""
+        peername = None
         try:
+            # Get peer info for debugging
+            peername = writer.get_extra_info('peername')
+            sockname = writer.get_extra_info('sockname')  # Local socket (IP, port)
+            ssl_object = writer.get_extra_info('ssl_object')
+            is_ssl = ssl_object is not None
+            local_port = sockname[1] if sockname else 'unknown'
+            print(f"[HTTP{'S' if is_ssl else ''}] Connection from {peername} to port {local_port}, SSL={is_ssl}")
+
+            # Python 3.13 workaround: If SSL is expected but ssl_object is None, there might be an SSL issue
+            if local_port == 443 and not is_ssl:
+                print(f"[WARNING] Connection to HTTPS port {local_port} but SSL not established!")
+                writer.close()
+                await writer.wait_closed()
+                return
+
             # Read request line
             request_line = await reader.readline()
             if not request_line:
+                print(f"[HTTP{'S' if is_ssl else ''}] Empty request from {peername}")
                 return
 
             request_text = request_line.decode('utf-8', errors='ignore')
@@ -1220,6 +1266,70 @@ class StrummerWebSocketServer(TabletReaderBase):
         }
         self._broadcast(json.dumps(message))
 
+    def _handle_keyboard_button_press(self, button_id: str) -> None:
+        """
+        Handle keyboard button press event.
+        Updates button state, triggers actions, and emits synthetic tablet event.
+
+        Args:
+            button_id: Button ID like 'button:1', 'button:2', etc.
+        """
+        # Update keyboard button state
+        self.keyboard_button_states[button_id] = True
+
+        # Trigger action
+        self.actions.handle_button_event(button_id, 'press')
+
+        # Emit synthetic tablet event with button state
+        self._emit_keyboard_tablet_event()
+
+    def _handle_keyboard_button_release(self, button_id: str) -> None:
+        """
+        Handle keyboard button release event.
+        Updates button state, triggers actions, and emits synthetic tablet event.
+
+        Args:
+            button_id: Button ID like 'button:1', 'button:2', etc.
+        """
+        # Update keyboard button state
+        self.keyboard_button_states[button_id] = False
+
+        # Trigger action
+        self.actions.handle_button_event(button_id, 'release')
+
+        # Emit synthetic tablet event with button state
+        self._emit_keyboard_tablet_event()
+
+    def _emit_keyboard_tablet_event(self) -> None:
+        """
+        Emit a synthetic tablet event showing current keyboard button states.
+        This makes keyboard button presses visible in the dashboard.
+        """
+        # Create buttons dict (e.g., button:1 -> button1)
+        buttons_dict: Dict[str, bool] = {}
+        for button_id, is_pressed in self.keyboard_button_states.items():
+            if button_id.startswith('button:'):
+                button_num = button_id.split(':')[1]
+                if button_num.isdigit():
+                    buttons_dict[f'button{button_num}'] = is_pressed
+
+        # Create a tablet event with neutral position and current button states
+        tablet_data = TabletEventData(
+            x=0.5,
+            y=0.5,
+            pressure=0.0,
+            tiltX=0.0,
+            tiltY=0.0,
+            tiltXY=0.0,
+            primaryButtonPressed=False,
+            secondaryButtonPressed=False,
+            state='out-of-range',
+            buttons=buttons_dict
+        )
+
+        # Emit through event bus so it gets broadcast to WebSocket clients
+        self.event_bus.emit_tablet_event(tablet_data)
+
     async def _handle_client(self, websocket: WebSocketServerProtocol) -> None:
         """Handle a WebSocket client connection"""
         self.clients.add(websocket)
@@ -1392,6 +1502,14 @@ class StrummerWebSocketServer(TabletReaderBase):
             if 'chord' in path.lower() or 'spread' in path.lower() or 'initialNotes' in path:
                 self._setup_notes()
 
+            # Update chord progressions in Actions if they changed
+            if path == 'strummer.chordProgressions':
+                self.actions.set_chord_progressions(self.config.strummer.chord_progressions)
+
+            # Update action rules if they changed
+            if path == 'strummer.actionRules':
+                self.actions.set_action_rules_config(self.config.strummer.action_rules)
+
             # Update MIDI channel on the backend if it changed
             # Frontend sends 0-15 (0-based), backend expects 0-15 (0-based)
             if 'midiChannel' in path and self.backend is not None:
@@ -1410,24 +1528,39 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             # Reconnect MIDI input if port changed
             if path == 'midi.midiInputId' and self.midi_input is not None:
-                print(colored(f'[MIDI Input] Reconnecting to port: {value}', Colors.CYAN))
+                print(colored(f'[MIDI Input] Reconnecting to port(s): {value}', Colors.CYAN))
                 self.midi_input.disconnect()
-                if value is None:
-                    # Connect to all ports
-                    if self.midi_input.connect_all():
+
+                connected = False
+                if isinstance(value, list):
+                    # Array of port IDs - connect to multiple specific ports
+                    if len(value) == 0:
+                        # Empty array = disconnect all
+                        print(colored('[MIDI Input] Disconnecting all ports (empty selection)', Colors.YELLOW))
+                        connected = False
+                    else:
+                        # Connect to selected ports
+                        connected = self.midi_input.connect_multiple(value)
+                        if connected:
+                            print(colored(f'[MIDI Input] Reconnected to {len(value)} port(s)', Colors.GREEN))
+                elif value is None:
+                    # Legacy: null = connect to all ports (but we don't use this anymore from UI)
+                    exclude_ports = list(self.config.midi.midi_input_exclude)
+                    connected = self.midi_input.connect_all(exclude_ports=exclude_ports)
+                    if connected:
                         print(colored('[MIDI Input] Reconnected to all ports', Colors.GREEN))
-                        # Re-register the callback after reconnection
-                        self._register_midi_input_callback()
-                        # Broadcast updated device list to all clients
-                        self._broadcast_midi_devices()
                 else:
-                    # Connect to specific port
-                    if self.midi_input.connect(value):
+                    # Single port (legacy support)
+                    connected = self.midi_input.connect(value)
+                    if connected:
                         print(colored('[MIDI Input] Reconnected successfully', Colors.GREEN))
-                        # Re-register the callback after reconnection
-                        self._register_midi_input_callback()
-                        # Broadcast updated device list to all clients
-                        self._broadcast_midi_devices()
+
+                if connected:
+                    # Re-register the callback after reconnection
+                    self._register_midi_input_callback()
+
+                # Always broadcast updated device list to all clients (even on disconnect)
+                self._broadcast_midi_devices()
 
             # Re-apply action rules if they changed
             if 'actionRules' in path or 'action_rules' in path:
@@ -2193,7 +2326,31 @@ class StrummerWebSocketServer(TabletReaderBase):
     
     async def run_server(self) -> None:
         """Run the WebSocket and HTTP servers"""
+        # Enable asyncio debug logging for SSL issues
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(levelname)s:%(name)s:%(message)s'
+        )
+        asyncio_logger = logging.getLogger('asyncio')
+        asyncio_logger.setLevel(logging.DEBUG)
+
+        # Enable SSL debug logging
+        ssl_logger = logging.getLogger('ssl')
+        ssl_logger.setLevel(logging.DEBUG)
+
         self._main_loop = asyncio.get_event_loop()
+        # Enable debug mode to catch SSL errors
+        self._main_loop.set_debug(True)
+
+        # Set exception handler to catch SSL errors
+        def exception_handler(loop, context):
+            print(f"[ASYNCIO EXCEPTION] {context}")
+            if 'exception' in context:
+                import traceback
+                print(f"[TRACEBACK] {''.join(traceback.format_exception(type(context['exception']), context['exception'], context['exception'].__traceback__))}")
+
+        self._main_loop.set_exception_handler(exception_handler)
+
         self._http_server = None
         self._ws_server = None
 
@@ -2206,18 +2363,21 @@ class StrummerWebSocketServer(TabletReaderBase):
             print(colored('⚠ MIDI not available - running without MIDI output', Colors.YELLOW))
 
         # Initialize MIDI input (for external keyboard)
-        # If midi_input_id is None, listens to ALL ports (discovery mode)
-        # If midi_input_id is specified, connects only to that port
         print(colored('Initializing MIDI input...', Colors.GRAY))
         if self._setup_midi_input():
             input_port = self.config.midi.midi_input_id
-            if input_port is None:
-                port_info = f"listening to all ports ({len(self.midi_input.connected_ports) if self.midi_input else 0} found)"
+            if isinstance(input_port, list):
+                if len(input_port) == 0:
+                    port_info = "no ports selected"
+                else:
+                    port_info = f"{len(input_port)} port(s) selected"
+            elif input_port is None:
+                port_info = f"all ports ({len(self.midi_input.connected_ports) if self.midi_input else 0} found)"
             else:
                 port_info = self.midi_input.current_input_name if self.midi_input else str(input_port)
             print(colored(f'✓ MIDI input: {port_info}', Colors.GREEN))
         else:
-            print(colored('⚠ No MIDI input ports available', Colors.YELLOW))
+            print(colored('⚠ No MIDI input ports connected', Colors.YELLOW))
 
         # Note: Automatic device monitoring has been removed in favor of manual refresh
         # Users can click the "Refresh Devices" button in the UI to update the device list
@@ -2250,44 +2410,138 @@ class StrummerWebSocketServer(TabletReaderBase):
 
         # Start HTTPS server if port is configured
         if self.https_port:
+            print(colored(f'[DEBUG] Attempting to start HTTPS server on port {self.https_port}', Colors.GRAY))
             # Generate self-signed certificate if it doesn't exist
-            if generate_self_signed_cert(self.ssl_cert_file, self.ssl_key_file):
+            cert_result = generate_self_signed_cert(self.ssl_cert_file, self.ssl_key_file)
+            print(colored(f'[DEBUG] Certificate generation result: {cert_result}', Colors.GRAY))
+            if cert_result:
                 try:
-                    # Create SSL context
-                    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                    print(colored('[DEBUG] Creating SSL context...', Colors.GRAY))
+                    # Create SSL context with more permissive settings for self-signed cert
+                    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                     ssl_context.load_cert_chain(self.ssl_cert_file, self.ssl_key_file)
+                    # Don't require client certificates
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+
+                    # Python 3.13 compatibility - set minimum TLS version
+                    try:
+                        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    except AttributeError:
+                        pass  # Older Python versions
+
+                    # Set options for better compatibility
+                    ssl_context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3
+                    print(colored('[DEBUG] SSL context created successfully', Colors.GRAY))
 
                     # Start HTTPS server with SSL context
-                    self._https_server = await asyncio.start_server(
-                        self._handle_http_request,
-                        "0.0.0.0",
-                        self.https_port,
-                        ssl=ssl_context
-                    )
+                    # For Python 3.13, we need to use a workaround for SSL
+                    print(colored('[DEBUG] Starting HTTPS server (Python 3.13 compatible mode)...', Colors.GRAY))
+
+                    # Try with ssl_handshake_timeout parameter (Python 3.11+)
+                    try:
+                        self._https_server = await asyncio.start_server(
+                            self._handle_http_request,
+                            "0.0.0.0",
+                            self.https_port,
+                            ssl=ssl_context,
+                            backlog=100,
+                            reuse_address=True,
+                            ssl_handshake_timeout=60.0  # Increase timeout for debugging
+                        )
+                    except TypeError:
+                        # Fallback for older Python without ssl_handshake_timeout
+                        self._https_server = await asyncio.start_server(
+                            self._handle_http_request,
+                            "0.0.0.0",
+                            self.https_port,
+                            ssl=ssl_context,
+                            backlog=100,
+                            reuse_address=True
+                        )
+
+                    print(colored('[DEBUG] asyncio.start_server returned successfully', Colors.GRAY))
                     print(colored(f'✓ HTTPS server listening on port {self.https_port}', Colors.GREEN))
                     print(colored(f'  Certificate: {self.ssl_cert_file}', Colors.CYAN))
                     print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}https://localhost:{self.https_port}{RESET}')
                     if local_ip:
                         print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}https://{local_ip}:{self.https_port}{RESET}')
                     print(colored('  Note: Self-signed certificate will show browser warnings', Colors.YELLOW))
+                    print(colored('  Debug: SSL context created, waiting for connections...', Colors.GRAY))
                 except Exception as e:
+                    import traceback
                     print(colored(f'⚠ Failed to start HTTPS server: {e}', Colors.YELLOW))
+                    print(colored(f'  Traceback: {traceback.format_exc()}', Colors.GRAY))
             else:
                 print(colored('⚠ HTTPS server disabled (certificate generation failed)', Colors.YELLOW))
 
-        # Start WebSocket server
-        self._ws_server = await websockets.serve(
-            self._handle_client,
-            "0.0.0.0",
-            self.ws_port
-        )
-        self.server = self._ws_server  # Keep backward compatibility
+        # Start WebSocket server (plain)
+        if self.ws_port:
+            self._ws_server = await websockets.serve(
+                self._handle_client,
+                "0.0.0.0",
+                self.ws_port
+            )
+            self.server = self._ws_server  # Keep backward compatibility
 
-        print(colored(f'✓ WebSocket server listening on port {self.ws_port}', Colors.GREEN))
-        print(colored(f'  Throttle: {self.event_bus.throttle_ms}ms', Colors.CYAN))
-        print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://localhost:{self.ws_port}{RESET}')
-        if local_ip:
-            print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://{local_ip}:{self.ws_port}{RESET}')
+            print(colored(f'✓ WebSocket server listening on port {self.ws_port}', Colors.GREEN))
+            print(colored(f'  Throttle: {self.event_bus.throttle_ms}ms', Colors.CYAN))
+            print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://localhost:{self.ws_port}{RESET}')
+            if local_ip:
+                print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://{local_ip}:{self.ws_port}{RESET}')
+
+        # Start Secure WebSocket server (WSS) if port is configured
+        if self.wss_port:
+            print(colored(f'[DEBUG] Attempting to start WSS server on port {self.wss_port}', Colors.GRAY))
+            # Generate self-signed certificate if it doesn't exist (reuse same certs as HTTPS)
+            cert_result = generate_self_signed_cert(self.ssl_cert_file, self.ssl_key_file)
+            print(colored(f'[DEBUG] Certificate generation result: {cert_result}', Colors.GRAY))
+            if cert_result:
+                try:
+                    print(colored('[DEBUG] Creating SSL context for WSS...', Colors.GRAY))
+                    # Create SSL context for WebSocket
+                    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    ssl_context.load_cert_chain(self.ssl_cert_file, self.ssl_key_file)
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+
+                    # Python 3.13 compatibility
+                    try:
+                        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    except AttributeError:
+                        pass
+
+                    ssl_context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3
+                    print(colored('[DEBUG] SSL context for WSS created successfully', Colors.GRAY))
+
+                    # Start secure WebSocket server
+                    self._wss_server = await websockets.serve(
+                        self._handle_client,
+                        "0.0.0.0",
+                        self.wss_port,
+                        ssl=ssl_context
+                    )
+
+                    print(colored(f'✓ Secure WebSocket server listening on port {self.wss_port}', Colors.GREEN))
+                    print(colored(f'  Certificate: {self.ssl_cert_file}', Colors.CYAN))
+                    print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}wss://localhost:{self.wss_port}{RESET}')
+                    if local_ip:
+                        print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}wss://{local_ip}:{self.wss_port}{RESET}')
+                    print(colored('  Note: Self-signed certificate will show warnings', Colors.YELLOW))
+                except Exception as e:
+                    import traceback
+                    print(colored(f'⚠ Failed to start WSS server: {e}', Colors.YELLOW))
+                    print(colored(f'  Traceback: {traceback.format_exc()}', Colors.GRAY))
+            else:
+                print(colored('⚠ WSS server disabled (certificate generation failed)', Colors.YELLOW))
+
+        if not self.ws_port and not self.wss_port:
+            print(colored('⚠ No WebSocket server configured (both ws_port and wss_port are None)', Colors.YELLOW))
+
+        # Start keyboard listener if configured
+        if self.keyboard_listener:
+            self.keyboard_listener.start()
+
         print(colored('Press Ctrl+C to stop', Colors.GRAY))
 
         # Start reading tablet data in a separate thread
@@ -2306,6 +2560,9 @@ class StrummerWebSocketServer(TabletReaderBase):
             pass
         finally:
             print(colored('Cleaning up servers...', Colors.GRAY))
+            # Stop keyboard listener
+            if self.keyboard_listener:
+                self.keyboard_listener.stop()
             # Stop tablet HID reader first (stop_sync sets is_running=False and joins reader threads)
             if self._tablet_initialized:
                 self.stop_sync()
@@ -2437,6 +2694,12 @@ def main():
     )
 
     parser.add_argument(
+        '--wss-port',
+        type=int,
+        help='Secure WebSocket server port with SSL (optional)'
+    )
+
+    parser.add_argument(
         '--http-port',
         type=int,
         help='HTTP server port for serving webapps (optional)'
@@ -2543,6 +2806,9 @@ def main():
     effective_ws_port = args.ws_port if args.ws_port != 8081 else (
         config.ws_port if config and config.ws_port else 8081
     )
+    effective_wss_port = args.wss_port or (
+        config.wss_port if config and hasattr(config, 'wss_port') else None
+    )
     effective_http_port = args.http_port or (
         config.http_port if config else None
     )
@@ -2585,6 +2851,8 @@ def main():
         print(colored(f'Device config: (waiting for device)', Colors.YELLOW))
         print(colored(f'Search directory: {search_dir}', Colors.GRAY))
     print(colored(f'WebSocket port: {effective_ws_port}', Colors.GRAY))
+    if effective_wss_port:
+        print(colored(f'Secure WebSocket port: {effective_wss_port}', Colors.GRAY))
     if effective_http_port:
         print(colored(f'HTTP port: {effective_http_port}', Colors.GRAY))
     if effective_https_port:
@@ -2607,6 +2875,7 @@ def main():
         tablet_config_path=device_config_path,
         strummer_config_path=config_path,
         ws_port=effective_ws_port,
+        wss_port=effective_wss_port,
         http_port=effective_http_port,
         https_port=effective_https_port,
         throttle_ms=effective_throttle,

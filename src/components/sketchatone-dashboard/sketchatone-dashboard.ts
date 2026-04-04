@@ -43,8 +43,8 @@ import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
 // MIDI devices config component
 import '../midi-devices-config/midi-devices-config.js';
 
-// Chord progressions manager component
-import '../chord-progressions-manager/chord-progressions-manager.js';
+// Chord progressions component
+import '../chord-progression-creator/chord-progression-creator.js';
 
 // Panel visibility management
 import './panel-toggle-bar.js';
@@ -97,7 +97,13 @@ export class SketchatoneDashboard extends LitElement {
 
   @state()
   private websocketUrl = typeof window !== 'undefined'
-    ? `ws://${window.location.hostname}:8081`
+    ? (() => {
+        // Use wss:// if page is loaded over https://, otherwise use ws://
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // Use port 8082 for wss://, 8081 for ws://
+        const port = protocol === 'wss:' ? '8082' : '8081';
+        return `${protocol}//${window.location.hostname}:${port}`;
+      })()
     : 'ws://localhost:8081';
 
   @state()
@@ -643,12 +649,13 @@ export class SketchatoneDashboard extends LitElement {
    * Handle MIDI devices apply
    */
   private handleMidiDevicesApply(e: CustomEvent) {
-    const { inputPort, outputPort } = e.detail;
+    const { inputPorts, outputPort } = e.detail;
 
-    // Update MIDI input port if specified (server will reconnect)
-    // null = connect to all ports, number = connect to specific port
-    if (inputPort !== undefined) {
-      this.client.updateConfig('midi.midiInputId', inputPort);
+    // Update MIDI input ports if specified (server will reconnect)
+    // Array of port IDs = connect to those specific ports
+    // Empty array = disconnect all inputs
+    if (inputPorts !== undefined) {
+      this.client.updateConfig('midi.midiInputId', inputPorts);
     }
 
     // Update MIDI output port if specified and changed
@@ -1136,10 +1143,10 @@ export class SketchatoneDashboard extends LitElement {
           ${this.panelVisibility.chordProgressions ? html`
             <dashboard-panel title="Chord Progressions" panelId="chordProgressions" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('chordProgressions')}>
-              <chord-progressions-manager
+              <chord-progression-creator
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 @progressions-change=${this.handleChordProgressionsChange}>
-              </chord-progressions-manager>
+              </chord-progression-creator>
             </dashboard-panel>
           ` : ''}
 

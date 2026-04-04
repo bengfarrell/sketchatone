@@ -241,6 +241,71 @@ class RtMidiInput:
             print(f"[RtMidiInput] Failed to connect to all ports: {e}")
             return False
 
+    def connect_multiple(self, port_ids: List[int]) -> bool:
+        """
+        Connect to multiple specific MIDI input ports by their IDs.
+
+        Args:
+            port_ids: List of port indices to connect to
+
+        Returns:
+            True if at least one port was connected successfully
+        """
+        try:
+            # Close existing connections
+            self.disconnect()
+
+            if not port_ids:
+                print("[RtMidiInput] No ports specified - staying disconnected")
+                return False
+
+            # Get available ports
+            temp_in = rtmidi.MidiIn()
+            port_count = temp_in.get_port_count()
+            del temp_in
+
+            if port_count == 0:
+                print("[RtMidiInput] No MIDI input ports available")
+                return False
+
+            connected_count = 0
+
+            # Connect to each specified port
+            for port_id in port_ids:
+                if not (0 <= port_id < port_count):
+                    print(f"[RtMidiInput] Skipping invalid port index: {port_id}")
+                    continue
+
+                midi_in = rtmidi.MidiIn()
+                port_name = midi_in.get_port_name(port_id)
+
+                # Set up callback with port info
+                midi_in.set_callback(self._create_callback(port_name))
+
+                midi_in.open_port(port_id)
+                self._midi_inputs[port_id] = midi_in
+                self._connected_ports.append({'id': port_id, 'name': port_name})
+                connected_count += 1
+
+                print(f"[RtMidiInput] Connected to port {port_id}: {port_name}")
+
+            if connected_count == 0:
+                print("[RtMidiInput] No valid ports were connected")
+                return False
+
+            self._is_connected = True
+            self._current_input_name = f"Selected ports ({connected_count})"
+            self._connect_all_mode = False
+            self._last_requested_port = port_ids  # Store list for reconnection
+            with self._lock:
+                self._notes = []
+
+            self._start_hot_swap_monitoring()
+            return True
+        except Exception as e:
+            print(f"[RtMidiInput] Failed to connect to multiple ports: {e}")
+            return False
+
     def connect(self, input_port: Union[str, int]) -> bool:
         """
         Connect to a specific MIDI input port.
@@ -481,7 +546,7 @@ class RtMidiInput:
             self._schedule_next_check()
 
     def _attempt_reconnection(self) -> None:
-        """Attempt to reconnect to the last requested port."""
+        """Attempt to reconnect to the last requested port(s)."""
         if self._is_connected:
             return
 
@@ -490,8 +555,13 @@ class RtMidiInput:
                 print("[RtMidiInput] Attempting to reconnect to all ports")
                 success = self.connect_all(self._last_exclude_ports)
             elif self._last_requested_port is not None:
-                print(f"[RtMidiInput] Attempting to reconnect to: {self._last_requested_port}")
-                success = self.connect(self._last_requested_port)
+                # Check if it's a list of port IDs
+                if isinstance(self._last_requested_port, list):
+                    print(f"[RtMidiInput] Attempting to reconnect to ports: {self._last_requested_port}")
+                    success = self.connect_multiple(self._last_requested_port)
+                else:
+                    print(f"[RtMidiInput] Attempting to reconnect to: {self._last_requested_port}")
+                    success = self.connect(self._last_requested_port)
             else:
                 return
 
