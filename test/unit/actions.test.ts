@@ -9,6 +9,7 @@ import { Actions, ChordProgressionState } from '../../src/core/actions.js';
 import { Strummer } from '../../src/core/strummer.js';
 import { MidiStrummerConfig } from '../../src/models/midi-strummer-config.js';
 import { StrummerConfig } from '../../src/models/strummer-config.js';
+import { TEST_CHORD_PROGRESSIONS } from '../helpers/test-data.js';
 
 describe('ChordProgressionState', () => {
   describe('initial state', () => {
@@ -22,7 +23,7 @@ describe('ChordProgressionState', () => {
 
   describe('loadProgression', () => {
     it('should load a valid progression', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       const result = state.loadProgression('c-major-pop');
       expect(result).toBe(true);
       expect(state.progressionName).toBe('c-major-pop');
@@ -31,7 +32,7 @@ describe('ChordProgressionState', () => {
     });
 
     it('should return false for invalid progression', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       const result = state.loadProgression('nonexistent-progression');
       expect(result).toBe(false);
     });
@@ -39,7 +40,7 @@ describe('ChordProgressionState', () => {
 
   describe('setIndex', () => {
     it('should wrap around when index exceeds length', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       state.loadProgression('c-major-pop');
       const numChords = state.chords.length;
       const actual = state.setIndex(numChords + 2);
@@ -49,7 +50,7 @@ describe('ChordProgressionState', () => {
 
   describe('incrementIndex', () => {
     it('should increment index', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       state.loadProgression('c-major-pop');
       state.incrementIndex(1);
       expect(state.currentIndex).toBe(1);
@@ -58,7 +59,7 @@ describe('ChordProgressionState', () => {
     });
 
     it('should wrap around when decrementing from 0', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       state.loadProgression('c-major-pop');
       const numChords = state.chords.length;
       state.incrementIndex(-1);
@@ -68,7 +69,7 @@ describe('ChordProgressionState', () => {
 
   describe('getCurrentChord', () => {
     it('should return current chord', () => {
-      const state = new ChordProgressionState();
+      const state = new ChordProgressionState(TEST_CHORD_PROGRESSIONS);
       state.loadProgression('c-major-pop');
       const chord = state.getCurrentChord();
       expect(chord).not.toBeNull();
@@ -293,7 +294,7 @@ describe('Actions chord progression', () => {
     config.strummer.strumming.lowerNoteSpread = 0;
     config.strummer.strumming.upperNoteSpread = 0;
 
-    const actions = new Actions(config, strummer);
+    const actions = new Actions(config, strummer, TEST_CHORD_PROGRESSIONS);
 
     const result = actions.execute(
       ['set-chord-in-progression', 'c-major-pop', 0],
@@ -310,7 +311,7 @@ describe('Actions chord progression', () => {
     config.strummer.strumming.lowerNoteSpread = 0;
     config.strummer.strumming.upperNoteSpread = 0;
 
-    const actions = new Actions(config, strummer);
+    const actions = new Actions(config, strummer, TEST_CHORD_PROGRESSIONS);
 
     // First set to index 0
     actions.execute(

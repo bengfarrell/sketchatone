@@ -156,9 +156,7 @@ class KeyboardListener:
         try:
             from pynput import keyboard
 
-            print('[Keyboard] Starting macOS keyboard listener')
-            print(f'[Keyboard] Key mappings: {self.mappings}')
-            print('[Keyboard] Note: May require Accessibility permissions or sudo')
+            print('[Keyboard] Listener enabled')
 
             def on_press(key):
                 try:

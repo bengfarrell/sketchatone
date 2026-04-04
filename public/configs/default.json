@@ -1,4 +1,5 @@
 {
+  "_comment": "Default Sketchatone configuration. Works with all CLI commands (server, midi_strummer, strum_event_viewer). Each command uses only the sections it needs and ignores the rest.",
   "note_duration": {
     "min": 0.15,
     "max": 1.5,
@@ -123,5 +124,28 @@
       }
     ],
     "startup_rules": []
+  },
+  "midi": {
+    "_comment": "MIDI backend configuration. Use 'rtmidi' for general use, 'jack' for Zynthian or other JACK-based systems.",
+    "midi_output_backend": "rtmidi",
+    "midi_output_id": null,
+    "midi_input_id": null,
+    "default_note_duration": 1.5
+  },
+  "keyboard": {
+    "_comment": "Optional keyboard input to simulate tablet buttons. Useful for testing without a physical tablet.",
+    "mappings": {
+      "1": "button:1",
+      "2": "button:2",
+      "3": "button:3",
+      "4": "button:4"
+    }
+  },
+  "server": {
+    "_comment": "WebSocket and HTTP server configuration. Only used by the 'server' CLI command.",
+    "device": "devices",
+    "http_port": null,
+    "ws_port": 8081,
+    "ws_message_throttle": 150
   }
 }

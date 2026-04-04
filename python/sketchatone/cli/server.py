@@ -1389,7 +1389,6 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Support both 'throttleMs' (webapp format) and 'throttle' (legacy)
                 throttle = data.get('throttleMs', data.get('throttle', 150))
                 self.event_bus.set_throttle(throttle)
-                print(colored(f'Throttle updated to {throttle}ms', Colors.CYAN))
             
             elif msg_type == 'update-config':
                 # Handle path-based config updates (like Node.js server)
@@ -2326,28 +2325,12 @@ class StrummerWebSocketServer(TabletReaderBase):
     
     async def run_server(self) -> None:
         """Run the WebSocket and HTTP servers"""
-        # Enable asyncio debug logging for SSL issues
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(levelname)s:%(name)s:%(message)s'
-        )
-        asyncio_logger = logging.getLogger('asyncio')
-        asyncio_logger.setLevel(logging.DEBUG)
-
-        # Enable SSL debug logging
-        ssl_logger = logging.getLogger('ssl')
-        ssl_logger.setLevel(logging.DEBUG)
-
         self._main_loop = asyncio.get_event_loop()
-        # Enable debug mode to catch SSL errors
-        self._main_loop.set_debug(True)
 
-        # Set exception handler to catch SSL errors
+        # Set exception handler for errors
         def exception_handler(loop, context):
-            print(f"[ASYNCIO EXCEPTION] {context}")
             if 'exception' in context:
-                import traceback
-                print(f"[TRACEBACK] {''.join(traceback.format_exception(type(context['exception']), context['exception'], context['exception'].__traceback__))}")
+                print(f"[ERROR] {context['message']}: {context['exception']}")
 
         self._main_loop.set_exception_handler(exception_handler)
 
@@ -2403,10 +2386,8 @@ class StrummerWebSocketServer(TabletReaderBase):
                 self.http_port
             )
             print(colored(f'✓ HTTP server listening on port {self.http_port}', Colors.GREEN))
-            print(colored(f'  Serving: {self.public_dir}', Colors.CYAN))
-            print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://localhost:{self.http_port}{RESET}')
             if local_ip:
-                print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.BLUE}http://{local_ip}:{self.http_port}{RESET}')
+                print(colored(f'  http://{local_ip}:{self.http_port}', Colors.CYAN))
 
         # Start HTTPS server if port is configured
         if self.https_port:
@@ -2485,10 +2466,8 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.server = self._ws_server  # Keep backward compatibility
 
             print(colored(f'✓ WebSocket server listening on port {self.ws_port}', Colors.GREEN))
-            print(colored(f'  Throttle: {self.event_bus.throttle_ms}ms', Colors.CYAN))
-            print(colored(f'  Local:   ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://localhost:{self.ws_port}{RESET}')
             if local_ip:
-                print(colored(f'  Network: ', Colors.WHITE) + f'{UNDERLINE}{Colors.MAGENTA}ws://{local_ip}:{self.ws_port}{RESET}')
+                print(colored(f'  ws://{local_ip}:{self.ws_port}', Colors.CYAN))
 
         # Start Secure WebSocket server (WSS) if port is configured
         if self.wss_port:
@@ -2542,16 +2521,12 @@ class StrummerWebSocketServer(TabletReaderBase):
         if self.keyboard_listener:
             self.keyboard_listener.start()
 
-        print(colored('Press Ctrl+C to stop', Colors.GRAY))
-
         # Start reading tablet data in a separate thread
         # Skip tablet reader if no device path and no polling (dev mode)
         if self._tablet_initialized or self.poll_ms is not None:
             import threading
             tablet_thread = threading.Thread(target=self._run_tablet_reader, daemon=True)
             tablet_thread.start()
-        else:
-            print(colored('⚠ Skipping tablet reader (dev mode)', Colors.YELLOW))
 
         # Keep server running
         try:
@@ -2616,7 +2591,6 @@ class StrummerWebSocketServer(TabletReaderBase):
                 print(colored('Failed to initialize tablet after polling', Colors.RED))
                 return  # Still no device, give up
 
-        print(colored('Starting tablet reader...', Colors.CYAN))
         try:
             # Initialize the HID reader
             self.initialize_reader_sync()
@@ -2633,7 +2607,7 @@ class StrummerWebSocketServer(TabletReaderBase):
 
             self.is_running = True
             self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
-            print(colored('✓ Tablet reader started', Colors.GREEN))
+            print(colored('✓ Tablet connected', Colors.GREEN))
 
             # Keep thread alive while running
             while self.is_running:
@@ -2838,21 +2812,9 @@ def main():
             poll_ms=effective_poll
         )
 
-    print(colored(f'=== Strummer WebSocket Server v{SKETCHATONE_VERSION} ===', Colors.CYAN))
+    print(colored(f'Sketchatone Server v{SKETCHATONE_VERSION}', Colors.CYAN))
     if args.dev:
-        print(colored('⚠ DEV MODE: Running without tablet device (UI only)', Colors.YELLOW))
-    if config_path:
-        print(colored(f'Config: {config_path}', Colors.GRAY))
-    if args.dev:
-        print(colored(f'Device config: (dev mode - no device)', Colors.GRAY))
-    elif device_config_path:
-        print(colored(f'Device config: {device_config_path}', Colors.GRAY))
-    else:
-        print(colored(f'Device config: (waiting for device)', Colors.YELLOW))
-        print(colored(f'Search directory: {search_dir}', Colors.GRAY))
-    print(colored(f'WebSocket port: {effective_ws_port}', Colors.GRAY))
-    if effective_wss_port:
-        print(colored(f'Secure WebSocket port: {effective_wss_port}', Colors.GRAY))
+        print(colored('Dev mode (no tablet)', Colors.YELLOW))
     if effective_http_port:
         print(colored(f'HTTP port: {effective_http_port}', Colors.GRAY))
     if effective_https_port:

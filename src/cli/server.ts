@@ -1295,9 +1295,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
       if (this.midiInput && this.midiInput.isConnected) {
         const connectedPorts = this.midiInput.connectedPorts;
         currentInputPorts.push(...connectedPorts.map(p => p.id));
-        console.log(chalk.gray(`[Get MIDI Devices] MIDI input connected: ${this.midiInput.isConnected}, ports: ${JSON.stringify(connectedPorts)}`));
-      } else {
-        console.log(chalk.gray(`[Get MIDI Devices] MIDI input not connected or not initialized`));
       }
 
       // Build exclusion list (same logic as setupMidiInput)
@@ -1312,7 +1309,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
         if (matchingPort) {
           currentOutputPort = matchingPort.id;
         }
-        console.log(chalk.gray(`[Get MIDI Devices] MIDI output connected: ${outputName}, matched port: ${currentOutputPort}`));
       }
 
       const response = {
@@ -1326,7 +1322,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
         },
       };
 
-      console.log(chalk.gray(`[Get MIDI Devices] Sending response: ${JSON.stringify(response, null, 2)}`));
       client.send(JSON.stringify(response));
     } catch (error) {
       console.error(chalk.red('[Get MIDI Devices] Error:'), error);
@@ -1392,7 +1387,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
         },
       });
 
-      console.log(chalk.gray(`[Broadcast MIDI Devices] Broadcasting to ${this.wss.clients.size} client(s)`));
       this.wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
           client.send(message);

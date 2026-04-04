@@ -28,7 +28,7 @@ import {
   generateRuleId,
 } from '../../models/action-rules.js';
 import { ActionDefinition } from '../../core/actions.js';
-import { CHORD_PROGRESSION_PRESETS, getChordProgressionPresetNames, getAllChordProgressionNames } from '../../models/strummer-features.js';
+import { getAllChordProgressionNames } from '../../models/strummer-features.js';
 
 // Import Spectrum components
 import '@spectrum-web-components/button/sp-button.js';
@@ -201,9 +201,8 @@ export class ActionRulesConfigComponent extends LitElement {
           label: 'Progression',
           type: 'select',
           defaultValue: 'c-major-pop',
-          // Note: This will use presets only. For full list including custom progressions,
-          // the dropdown is rendered dynamically in renderParamFields()
-          options: getChordProgressionPresetNames().map((n) => ({ value: n, label: n })),
+          // Note: Options are populated dynamically from config in renderParamFields()
+          options: [],
         },
       ],
     },
