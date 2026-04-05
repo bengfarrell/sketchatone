@@ -5,7 +5,9 @@ description: Supported chord types and common progressions
 
 # Chords & Progressions
 
-Sketchatone supports a wide variety of chord types and includes preset progressions for common musical styles.
+Sketchatone supports a wide variety of chord types. Chord progressions are defined in the configuration file (`chordProgressions` section).
+
+**Note:** Starting in v0.3.0, chord progressions are no longer hardcoded. All progressions must be defined in your configuration file. See `public/configs/default.json` for standard progressions.
 
 ## Chord Notation
 
@@ -56,7 +58,9 @@ Chords are specified using standard notation:
 | Suspended 2 | `sus2` | `Dsus2` |
 | Suspended 4 | `sus4` | `Asus4` |
 
-## Preset Progressions
+## Standard Progressions
+
+The default configuration (`public/configs/default.json`) includes these standard progressions:
 
 ### Pop/Rock
 
@@ -66,6 +70,8 @@ Chords are specified using standard notation:
 | `g-major-pop` | G | G, D, Em, C | I-V-vi-IV |
 | `d-major-pop` | D | D, A, Bm, G | I-V-vi-IV |
 | `a-major-pop` | A | A, E, F#m, D | I-V-vi-IV |
+| `rock-classic` | E | E, A, D, B | Classic rock |
+| `rock-power` | E | E5, G5, A5, C5, D5 | Power chords |
 
 ### Minor Key
 
@@ -73,12 +79,39 @@ Chords are specified using standard notation:
 |--------|-----|--------|-------------|
 | `a-minor-pop` | Am | Am, F, C, G | i-VI-III-VII |
 | `e-minor-pop` | Em | Em, C, G, D | i-VI-III-VII |
+| `a-minor-sad` | Am | Am, Em, F, C, G, Dm, E | Extended minor |
+| `d-minor-pop` | Dm | Dm, Bb, F, C, A | i-VI-III-VII |
+
+### Jazz
+
+| Preset | Key | Chords | Progression |
+|--------|-----|--------|-------------|
+| `c-major-jazz` | C | Cmaj7, Dm7, Em7, Fmaj7, G7, Am7, Bm7 | Diatonic 7ths |
+| `jazz-251-c` | C | Dm7, G7, Cmaj7, Em7, A7 | II-V-I in C |
+| `jazz-251-f` | F | Gm7, C7, Fmaj7, Am7, D7 | II-V-I in F |
+
+### Blues
+
+| Preset | Key | Chords | Progression |
+|--------|-----|--------|-------------|
+| `blues-e` | E | E7, A7, B7 | 12-bar blues |
+| `blues-a` | A | A7, D7, E7 | 12-bar blues |
+| `blues-g` | G | G7, C7, D7 | 12-bar blues |
+
+### Gospel
+
+| Preset | Key | Chords | Progression |
+|--------|-----|--------|-------------|
+| `gospel-c` | C | C, Am7, Dm7, G7, F | Gospel progression |
+| `gospel-g` | G | G, Em7, Am7, D7, C | Gospel progression |
 
 ### Classic
 
 | Preset | Key | Chords | Progression |
 |--------|-----|--------|-------------|
 | `c-major-50s` | C | C, Am, F, G | I-vi-IV-V |
+
+**Note:** These progressions are examples from `public/configs/default.json`. You can customize, remove, or add your own progressions in your configuration file.
 
 ## Using Chords in Configuration
 
@@ -146,27 +179,30 @@ Map button groups to progressions:
 }
 ```
 
-## Custom Chord Progressions
+## Defining Chord Progressions
 
-You can define your own chord progressions in the configuration file using the `customChordProgressions` field. Custom progressions can be used anywhere a preset progression is used, and they take precedence over built-in presets if they share the same name.
+Define chord progressions in the configuration file using the `chordProgressions` field. All progressions must be defined in the config - there are no built-in presets.
 
-### Defining Custom Progressions
+### Adding Progressions
 
-Add a `customChordProgressions` object at the root level of your configuration:
+Add a `chordProgressions` object at the root level of your configuration:
 
 ```json
 {
-  "customChordProgressions": {
+  "chordProgressions": {
     "my-custom-song": ["Am", "F", "C", "G"],
     "my-jazz-tune": ["Cmaj7", "Am7", "Dm7", "G7"],
-    "my-blues": ["A7", "D7", "E7", "A7"]
+    "my-blues": ["A7", "D7", "E7", "A7"],
+    "c-major-pop": ["C", "G", "Am", "F"]
   }
 }
 ```
 
-### Using Custom Progressions
+You can start with the progressions from `public/configs/default.json` and customize them for your needs.
 
-Reference your custom progressions by name in action rules:
+### Using Progressions
+
+Reference your progressions by name in action rules:
 
 ```json
 {
@@ -197,11 +233,12 @@ Reference your custom progressions by name in action rules:
 
 ### Notes
 
-- Custom progression names can use any string (e.g., `"my-song"`, `"verse-1"`, `"chorus"`)
+- Progression names can use any string (e.g., `"my-song"`, `"verse-1"`, `"chorus"`)
 - Each progression is an array of chord notations
-- Custom progressions override built-in presets with the same name
 - You can have any number of chords in a progression
 - All standard chord notations are supported (see [Chord Notation](#chord-notation) above)
+- If a progression used in an action rule is not defined, the action will fail
+- Copy progressions from `public/configs/default.json` as a starting point
 
 ## See Also
 

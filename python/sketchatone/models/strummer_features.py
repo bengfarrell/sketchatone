@@ -61,88 +61,15 @@ class StrumReleaseConfig:
 
 
 
-# Chord progression presets for tablet buttons
-# Based on midi-strummer's chord_progressions.json
-CHORD_PROGRESSION_PRESETS: Dict[str, List[str]] = {
-    # Major key progressions
-    'c-major-basic': ['C', 'F', 'G', 'Am'],
-    'c-major-pop': ['C', 'G', 'Am', 'F'],           # I-V-vi-IV
-    'c-major-jazz': ['Cmaj7', 'Dm7', 'Em7', 'Fmaj7', 'G7', 'Am7', 'Bm7'],
-    'c-major-50s': ['C', 'Am', 'F', 'G'],           # I-vi-IV-V
-    'g-major-basic': ['G', 'C', 'D', 'Em'],
-    'g-major-pop': ['G', 'D', 'Em', 'C'],           # I-V-vi-IV in G
-    'g-major-jazz': ['Gmaj7', 'Am7', 'Bm7', 'Cmaj7', 'D7', 'Em7', 'F#m7'],
-    'd-major-basic': ['D', 'G', 'A', 'Bm'],
-    'd-major-pop': ['D', 'A', 'Bm', 'G'],           # I-V-vi-IV in D
-    'd-major-jazz': ['Dmaj7', 'Em7', 'F#m7', 'Gmaj7', 'A7', 'Bm7', 'C#m7'],
-    'a-major-basic': ['A', 'D', 'E', 'F#m'],
-    'a-major-pop': ['A', 'E', 'F#m', 'D'],          # I-V-vi-IV in A
-    'e-major-basic': ['E', 'A', 'B', 'C#m'],
-    'e-major-pop': ['E', 'B', 'C#m', 'A'],          # I-V-vi-IV in E
-    'f-major-basic': ['F', 'Bb', 'C', 'Dm'],
-    'f-major-pop': ['F', 'C', 'Dm', 'Bb'],          # I-V-vi-IV in F
-
-    # Minor key progressions
-    'a-minor-basic': ['Am', 'Dm', 'Em', 'F', 'E'],
-    'a-minor-pop': ['Am', 'F', 'C', 'G', 'E'],      # i-VI-III-VII
-    'a-minor-sad': ['Am', 'Em', 'F', 'C', 'G', 'Dm', 'E'],
-    'e-minor-basic': ['Em', 'Am', 'Bm', 'C', 'B'],
-    'e-minor-pop': ['Em', 'C', 'G', 'D', 'B'],      # i-VI-III-VII in Em
-    'd-minor-basic': ['Dm', 'Gm', 'Am', 'Bb', 'A'],
-    'd-minor-pop': ['Dm', 'Bb', 'F', 'C', 'A'],     # i-VI-III-VII in Dm
-
-    # Blues progressions
-    'blues-e': ['E7', 'A7', 'B7'],
-    'blues-a': ['A7', 'D7', 'E7'],
-    'blues-g': ['G7', 'C7', 'D7'],
-
-    # Rock progressions
-    'rock-classic': ['E', 'A', 'D', 'B'],
-    'rock-power': ['E5', 'G5', 'A5', 'C5', 'D5'],
-
-    # Jazz progressions
-    'jazz-251-c': ['Dm7', 'G7', 'Cmaj7', 'Em7', 'A7'],
-    'jazz-251-f': ['Gm7', 'C7', 'Fmaj7', 'Am7', 'D7'],
-
-    # Gospel progressions
-    'gospel-c': ['C', 'Am7', 'Dm7', 'G7', 'F'],
-    'gospel-g': ['G', 'Em7', 'Am7', 'D7', 'C'],
-}
-
-
-def get_chord_progression_preset_names() -> List[str]:
-    """Get list of available chord progression preset names"""
-    return list(CHORD_PROGRESSION_PRESETS.keys())
-
-
-def merge_chord_progressions(custom_progressions: Optional[Dict[str, List[str]]] = None) -> Dict[str, List[str]]:
+def get_all_chord_progression_names(chord_progressions: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """
-    Merge custom chord progressions with built-in presets.
-    Custom progressions take precedence over presets with the same name.
+    Get all chord progression names from config.
+    If no progressions provided, returns empty list.
 
     Args:
-        custom_progressions: Custom chord progressions from config
-
-    Returns:
-        Merged progressions dictionary
-    """
-    if not custom_progressions:
-        return CHORD_PROGRESSION_PRESETS.copy()
-
-    return {
-        **CHORD_PROGRESSION_PRESETS,
-        **custom_progressions
-    }
-
-
-def get_all_chord_progression_names(custom_progressions: Optional[Dict[str, List[str]]] = None) -> List[str]:
-    """
-    Get list of available progression names including custom progressions.
-
-    Args:
-        custom_progressions: Custom chord progressions from config
+        chord_progressions: Chord progressions from config
 
     Returns:
         List of all progression names
     """
-    return list(merge_chord_progressions(custom_progressions).keys())
+    return list((chord_progressions or {}).keys())

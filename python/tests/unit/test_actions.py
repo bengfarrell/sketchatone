@@ -14,67 +14,74 @@ from sketchatone.models.note import Note, NoteObject
 from sketchatone.models.midi_strummer_config import MidiStrummerConfig
 
 
+# Sample chord progressions for testing
+TEST_CHORD_PROGRESSIONS = {
+    'c-major-pop': ['C', 'G', 'Am', 'F'],
+    'c-major-basic': ['C', 'F', 'G', 'Am'],
+}
+
+
 class TestChordProgressionState:
     """Tests for ChordProgressionState class."""
     
     def test_initial_state(self):
         """Test initial state is empty."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         assert state.progression_name is None
         assert state.chords == []
         assert state.current_index == 0
-    
+
     def test_load_progression(self):
         """Test loading a valid progression."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         result = state.load_progression('c-major-pop')
         assert result is True
         assert state.progression_name == 'c-major-pop'
         assert len(state.chords) > 0
         assert state.current_index == 0
-    
+
     def test_load_invalid_progression(self):
         """Test loading an invalid progression returns False."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         result = state.load_progression('nonexistent-progression')
         assert result is False
-    
+
     def test_set_index_wraps(self):
         """Test that set_index wraps around."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         state.load_progression('c-major-pop')
         num_chords = len(state.chords)
-        
+
         # Set to index beyond length
         actual = state.set_index(num_chords + 2)
         assert actual == 2
-    
+
     def test_increment_index(self):
         """Test incrementing index."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         state.load_progression('c-major-pop')
-        
+
         state.increment_index(1)
         assert state.current_index == 1
-        
+
         state.increment_index(2)
         assert state.current_index == 3
-    
+
     def test_increment_index_negative(self):
         """Test decrementing index wraps around."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         state.load_progression('c-major-pop')
         num_chords = len(state.chords)
-        
+
         # Decrement from 0 should wrap to end
         state.increment_index(-1)
         assert state.current_index == num_chords - 1
-    
+
     def test_get_current_chord(self):
         """Test getting current chord."""
-        state = ChordProgressionState()
+        state = ChordProgressionState(TEST_CHORD_PROGRESSIONS)
         state.load_progression('c-major-pop')
-        
+
         chord = state.get_current_chord()
         assert chord is not None
         assert isinstance(chord, str)
@@ -321,34 +328,34 @@ class TestActionsToggleTranspose:
 
 class TestActionsChordProgression:
     """Tests for chord progression actions."""
-    
+
     def test_set_chord_in_progression(self):
         """Test setting chord from progression."""
         strummer = Strummer()
         config = MidiStrummerConfig()
         config.strummer.strumming.lower_note_spread = 0
         config.strummer.strumming.upper_note_spread = 0
-        
-        actions = Actions(config=config, strummer=strummer)
-        
+
+        actions = Actions(config=config, strummer=strummer, chord_progressions=TEST_CHORD_PROGRESSIONS)
+
         # Set to first chord in c-major-pop progression
         result = actions.execute(
             ['set-chord-in-progression', 'c-major-pop', 0],
             {'button': 'Test'}
         )
-        
+
         assert result is True
         assert len(strummer.notes) > 0
-    
+
     def test_increment_chord_in_progression(self):
         """Test incrementing through progression."""
         strummer = Strummer()
         config = MidiStrummerConfig()
         config.strummer.strumming.lower_note_spread = 0
         config.strummer.strumming.upper_note_spread = 0
-        
-        actions = Actions(config=config, strummer=strummer)
-        
+
+        actions = Actions(config=config, strummer=strummer, chord_progressions=TEST_CHORD_PROGRESSIONS)
+
         # First set to index 0
         actions.execute(
             ['set-chord-in-progression', 'c-major-pop', 0],

@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional, Union, List, Callable, TYPE_CHECKING
 
 from ..utils.event_emitter import EventEmitter
 from ..models.note import Note, NoteObject
-from ..models.strummer_features import CHORD_PROGRESSION_PRESETS
 
 if TYPE_CHECKING:
     from ..models.action_rules import ActionRulesConfig, TriggerType, ButtonId

@@ -105,6 +105,24 @@ python -m sketchatone.cli.server [options]
 
 ---
 
+## Running Tests
+
+Run the test suite to verify your changes:
+
+```bash
+cd python
+source venv/bin/activate
+pytest tests/
+```
+
+Or with coverage:
+
+```bash
+pytest tests/ --cov=sketchatone
+```
+
+---
+
 ## Differences from Node.js CLI
 
 | Feature | Python | Node.js |

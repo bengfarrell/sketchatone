@@ -120,3 +120,13 @@ npm run server -- --ws-port 8081 --http-port 3000
 # With device polling (hot-plug support)
 npm run server -- --poll 2000
 ```
+
+---
+
+## Running Tests
+
+Run the test suite to verify your changes:
+
+```bash
+npm test
+```

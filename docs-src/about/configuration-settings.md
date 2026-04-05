@@ -138,7 +138,8 @@ sudo systemctl restart sketchatone
 | `pitch_bend` | Pitch bend parameter mapping |
 | `strum_release` | Release trigger settings (drum sounds on pen lift) |
 | `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
-| `customChordProgressions` | Custom chord progressions (optional) |
+| `chordProgressions` | Chord progressions (required for progression actions) |
+| `keyboard` | Keyboard input mappings (optional) |
 | `midi` | MIDI backend settings |
 | `server` | Server settings |
 
@@ -304,15 +305,17 @@ See **[Action Rules](/about/action-rules/)** for complete action documentation.
 
 ---
 
-## customChordProgressions
+## chordProgressions
 
-Define custom chord progressions that can be used in action rules.
+Define chord progressions that can be used in action rules. **Required** if using chord progression actions.
+
+Starting in v0.3.0, chord progressions are no longer hardcoded. All progressions must be defined in the configuration file. The `public/configs/default.json` includes standard progressions (pop, jazz, blues, gospel, etc.) that you can copy or customize.
 
 ### Format
 
 ```json
 {
-  "customChordProgressions": {
+  "chordProgressions": {
     "progression-name": ["Chord1", "Chord2", "Chord3", ...],
     "another-progression": ["Am", "F", "C", "G"]
   }
@@ -323,10 +326,12 @@ Define custom chord progressions that can be used in action rules.
 
 ```json
 {
-  "customChordProgressions": {
+  "chordProgressions": {
     "my-song-verse": ["Am", "F", "C", "G"],
     "my-song-chorus": ["C", "G", "Am", "F"],
-    "my-jazz-tune": ["Cmaj7", "Am7", "Dm7", "G7"]
+    "my-jazz-tune": ["Cmaj7", "Am7", "Dm7", "G7"],
+    "c-major-pop": ["C", "G", "Am", "F"],
+    "blues-e": ["E7", "A7", "B7"]
   }
 }
 ```
@@ -356,10 +361,102 @@ Reference custom progressions by name in action rules:
 ```
 
 **Notes:**
-- Custom progressions can override built-in presets with the same name
 - Progression names can be any string
 - Each progression is an array of chord notation strings
 - See **[Chords & Progressions](/about/chords-and-progressions/)** for supported chord notation
+- If no progressions are defined and you use chord progression actions, those actions will fail
+- The default config file (`public/configs/default.json`) includes standard progressions you can use as a reference
+
+---
+
+## keyboard
+
+Keyboard input configuration for testing without physical tablet hardware. Maps computer keyboard keys to tablet button actions.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `enabled` | boolean | false | Whether keyboard input is enabled |
+| `mappings` | object | {} | Key-to-button mappings |
+
+### Keyboard Mappings Format
+
+The `mappings` object maps keyboard keys to button IDs:
+
+```json
+{
+  "keyboard": {
+    "enabled": true,
+    "mappings": {
+      "1": "button:1",
+      "2": "button:2",
+      "3": "button:3",
+      "4": "button:4",
+      "q": "button:primary",
+      "w": "button:secondary"
+    }
+  }
+}
+```
+
+### Key Names
+
+- **Alphanumeric**: `"a"` through `"z"`, `"0"` through `"9"`
+- **Function Keys**: `"f1"` through `"f12"` (lowercase)
+- **Special Keys**: `"space"`, `"enter"`, `"tab"`, `"escape"`, etc.
+
+### Button IDs
+
+- `"button:primary"` - Primary stylus button
+- `"button:secondary"` - Secondary stylus button
+- `"button:1"` through `"button:N"` - Tablet hardware buttons
+
+### Platform Notes
+
+- **macOS**: Requires Accessibility permissions or sudo
+- **Linux**: Requires root or input group membership
+- **Windows**: Should work without special permissions
+
+### Use Cases
+
+- **Testing without tablet**: Develop and test action rules without physical hardware
+- **Hardware-free demos**: Show Sketchatone functionality without tablet
+- **Development mode**: Combined with `--dev-mode` flag to run entirely without tablet
+
+**Example:**
+```json
+{
+  "keyboard": {
+    "enabled": true,
+    "mappings": {
+      "1": "button:1",
+      "2": "button:2",
+      "3": "button:3",
+      "4": "button:4"
+    }
+  },
+  "action_rules": {
+    "groups": [
+      {
+        "id": "chord-buttons",
+        "buttons": ["button:1", "button:2", "button:3", "button:4"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "chord-progression",
+        "group_id": "chord-buttons",
+        "action": {
+          "type": "chord-progression",
+          "progression": "a-minor-pop",
+          "octave": 4
+        }
+      }
+    ]
+  }
+}
+```
+
+With this configuration, pressing keys `1`, `2`, `3`, or `4` on your computer keyboard will trigger the chord progression action as if you pressed the physical tablet buttons.
 
 ---
 
@@ -413,8 +510,47 @@ Server configuration.
 |----------|------|---------|-------------|
 | `device` | string | "devices" | Device config directory path |
 | `http_port` | number\|null | null | HTTP server port (null = disabled) |
+| `https_port` | number\|null | null | HTTPS server port (null = disabled) |
 | `ws_port` | number\|null | null | WebSocket server port (null = disabled) |
+| `wss_port` | number\|null | null | Secure WebSocket port (null = disabled) |
 | `ws_message_throttle` | number | 150 | WebSocket throttle interval (ms) |
 | `device_finding_poll_interval` | number\|null | null | Device poll interval (ms) |
 
-**Note:** Setting `http_port` and `ws_port` to `null` disables the web dashboard for minimal resource usage.
+### HTTPS and WSS Support
+
+HTTPS and secure WebSocket (WSS) support is provided for **Android 10+ captive portal detection**. When a device connects to a WiFi hotspot, Android checks for internet connectivity by requesting specific endpoints. Sketchatone responds to these requests to prevent the device from switching to mobile data.
+
+**HTTPS Configuration:**
+```json
+{
+  "server": {
+    "http_port": 3000,
+    "https_port": 443,
+    "ws_port": 8081,
+    "wss_port": 8082
+  }
+}
+```
+
+**SSL Certificates:**
+- Self-signed certificates are automatically generated on first run
+- Stored in `~/.sketchatone/ssl/` (user install) or `/opt/sketchatone/ssl/` (system install)
+- Valid for 10 years
+- Browser warnings are expected (self-signed)
+
+**Captive Portal Endpoints:**
+The server responds to the following endpoints with `204 No Content`:
+- `/generate_204` (Android)
+- `/gen_204` (Alternative Android)
+- `/connecttest.txt` (Windows)
+- `/success.txt` (iOS)
+
+**Use Cases:**
+- **Raspberry Pi WiFi Hotspot**: Enable HTTPS/WSS to prevent Android devices from using mobile data
+- **Development**: Use HTTP/WS only (simpler, no certificate warnings)
+- **Production Hotspot**: Use HTTPS/WSS for better Android compatibility
+
+**Note:**
+- Setting ports to `null` disables that server
+- HTTPS requires port 443 or a custom port (certificate warnings on non-standard ports)
+- WSS requires a separate port from WS (both can run simultaneously)
