@@ -199,7 +199,7 @@ install_package() {
     local apt_name=$(echo "$package" | sed 's/>=.*//' | sed 's/-/_/g')
     if apt-cache show "python3-$apt_name" >/dev/null 2>&1; then
         echo "  → Installing $apt_name via apt..."
-        apt install -y "python3-$apt_name" 2>/dev/null && return 0
+        apt install -y --allow-downgrades "python3-$apt_name" 2>/dev/null && return 0
     fi
 
     return 1
@@ -226,6 +226,14 @@ else
 fi
 
 # JACK support is available via Zynthian venv if present (auto-detected at runtime)
+
+# Install sketchatone package itself (creates package metadata with version info)
+echo "📦 Installing sketchatone package..."
+cd /opt/sketchatone/python
+pip3 install --break-system-packages -e . 2>/dev/null || pip3 install -e . 2>/dev/null || {
+    echo "⚠️  Warning: sketchatone package install failed, version may show as 0.0.0-dev"
+}
+cd - >/dev/null
 
 # Set correct permissions
 chmod +x /usr/bin/sketchatone
@@ -370,7 +378,7 @@ tar xzf sketchatone-${VERSION}-deb-pkg.tar.gz
 dpkg-deb --build sketchatone_${VERSION}_all
 
 # Install it
-apt install -y ./sketchatone_${VERSION}_all.deb
+apt install -y --allow-downgrades ./sketchatone_${VERSION}_all.deb
 
 # Clean up
 rm -rf sketchatone_${VERSION}_all sketchatone-${VERSION}-deb-pkg.tar.gz install-sketchatone.sh

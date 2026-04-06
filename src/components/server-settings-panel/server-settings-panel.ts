@@ -124,6 +124,22 @@ export class ServerSettingsPanel extends LitElement {
           </sp-number-field>
         </div>
 
+        <div class="setting-row">
+          <label>HTTPS Port</label>
+          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
+            value="${this.httpsPort}" min="1" max="65535" step="1"
+            @change=${(e: Event) => this.handlePortChange('https', Number((e.target as HTMLInputElement).value))}>
+          </sp-number-field>
+        </div>
+
+        <div class="setting-row">
+          <label>Secure WebSocket Port</label>
+          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
+            value="${this.wssPort}" min="1" max="65535" step="1"
+            @change=${(e: Event) => this.handlePortChange('wss', Number((e.target as HTMLInputElement).value))}>
+          </sp-number-field>
+        </div>
+
         <div class="restart-button-container">
           <sp-button variant="accent" size="s" @click=${this.handleRestart}>
             Restart Service
