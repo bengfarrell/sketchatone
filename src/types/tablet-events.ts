@@ -180,7 +180,7 @@ export interface MidiDevicesData {
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service';
 
 /**
  * Set throttle client message
@@ -274,6 +274,14 @@ export interface GetMidiDevicesMessage {
 }
 
 /**
+ * Restart service client message
+ * Tells the server to restart the systemd service
+ */
+export interface RestartServiceMessage {
+  type: 'restart-service';
+}
+
+/**
  * MIDI devices response message from server
  */
 export interface MidiDevicesMessage {
@@ -284,7 +292,7 @@ export interface MidiDevicesMessage {
 /**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage;
 
 /**
  * Tablet data for visualization components

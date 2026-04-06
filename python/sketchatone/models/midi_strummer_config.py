@@ -114,6 +114,10 @@ class MidiStrummerConfig:
         return self.server.ws_port
 
     @property
+    def wss_port(self) -> Optional[int]:
+        return self.server.wss_port
+
+    @property
     def ws_message_throttle(self) -> int:
         return self.server.ws_message_throttle
 

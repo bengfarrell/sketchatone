@@ -84,14 +84,14 @@ else
 fi
 
 # Create launcher script in /usr/bin
-# This script detects the install mode and sets PYTHONPATH accordingly
+# This script detects JACK availability at runtime
 cat > "$PKG_DIR/usr/bin/sketchatone" << 'BINEOF'
 #!/bin/bash
-# Sketchatone launcher - runs Python module directly
+# Sketchatone launcher - runs Python module directly with runtime JACK detection
 export PYTHONPATH="/opt/sketchatone/python:$PYTHONPATH"
 
-# Add Zynthian venv to PYTHONPATH if installed in Zynthian mode
-if [ -f /opt/sketchatone/.install-mode ] && [ "$(cat /opt/sketchatone/.install-mode)" = "zynthian" ]; then
+# Auto-detect Zynthian environment and add venv to PYTHONPATH if available
+if [ -d "/zynthian/venv/lib/python3.11/site-packages" ]; then
     export PYTHONPATH="$PYTHONPATH:/zynthian/venv/lib/python3.11/site-packages"
 fi
 
@@ -99,47 +99,23 @@ exec python3 -m sketchatone.cli.server "$@"
 BINEOF
 chmod +x "$PKG_DIR/usr/bin/sketchatone"
 
-# Create systemd service templates (actual service is generated at install time based on user choice)
-# ALSA mode service (for standard Raspberry Pi)
-cat > "$PKG_DIR/opt/sketchatone/sketchatone-alsa.service" << 'SERVICEEOF'
-[Unit]
-Description=Sketchatone MIDI Strummer
-After=network.target sound.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/sketchatone
-Environment="PYTHONPATH=/opt/sketchatone/python:/usr/lib/python3/dist-packages"
-Environment="DISPLAY=:0"
-ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
-TimeoutStopSec=10
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
-
-# Zynthian mode service (uses JACK)
-cat > "$PKG_DIR/opt/sketchatone/sketchatone-zynthian.service" << 'SERVICEEOF'
+# Create single systemd service with JACK detection
+cat > "$PKG_DIR/opt/sketchatone/sketchatone.service" << 'SERVICEEOF'
 [Unit]
 Description=Sketchatone MIDI Strummer
 After=network.target sound.target jack2.service a2jmidid.service
-# Require JACK to be running
+# Optional dependency on JACK (won't fail if JACK isn't available)
 Wants=jack2.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/sketchatone
-# Include Zynthian venv for JACK-Client package
-Environment="PYTHONPATH=/opt/sketchatone/python:/zynthian/venv/lib/python3.11/site-packages"
+# Auto-detect and include Zynthian venv if available
+Environment="PYTHONPATH=/opt/sketchatone/python:/usr/lib/python3/dist-packages"
 Environment="DISPLAY=:0"
-# Delay startup to ensure JACK is fully ready (helps when triggered by udev during boot)
-ExecStartPre=/bin/sleep 3
+# Small delay to let JACK initialize if present (helps with Zynthian boot)
+ExecStartPre=/bin/sleep 2
 ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
 TimeoutStopSec=10
 Restart=on-failure
@@ -185,49 +161,21 @@ echo "=========================================="
 echo "Sketchatone Installation"
 echo "=========================================="
 echo ""
-echo "Please select your installation mode:"
-echo ""
-echo "  1) Standard Raspberry Pi (ALSA)"
-echo "     - Uses ALSA for MIDI output"
-echo "     - Works with USB MIDI cables and interfaces"
-echo "     - Recommended for most users"
-echo ""
-echo "  2) Zynthian"
-echo "     - Uses JACK for MIDI output"
-echo "     - Integrates with Zynthian's audio system"
-echo "     - Only for Zynthian installations"
-echo ""
 
-# Read user choice
-INSTALL_MODE=""
-while [ -z "$INSTALL_MODE" ]; do
-    read -p "Enter choice [1 or 2]: " choice
-    case "$choice" in
-        1)
-            INSTALL_MODE="alsa"
-            echo ""
-            echo "📦 Installing for Standard Raspberry Pi (ALSA)..."
-            ;;
-        2)
-            INSTALL_MODE="zynthian"
-            echo ""
-            echo "📦 Installing for Zynthian..."
-            ;;
-        *)
-            echo "Invalid choice. Please enter 1 or 2."
-            ;;
-    esac
-done
-
-# Save install mode for future reference
-echo "$INSTALL_MODE" > /opt/sketchatone/.install-mode
-
-# Install the appropriate systemd service
-if [ "$INSTALL_MODE" = "zynthian" ]; then
-    cp /opt/sketchatone/sketchatone-zynthian.service /etc/systemd/system/sketchatone.service
-else
-    cp /opt/sketchatone/sketchatone-alsa.service /etc/systemd/system/sketchatone.service
+# Auto-detect environment
+DETECTED_ENV="Standard Raspberry Pi"
+if [ -d "/zynthian" ] || systemctl list-unit-files | grep -q "jack2.service"; then
+    DETECTED_ENV="Zynthian (JACK detected)"
 fi
+
+echo "Detected environment: $DETECTED_ENV"
+echo ""
+echo "Note: MIDI backend (ALSA/JACK) can be configured"
+echo "      in the web UI after installation."
+echo ""
+
+# Install the systemd service
+cp /opt/sketchatone/sketchatone.service /etc/systemd/system/sketchatone.service
 
 # Install Python dependencies
 echo ""
@@ -257,61 +205,40 @@ install_package() {
     return 1
 }
 
-if [ "$INSTALL_MODE" = "zynthian" ]; then
-    # Zynthian: Install to system Python, JACK-Client is already in Zynthian venv
-    install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
-    install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
-    install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
-    install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
-    install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
-else
-    # ALSA: Install python-rtmidi for MIDI support
-    install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
-    install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
-    install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
-    install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
-    install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
+# Install common dependencies
+install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
+install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
+install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
+install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
+install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
 
-    # Try to install python-rtmidi - first try apt, then pip
-    echo "📦 Installing python-rtmidi..."
-    if apt-cache show python3-rtmidi >/dev/null 2>&1; then
-        echo "  → Installing from apt (python3-rtmidi)..."
-        apt-get install -y python3-rtmidi && echo "  ✓ Installed from apt" || {
-            echo "  ⚠️  apt install failed, trying pip..."
-            install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
-        }
-    else
-        echo "  → python3-rtmidi not available in apt, using pip..."
+# Install python-rtmidi for ALSA support - first try apt, then pip
+echo "📦 Installing python-rtmidi (ALSA backend)..."
+if apt-cache show python3-rtmidi >/dev/null 2>&1; then
+    echo "  → Installing from apt (python3-rtmidi)..."
+    apt-get install -y python3-rtmidi && echo "  ✓ Installed from apt" || {
+        echo "  ⚠️  apt install failed, trying pip..."
         install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
-    fi
+    }
+else
+    echo "  → python3-rtmidi not available in apt, using pip..."
+    install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
 fi
+
+# JACK support is available via Zynthian venv if present (auto-detected at runtime)
 
 # Set correct permissions
 chmod +x /usr/bin/sketchatone
 
 # Create default config if it doesn't exist
 if [ ! -f /opt/sketchatone/configs/config.json ]; then
-    # Use appropriate sample config based on install mode
-    if [ "$INSTALL_MODE" = "zynthian" ]; then
-        if [ -f /opt/sketchatone/configs/sample-config-zynthian.json ]; then
-            cp /opt/sketchatone/configs/sample-config-zynthian.json /opt/sketchatone/configs/config.json
-            echo "📋 Created default Zynthian config: /opt/sketchatone/configs/config.json"
-        fi
-    else
-        if [ -f /opt/sketchatone/configs/sample-config.json ]; then
-            cp /opt/sketchatone/configs/sample-config.json /opt/sketchatone/configs/config.json
-            echo "📋 Created default config: /opt/sketchatone/configs/config.json"
-        fi
-    fi
-else
-    # Config exists - update MIDI backend if installing in Zynthian mode
-    if [ "$INSTALL_MODE" = "zynthian" ]; then
-        # Check if config has rtmidi backend and update it to jack
-        if grep -q '"midi_output_backend".*:.*"rtmidi"' /opt/sketchatone/configs/config.json 2>/dev/null; then
-            echo "📝 Updating existing config to use JACK backend for Zynthian..."
-            sed -i 's/"midi_output_backend"[[:space:]]*:[[:space:]]*"rtmidi"/"midi_output_backend": "jack"/' /opt/sketchatone/configs/config.json
-            echo "   ✓ Changed midi_output_backend from rtmidi to jack"
-        fi
+    # Use default sample config (MIDI backend can be changed in web UI)
+    if [ -f /opt/sketchatone/configs/sample-config.json ]; then
+        cp /opt/sketchatone/configs/sample-config.json /opt/sketchatone/configs/config.json
+        echo "📋 Created default config: /opt/sketchatone/configs/config.json"
+    elif [ -f /opt/sketchatone/configs/default.json ]; then
+        cp /opt/sketchatone/configs/default.json /opt/sketchatone/configs/config.json
+        echo "📋 Created default config: /opt/sketchatone/configs/config.json"
     fi
 fi
 
@@ -333,11 +260,14 @@ echo "=========================================="
 echo "✅ Sketchatone installed successfully!"
 echo "=========================================="
 echo ""
-echo "Install mode: $INSTALL_MODE"
+echo "Environment: $DETECTED_ENV"
 echo ""
 echo "Sketchatone is configured to auto-start when your tablet is plugged in."
 echo ""
-echo "To change this behavior:"
+echo "Configure MIDI backend (ALSA/JACK) and other settings via the web UI:"
+echo "  http://$(hostname -I | awk '{print $1}')"
+echo ""
+echo "To change auto-start behavior:"
 echo "  sudo sketchatone-setup --mode manual        # Disable auto-start (keep permissions)"
 echo "  sudo sketchatone-setup --mode always-on     # Start on boot instead"
 echo ""

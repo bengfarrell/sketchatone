@@ -14,10 +14,15 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
+import * as https from 'https';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Import from blankslate CLI modules
 import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath, findConfigForDevice } from 'blankslate/cli/tablet-reader-base.js';
@@ -49,6 +54,7 @@ import {
   type CombinedEventData,
 } from '../utils/strummer-event-bus.js';
 import { KeyboardListener } from '../utils/keyboard-listener.js';
+import { generateSelfSignedCert, loadSSLCert, getSSLCertPaths } from '../utils/ssl-cert.js';
 
 /**
  * WebSocket tablet event (matches blankslate format)
@@ -150,9 +156,13 @@ const MIME_TYPES: Record<string, string> = {
 
 class StrummerWebSocketServer extends TabletReaderBase {
   private wss: WebSocketServer | null = null;
+  private wssSecure: WebSocketServer | null = null;
   private httpServer: http.Server | null = null;
+  private httpsServer: https.Server | null = null;
   private wsPort: number;
+  private wssPort: number | undefined;
   private httpPort: number | undefined;
+  private httpsPort: number | undefined;
   private config: MidiStrummerConfig;
   private strummer: Strummer;
   private eventBus: StrummerEventBus;
@@ -209,7 +219,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     options: TabletReaderOptions & {
       strummerConfigPath?: string;
       wsPort?: number;
+      wssPort?: number;
       httpPort?: number;
+      httpsPort?: number;
       throttleMs?: number;
       // MIDI options
       midiChannel?: number;
@@ -261,7 +273,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
     // CLI args take precedence over config file values
     this.wsPort = options.wsPort ?? this.config.wsPort ?? 8081;
+    this.wssPort = options.wssPort ?? this.config.wssPort ?? undefined;
     this.httpPort = options.httpPort ?? this.config.httpPort ?? undefined;
+    this.httpsPort = options.httpsPort ?? this.config.httpsPort ?? undefined;
     // Resolve public directory relative to the package root
     // Built webapp files are in dist/public
     this.publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
@@ -1226,6 +1240,52 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Restart the systemd service
+   */
+  private async handleRestartService(ws: WebSocket): Promise<void> {
+    console.log(chalk.cyan('[Restart Service] Received restart request'));
+
+    try {
+      // Check if running as systemd service
+      const { stdout } = await execAsync('systemctl is-active sketchatone 2>/dev/null || echo "inactive"');
+      const isSystemdService = stdout.trim() === 'active';
+
+      if (!isSystemdService) {
+        const errorMsg = 'Not running as a systemd service. Please restart manually.';
+        console.log(chalk.yellow(`[Restart Service] ${errorMsg}`));
+        ws.send(JSON.stringify({
+          type: 'restart-service-error',
+          error: errorMsg,
+        }));
+        return;
+      }
+
+      // Send acknowledgment before restarting
+      ws.send(JSON.stringify({
+        type: 'restart-service-ack',
+        message: 'Service restart initiated. Reconnecting...',
+      }));
+
+      console.log(chalk.yellow('[Restart Service] Restarting sketchatone service...'));
+
+      // Delay to allow acknowledgment to be sent
+      setTimeout(async () => {
+        try {
+          await execAsync('sudo systemctl restart sketchatone');
+        } catch (e) {
+          console.error(chalk.red('[Restart Service] Failed to restart:'), e);
+        }
+      }, 500);
+    } catch (e) {
+      console.error(chalk.red('[Restart Service] Error:'), e);
+      ws.send(JSON.stringify({
+        type: 'restart-service-error',
+        error: 'Failed to restart service',
+      }));
+    }
+  }
+
+  /**
    * Delete a config file
    */
   private handleDeleteConfig(configName: string): void {
@@ -1845,6 +1905,38 @@ class StrummerWebSocketServer extends TabletReaderBase {
       });
     }
 
+    // Start HTTPS server if port configured
+    if (this.httpsPort) {
+      // Generate or load SSL certificate
+      const sslCertGenerated = generateSelfSignedCert();
+      const sslCert = loadSSLCert();
+
+      if (sslCert) {
+        this.httpsServer = https.createServer(
+          {
+            key: sslCert.key,
+            cert: sslCert.cert,
+          },
+          (req, res) => this.handleHttpRequest(req, res)
+        );
+
+        this.httpsServer.listen(this.httpsPort, () => {
+          const certPaths = getSSLCertPaths();
+          console.log(chalk.green(`✓ HTTPS server listening on port ${this.httpsPort}`));
+          console.log(chalk.cyan(`  Certificate: ${certPaths.certFile}`));
+          console.log(chalk.white(`  Local:   `) + chalk.blue.underline(`https://localhost:${this.httpsPort}`));
+          if (localIP) {
+            console.log(chalk.white(`  Network: `) + chalk.blue.underline(`https://${localIP}:${this.httpsPort}`));
+          }
+          if (sslCertGenerated) {
+            console.log(chalk.yellow(`  Note: Self-signed certificate will show browser warnings`));
+          }
+        });
+      } else {
+        console.log(chalk.yellow(`⚠ HTTPS server disabled (SSL certificate not available)`));
+      }
+    }
+
     // Start WebSocket server if port configured
     if (!this.wsPort) {
       console.log(chalk.yellow('⚠ WebSocket server disabled (no port configured)'));
@@ -1896,6 +1988,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
             this.handleDeleteConfig(parsed.configName);
           } else if (parsed.type === 'get-midi-devices') {
             this.handleGetMidiDevices(ws);
+          } else if (parsed.type === 'restart-service') {
+            this.handleRestartService(ws);
           }
         } catch (e) {
           console.error(chalk.red('[WebSocket] Error processing message:'), e);
@@ -1919,6 +2013,97 @@ class StrummerWebSocketServer extends TabletReaderBase {
     console.log(chalk.white(`  Local:   `) + chalk.magenta.underline(`ws://localhost:${this.wsPort}`));
     if (localIP) {
       console.log(chalk.white(`  Network: `) + chalk.magenta.underline(`ws://${localIP}:${this.wsPort}`));
+    }
+
+    // Start Secure WebSocket server if port configured
+    if (this.wssPort) {
+      const sslCert = loadSSLCert();
+
+      if (sslCert) {
+        // Create HTTPS server for WSS
+        const wssHttpsServer = https.createServer({
+          key: sslCert.key,
+          cert: sslCert.cert,
+        });
+
+        // Create WSS server on top of HTTPS server
+        this.wssSecure = new WebSocketServer({ server: wssHttpsServer });
+
+        // Use the same connection handler as WS server
+        this.wssSecure.on('connection', (ws) => {
+          this.clientCount++;
+          console.log(chalk.green(`✓ Client connected via WSS (${this.clientCount} total)`));
+
+          // Resume event bus when first client connects
+          if (this.clientCount === 1) {
+            this.eventBus.resume();
+            console.log(chalk.cyan('  Event processing resumed'));
+          }
+
+          // Send current config to new client
+          this.sendConfig(ws);
+
+          // Send current device status to new client
+          this.sendStatus(ws);
+
+          // Send MIDI input status to new client
+          this.sendMidiInputStatus(ws);
+
+          ws.on('message', (message) => {
+            try {
+              const parsed = JSON.parse(message.toString());
+              if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
+                this.setThrottle(parsed.throttleMs);
+                console.log(chalk.yellow(`Throttle changed to: ${parsed.throttleMs}ms`));
+              } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
+                this.handleConfigUpdate(parsed.path, parsed.value);
+              } else if (parsed.type === 'save-config') {
+                console.log(chalk.cyan('[WebSocket] Received save-config request'));
+                this.handleSaveConfig();
+              } else if (parsed.type === 'load-config' && typeof parsed.configName === 'string') {
+                this.handleLoadConfig(parsed.configName);
+              } else if (parsed.type === 'create-config' && typeof parsed.configName === 'string') {
+                this.handleCreateConfig(parsed.configName);
+              } else if (parsed.type === 'rename-config' && typeof parsed.oldName === 'string' && typeof parsed.newName === 'string') {
+                this.handleRenameConfig(parsed.oldName, parsed.newName);
+              } else if (parsed.type === 'upload-config' && typeof parsed.configName === 'string' && parsed.configData) {
+                this.handleUploadConfig(parsed.configName, parsed.configData);
+              } else if (parsed.type === 'delete-config' && typeof parsed.configName === 'string') {
+                this.handleDeleteConfig(parsed.configName);
+              } else if (parsed.type === 'get-midi-devices') {
+                this.handleGetMidiDevices(ws);
+              } else if (parsed.type === 'restart-service') {
+                this.handleRestartService(ws);
+              }
+            } catch (e) {
+              console.error(chalk.red('[WebSocket] Error processing message:'), e);
+            }
+          });
+
+          ws.on('close', () => {
+            this.clientCount--;
+            console.log(chalk.yellow(`Client disconnected (${this.clientCount} remaining)`));
+
+            // Pause event bus when last client disconnects
+            if (this.clientCount === 0) {
+              this.eventBus.pause();
+              console.log(chalk.cyan('  Event processing paused'));
+            }
+          });
+        });
+
+        wssHttpsServer.listen(this.wssPort, () => {
+          const certPaths = getSSLCertPaths();
+          console.log(chalk.green(`✓ Secure WebSocket server listening on port ${this.wssPort}`));
+          console.log(chalk.cyan(`  Certificate: ${certPaths.certFile}`));
+          console.log(chalk.white(`  Local:   `) + chalk.magenta.underline(`wss://localhost:${this.wssPort}`));
+          if (localIP) {
+            console.log(chalk.white(`  Network: `) + chalk.magenta.underline(`wss://${localIP}:${this.wssPort}`));
+          }
+        });
+      } else {
+        console.log(chalk.yellow(`⚠ Secure WebSocket server disabled (SSL certificate not available)`));
+      }
     }
 
     // Set up event subscriptions
@@ -1989,10 +2174,22 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.httpServer = null;
     }
 
+    // Close HTTPS server
+    if (this.httpsServer) {
+      this.httpsServer.close();
+      this.httpsServer = null;
+    }
+
     // Close WebSocket server
     if (this.wss) {
       this.wss.close();
       this.wss = null;
+    }
+
+    // Close Secure WebSocket server
+    if (this.wssSecure) {
+      this.wssSecure.close();
+      this.wssSecure = null;
     }
 
     await super.stop();

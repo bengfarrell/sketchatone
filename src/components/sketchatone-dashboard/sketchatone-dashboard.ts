@@ -43,6 +43,9 @@ import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
 // MIDI devices config component
 import '../midi-devices-config/midi-devices-config.js';
 
+// Server settings component
+import '../server-settings-panel/server-settings-panel.js';
+
 // Chord progressions component
 import '../chord-progression-creator/chord-progression-creator.js';
 
@@ -296,6 +299,26 @@ export class SketchatoneDashboard extends LitElement {
             }
           }, 1000);
         }
+      }
+    });
+
+    // Listen for restart service acknowledgment
+    this.client.on('restart-service-ack', (data: any) => {
+      console.log('[Dashboard] Service restart acknowledged:', data.message);
+      // Show success message in server settings panel
+      const panel = this.shadowRoot?.querySelector('server-settings-panel');
+      if (panel) {
+        (panel as any).showRestartSuccess(data.message);
+      }
+    });
+
+    // Listen for restart service error
+    this.client.on('restart-service-error', (data: any) => {
+      console.error('[Dashboard] Service restart error:', data.error);
+      // Show error message in server settings panel
+      const panel = this.shadowRoot?.querySelector('server-settings-panel');
+      if (panel) {
+        (panel as any).showRestartError(data.error);
       }
     });
 
@@ -643,6 +666,14 @@ export class SketchatoneDashboard extends LitElement {
    */
   private handleMidiDevicesRefresh() {
     this.client.requestMidiDevices();
+  }
+
+  /**
+   * Handle restart service request
+   */
+  private handleRestartService() {
+    console.log('[Dashboard] Initiating service restart...');
+    this.client.restartService();
   }
 
   /**
@@ -1147,6 +1178,22 @@ export class SketchatoneDashboard extends LitElement {
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 @progressions-change=${this.handleChordProgressionsChange}>
               </chord-progression-creator>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Server Settings Panel -->
+          ${this.panelVisibility.serverSettings ? html`
+            <dashboard-panel title="Server Settings" panelId="serverSettings" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('serverSettings')}>
+              <server-settings-panel
+                .midiBackend=${(this.fullConfig?.midi as any)?.midiOutputBackend ?? 'rtmidi'}
+                .httpPort=${this.fullConfig?.server?.httpPort ?? 80}
+                .wsPort=${this.fullConfig?.server?.wsPort ?? 8081}
+                .httpsPort=${(this.fullConfig?.server as any)?.httpsPort ?? 443}
+                .wssPort=${(this.fullConfig?.server as any)?.wssPort ?? 8082}
+                @update-config=${(e: CustomEvent) => this.updateConfig(e.detail.path, e.detail.value)}
+                @restart-service=${this.handleRestartService}>
+              </server-settings-panel>
             </dashboard-panel>
           ` : ''}
 

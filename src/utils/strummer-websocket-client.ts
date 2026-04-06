@@ -304,6 +304,14 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Restart the systemd service
+   * The server will respond with either 'restart-service-ack' or 'restart-service-error'
+   */
+  restartService(): void {
+    this.send({ type: 'restart-service' });
+  }
+
+  /**
    * Subscribe to combined events (tablet + optional strum merged)
    */
   onCombinedEvent(callback: (data: CombinedEventData) => void): () => void {
@@ -495,6 +503,14 @@ export class StrummerWebSocketClient extends EventEmitter {
             ruleId: message.ruleId,
             isStartup: message.isStartup,
           });
+          break;
+        case 'restart-service-ack':
+          // Service restart acknowledged
+          this.emit('restart-service-ack', { message: message.message });
+          break;
+        case 'restart-service-error':
+          // Service restart error
+          this.emit('restart-service-error', { error: message.error });
           break;
       }
     } catch (error) {

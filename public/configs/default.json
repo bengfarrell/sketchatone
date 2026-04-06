@@ -144,8 +144,10 @@
   "server": {
     "_comment": "WebSocket and HTTP server configuration. Only used by the 'server' CLI command.",
     "device": "devices",
-    "http_port": null,
+    "http_port": 80,
     "ws_port": 8081,
+    "https_port": 443,
+    "wss_port": 8082,
     "ws_message_throttle": 150
   }
 }

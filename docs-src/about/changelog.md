@@ -7,6 +7,9 @@ description: Release notes and version history
 
 ## v0.3.0
 
+### Installation
+- **Dropped choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice
+
 ### Custom Chord Progressions
 
 - **Visual chord progression creator** (Node.js/Dashboard): New UI component for creating and managing chord progressions with root note selection, accidentals, qualities, and extensions
@@ -23,10 +26,10 @@ description: Release notes and version history
 
 ### HTTPS & Captive Portal Support
 
-- **HTTPS server**: Added HTTPS support alongside HTTP for Android 10+ captive portal compatibility
+- **HTTPS server**: Added HTTPS support alongside HTTP for Android 10+ captive portal compatibility (both Python and Node.js)
 - **Self-signed certificates**: Automatic generation and storage of SSL certificates in `~/.sketchatone/ssl/` or `/opt/sketchatone/ssl/`
 - **Captive portal detection endpoint**: `/generate_204` endpoint responds to Android connectivity checks
-- **Secure WebSocket**: WSS (WebSocket Secure) support on separate port
+- **Secure WebSocket (WSS)**: WSS (WebSocket Secure) support on separate port for encrypted connections (both Python and Node.js)
 - **Configuration**: New `https_port` and `wss_port` settings in server config
 
 ### Development Mode
@@ -42,24 +45,35 @@ description: Release notes and version history
 - **Enhanced JACK support** (Python): Improved JACK MIDI input implementation
 - **Better port exclusion**: Improved logic for excluding internal ports to prevent feedback loops
 
+### Server Management
+
+- **Service restart support**: New "Restart Service" button in Server Settings panel to restart systemd service from UI
+- **Server settings panel**: New dashboard panel for configuring MIDI backend and HTTP/HTTPS/WS/WSS ports
+- **Runtime backend switching**: Change MIDI backend (ALSA/JACK) through UI (requires service restart)
+- **Configuration UI**: All server-level settings now accessible through the dashboard
+
 ### Improved Shutdown
 
-- **Better cleanup**: More reliable resource cleanup on shutdown
-- **Proper server termination**: HTTP, HTTPS, WebSocket, and WSS servers all shut down gracefully
+- **Better cleanup**: More reliable resource cleanup on shutdown in both Python and Node.js
+- **Proper server termination**: HTTP, HTTPS, WebSocket, and WSS servers all shut down gracefully with timeouts
+- **No hanging shutdowns**: Added 2-second timeouts to all server close operations to prevent process hangs
 - **MIDI port cleanup**: Proper closing of MIDI connections
 - **Keyboard listener cleanup**: Keyboard input handlers are properly removed on shutdown
 
 ### Configuration Changes
 
 - **New `keyboard` section**: Optional configuration for keyboard input mappings
-- **New `https_port` setting**: HTTP server port for HTTPS support (default: 443)
+- **New `https_port` setting**: HTTPS server port for captive portal support (default: 443)
 - **New `wss_port` setting**: Secure WebSocket port (default: 8082)
+- **Allow new system config**: Add a service restart button which works for systemctl as we add UI config for HTTP(s) and web socket ports as well as MIDI backend (restart for these to take effect after saving)
 - **Removed sample configs**: Consolidated to single `public/configs/default.json` with all settings
 
 ### Breaking Changes
 
 - **Chord progressions required in config**: Old configs without `chordProgressions` section will have no progressions available. Users must add chord progressions to their config files (see `public/configs/default.json` for examples)
 - **Removed sample config files**: Users should use `public/configs/default.json` as a template
+- **Removed choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice and allow it to be configurable in UI (or JSON as always)
+
 
 ---
 

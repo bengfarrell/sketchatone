@@ -24,6 +24,7 @@ import threading
 import mimetypes
 import ssl
 import logging
+import subprocess
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
 from urllib.parse import unquote
@@ -1443,9 +1444,13 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Get available MIDI devices
                 await self._handle_get_midi_devices(websocket)
 
+            elif msg_type == 'restart-service':
+                # Restart the systemd service
+                await self._handle_restart_service(websocket)
+
             else:
                 print(colored(f'Unknown message type: {msg_type}', Colors.YELLOW))
-        
+
         except json.JSONDecodeError:
             print(colored(f'Invalid JSON message received', Colors.RED))
     
@@ -1570,6 +1575,50 @@ class StrummerWebSocketServer(TabletReaderBase):
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
             print(colored(f'Failed to update config: {path} - {e}', Colors.RED))
+
+    async def _handle_restart_service(self, websocket: 'WebSocketServerProtocol') -> None:
+        """
+        Restart the systemd service.
+        """
+        print(colored('[Restart Service] Received restart request', Colors.CYAN))
+
+        try:
+            # Check if running as systemd service
+            result = subprocess.run(
+                ['systemctl', 'is-active', 'sketchatone'],
+                capture_output=True,
+                text=True
+            )
+            is_systemd_service = result.stdout.strip() == 'active'
+
+            if not is_systemd_service:
+                error_msg = 'Not running as a systemd service. Please restart manually.'
+                print(colored(f'[Restart Service] {error_msg}', Colors.YELLOW))
+                await websocket.send(json.dumps({
+                    'type': 'restart-service-error',
+                    'error': error_msg,
+                }))
+                return
+
+            # Send acknowledgment before restarting
+            await websocket.send(json.dumps({
+                'type': 'restart-service-ack',
+                'message': 'Service restart initiated. Reconnecting...',
+            }))
+
+            print(colored('[Restart Service] Restarting sketchatone service...', Colors.YELLOW))
+
+            # Delay to allow acknowledgment to be sent
+            await asyncio.sleep(0.5)
+
+            # Restart service (use sudo if available)
+            subprocess.Popen(['sudo', 'systemctl', 'restart', 'sketchatone'])
+        except Exception as e:
+            print(colored(f'[Restart Service] Error: {e}', Colors.RED))
+            await websocket.send(json.dumps({
+                'type': 'restart-service-error',
+                'error': 'Failed to restart service',
+            }))
 
     def _handle_save_config(self) -> None:
         """
@@ -2544,11 +2593,17 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.event_bus.cleanup()
             if self._http_server:
                 self._http_server.close()
-                await self._http_server.wait_closed()
+                try:
+                    await asyncio.wait_for(self._http_server.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    pass  # Don't block shutdown
                 print(colored('✓ HTTP server closed', Colors.GREEN))
             if self._https_server:
                 self._https_server.close()
-                await self._https_server.wait_closed()
+                try:
+                    await asyncio.wait_for(self._https_server.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    pass  # Don't block shutdown
                 print(colored('✓ HTTPS server closed', Colors.GREEN))
             if self._ws_server:
                 # Close all client connections with a timeout to avoid hanging
@@ -2570,6 +2625,14 @@ class StrummerWebSocketServer(TabletReaderBase):
                 except asyncio.TimeoutError:
                     pass  # Don't block shutdown
                 print(colored('✓ WebSocket server closed', Colors.GREEN))
+            if self._wss_server:
+                # Close WSS server (clients already closed above in shared self.clients)
+                self._wss_server.close()
+                try:
+                    await asyncio.wait_for(self._wss_server.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    pass  # Don't block shutdown
+                print(colored('✓ Secure WebSocket server closed', Colors.GREEN))
             if self.backend:
                 self.backend.disconnect()
                 print(colored('✓ MIDI backend disconnected', Colors.GREEN))

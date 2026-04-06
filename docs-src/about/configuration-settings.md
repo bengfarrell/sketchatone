@@ -140,8 +140,8 @@ sudo systemctl restart sketchatone
 | `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
 | `chordProgressions` | Chord progressions (required for progression actions) |
 | `keyboard` | Keyboard input mappings (optional) |
-| `midi` | MIDI backend settings |
-| `server` | Server settings |
+| `midi` | MIDI backend settings (ports, backend selection, JACK config) |
+| `server` | Server settings (HTTP/HTTPS/WS/WSS ports) |
 
 ---
 
@@ -466,14 +466,55 @@ MIDI backend configuration.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `midi_output_backend` | string | "rtmidi" | Backend: "rtmidi" or "jack" |
+| `midi_output_backend` | string | "rtmidi" | Backend: "rtmidi" (ALSA) or "jack" |
 | `midi_output_id` | number\|string\|null | null | Output port (index or name) |
-| `midi_input_id` | number\|string\|null | null | Input port (index or name) |
+| `midi_input_id` | number\|string\|array\|null | null | Input port (index, name, or array of ports) |
 | `midi_input_exclude` | string[] | [...] | Port name patterns to exclude from input |
 | `jack_client_name` | string | "sketchatone" | JACK client name |
 | `jack_auto_connect` | string\|null | "chain0" | JACK auto-connect target |
 | `default_note_duration` | number | 1.5 | Default note duration (seconds) |
-| `midiInterMessageDelay` | number | 0 | Delay between MIDI messages (seconds) |
+| `midi_inter_message_delay` | number | 0 | Delay between MIDI messages (seconds) |
+
+### midi_output_backend
+
+Selects which MIDI system to use:
+
+- **`"rtmidi"`** (default): Uses ALSA on Linux, CoreMIDI on macOS, Windows MIDI on Windows. Best for general use.
+- **`"jack"`**: Uses JACK Audio Connection Kit. Required for Zynthian and other JACK-based systems. Only available in Python server.
+
+**Note:** The Node.js server only supports `"rtmidi"`. If using JACK, you must use the Python server.
+
+### midi_output_id and midi_input_id
+
+MIDI port selection supports multiple formats:
+
+- **`null`** (default): Auto-select first available port for output; auto-connect all ports for input
+- **Port index** (number): `0`, `1`, `2`, etc.
+- **Port name** (string): Full or partial port name, e.g., `"USB MIDI"`, `"IAC Driver"`
+- **Array of ports** (input only): `[0, 2]` or `["Keyboard 1", "Keyboard 2"]` to connect multiple input devices
+- **Empty array** (input only): `[]` explicitly disables MIDI input
+
+### jack_client_name
+
+Name used when registering with JACK Audio Connection Kit. Default is `"sketchatone"`.
+
+**Example:**
+```json
+"midi": {
+  "midi_output_backend": "jack",
+  "jack_client_name": "my-strummer"
+}
+```
+
+### jack_auto_connect
+
+JACK auto-connect mode determines how Sketchatone connects to other JACK clients:
+
+- **`"chain0"`** (default): Auto-connect to first available MIDI device in JACK graph
+- **`null`**: Disable auto-connect (manually connect via JACK patchbay)
+- **Port name**: Connect to specific JACK port, e.g., `"ZynMidiRouter:midi_in"`
+
+**Note:** Only used when `midi_output_backend` is `"jack"`.
 
 ### MIDI Device Detection
 
@@ -482,19 +523,20 @@ After connecting or disconnecting a MIDI device:
 - **Via Dashboard:** Click the "Refresh Devices" button to update the device list
 - **Via CLI:** Restart the server to detect new devices
 
-### midiInterMessageDelay
+### midi_inter_message_delay
 
 Adds a delay (in seconds) between consecutive MIDI messages to prevent buffer overflow on some hardware synthesizers during rapid strumming.
 
 **When to use:**
-- Set to `0.02` (20ms) if notes stick or sustain indefinitely during busy strumming
-- Particularly useful with direct USB MIDI connections to hardware synths with slow CPUs
+- Set to `0.002` (2ms) if notes stick or sustain indefinitely during busy strumming on Raspberry Pi with direct USB connections
+- Set to `0.02` (20ms) for particularly slow hardware synths
+- Particularly useful with direct USB MIDI connections to hardware synths with slow CPUs (e.g., Roland Juno DS on Raspberry Pi)
 - Works with both RtMidi (ALSA) and JACK backends
 
 **Example:**
 ```json
 "midi": {
-  "midiInterMessageDelay": 0.02
+  "midi_inter_message_delay": 0.002
 }
 ```
 

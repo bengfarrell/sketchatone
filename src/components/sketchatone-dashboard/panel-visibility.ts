@@ -15,7 +15,8 @@ export type PanelId =
   | 'strumRelease'
   | 'actions'
   | 'groups'
-  | 'chordProgressions';
+  | 'chordProgressions'
+  | 'serverSettings';
 
 export interface PanelInfo {
   id: PanelId;
@@ -37,6 +38,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'actions', label: 'Actions', icon: '⚡' },
   { id: 'groups', label: 'Groups', icon: '📦' },
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
+  { id: 'serverSettings', label: 'Server', icon: '⚙️' },
 ];
 
 export type PanelVisibility = Record<PanelId, boolean>;
@@ -57,6 +59,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   actions: true,
   groups: true,
   chordProgressions: true,
+  serverSettings: true,
 };
 
 export function loadPanelVisibility(): PanelVisibility {

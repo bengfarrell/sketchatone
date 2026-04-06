@@ -81,8 +81,12 @@ export interface ServerConfigData {
   device: string | null;
   /** HTTP server port for serving webapps (null = disabled) */
   httpPort: number | null;
+  /** HTTPS server port for captive portal detection (null = disabled) */
+  httpsPort: number | null;
   /** WebSocket server port (null = disabled) */
   wsPort: number | null;
+  /** Secure WebSocket server port with SSL (null = disabled) */
+  wssPort: number | null;
   /** WebSocket message throttle interval in milliseconds */
   wsMessageThrottle: number;
   /** Poll interval in milliseconds for waiting for device (null = quit if no device) */
@@ -95,7 +99,9 @@ export interface ServerConfigData {
 export const DEFAULT_SERVER_CONFIG: ServerConfigData = {
   device: null,
   httpPort: null,
+  httpsPort: null,
   wsPort: null,
+  wssPort: null,
   wsMessageThrottle: 150,
   deviceFindingPollInterval: null,
 };
@@ -106,14 +112,18 @@ export const DEFAULT_SERVER_CONFIG: ServerConfigData = {
 export class ServerConfig implements ServerConfigData {
   device: string | null;
   httpPort: number | null;
+  httpsPort: number | null;
   wsPort: number | null;
+  wssPort: number | null;
   wsMessageThrottle: number;
   deviceFindingPollInterval: number | null;
 
   constructor(data: Partial<ServerConfigData> = {}) {
     this.device = data.device ?? DEFAULT_SERVER_CONFIG.device;
     this.httpPort = data.httpPort ?? DEFAULT_SERVER_CONFIG.httpPort;
+    this.httpsPort = data.httpsPort ?? DEFAULT_SERVER_CONFIG.httpsPort;
     this.wsPort = data.wsPort ?? DEFAULT_SERVER_CONFIG.wsPort;
+    this.wssPort = data.wssPort ?? DEFAULT_SERVER_CONFIG.wssPort;
     this.wsMessageThrottle = data.wsMessageThrottle ?? DEFAULT_SERVER_CONFIG.wsMessageThrottle;
     this.deviceFindingPollInterval = data.deviceFindingPollInterval ?? DEFAULT_SERVER_CONFIG.deviceFindingPollInterval;
   }
@@ -125,7 +135,9 @@ export class ServerConfig implements ServerConfigData {
     return new ServerConfig({
       device: data.device as string | null | undefined,
       httpPort: (data.http_port ?? data.httpPort) as number | null | undefined,
+      httpsPort: (data.https_port ?? data.httpsPort) as number | null | undefined,
       wsPort: (data.ws_port ?? data.wsPort) as number | null | undefined,
+      wssPort: (data.wss_port ?? data.wssPort) as number | null | undefined,
       wsMessageThrottle: (data.ws_message_throttle ?? data.wsMessageThrottle) as number | undefined,
       deviceFindingPollInterval: (data.device_finding_poll_interval ?? data.deviceFindingPollInterval) as number | null | undefined,
     });
@@ -138,7 +150,9 @@ export class ServerConfig implements ServerConfigData {
     return {
       device: this.device,
       httpPort: this.httpPort,
+      httpsPort: this.httpsPort,
       wsPort: this.wsPort,
+      wssPort: this.wssPort,
       wsMessageThrottle: this.wsMessageThrottle,
       deviceFindingPollInterval: this.deviceFindingPollInterval,
     };
@@ -149,6 +163,8 @@ export class ServerConfig implements ServerConfigData {
  * MIDI configuration data
  */
 export interface MidiConfigData {
+  /** Which MIDI system to use ("rtmidi" or "jack") */
+  midiOutputBackend: 'rtmidi' | 'jack';
   /** MIDI output port name or index */
   outputPort: string | number | null;
   /** MIDI input port name or index (for feedback) */
@@ -159,8 +175,14 @@ export interface MidiConfigData {
   useVirtualPorts: boolean;
   /** List of port name patterns to exclude from MIDI input auto-connect */
   inputExclude: string[];
+  /** Name for JACK client (default: "sketchatone") */
+  jackClientName: string;
+  /** JACK auto-connect mode (default: "chain0") */
+  jackAutoConnect: string | null;
   /** Default note duration in seconds (fallback when strummer.noteDuration is not configured) */
   defaultNoteDuration: number;
+  /** Delay in seconds after each MIDI message (default: 0). Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick */
+  midiInterMessageDelay: number;
 }
 
 /**
@@ -181,32 +203,44 @@ export const DEFAULT_MIDI_INPUT_EXCLUDE: string[] = [
  * Default MIDI configuration
  */
 export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
+  midiOutputBackend: 'rtmidi',
   outputPort: null,
   inputPort: null,
   channel: 0,
   useVirtualPorts: false,
   inputExclude: DEFAULT_MIDI_INPUT_EXCLUDE,
+  jackClientName: 'sketchatone',
+  jackAutoConnect: 'chain0',
   defaultNoteDuration: 1.5,
+  midiInterMessageDelay: 0,
 };
 
 /**
  * MIDI configuration class
  */
 export class MidiConfig implements MidiConfigData {
+  midiOutputBackend: 'rtmidi' | 'jack';
   outputPort: string | number | null;
   inputPort: string | number | null;
   channel: number;
   useVirtualPorts: boolean;
   inputExclude: string[];
+  jackClientName: string;
+  jackAutoConnect: string | null;
   defaultNoteDuration: number;
+  midiInterMessageDelay: number;
 
   constructor(data: Partial<MidiConfigData> = {}) {
+    this.midiOutputBackend = data.midiOutputBackend ?? DEFAULT_MIDI_CONFIG.midiOutputBackend;
     this.outputPort = data.outputPort ?? DEFAULT_MIDI_CONFIG.outputPort;
     this.inputPort = data.inputPort ?? DEFAULT_MIDI_CONFIG.inputPort;
     this.channel = data.channel ?? DEFAULT_MIDI_CONFIG.channel;
     this.useVirtualPorts = data.useVirtualPorts ?? DEFAULT_MIDI_CONFIG.useVirtualPorts;
     this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
+    this.jackClientName = data.jackClientName ?? DEFAULT_MIDI_CONFIG.jackClientName;
+    this.jackAutoConnect = data.jackAutoConnect ?? DEFAULT_MIDI_CONFIG.jackAutoConnect;
     this.defaultNoteDuration = data.defaultNoteDuration ?? DEFAULT_MIDI_CONFIG.defaultNoteDuration;
+    this.midiInterMessageDelay = data.midiInterMessageDelay ?? DEFAULT_MIDI_CONFIG.midiInterMessageDelay;
   }
 
   /**
@@ -214,12 +248,16 @@ export class MidiConfig implements MidiConfigData {
    */
   static fromDict(data: Record<string, unknown>): MidiConfig {
     return new MidiConfig({
-      outputPort: (data.output_port ?? data.outputPort) as string | number | null | undefined,
-      inputPort: (data.input_port ?? data.inputPort) as string | number | null | undefined,
+      midiOutputBackend: (data.midi_output_backend ?? data.midiOutputBackend ?? 'rtmidi') as 'rtmidi' | 'jack',
+      outputPort: (data.output_port ?? data.outputPort ?? data.midi_output_id ?? data.midiOutputId) as string | number | null | undefined,
+      inputPort: (data.input_port ?? data.inputPort ?? data.midi_input_id ?? data.midiInputId) as string | number | null | undefined,
       channel: data.channel as number | undefined,
       useVirtualPorts: (data.use_virtual_ports ?? data.useVirtualPorts) as boolean | undefined,
-      inputExclude: (data.input_exclude ?? data.inputExclude) as string[] | undefined,
+      inputExclude: (data.input_exclude ?? data.inputExclude ?? data.midi_input_exclude ?? data.midiInputExclude) as string[] | undefined,
+      jackClientName: (data.jack_client_name ?? data.jackClientName ?? 'sketchatone') as string,
+      jackAutoConnect: (data.jack_auto_connect ?? data.jackAutoConnect ?? 'chain0') as string | null | undefined,
       defaultNoteDuration: (data.default_note_duration ?? data.defaultNoteDuration ?? data.note_duration ?? data.noteDuration) as number | undefined,
+      midiInterMessageDelay: (data.midi_inter_message_delay ?? data.midiInterMessageDelay ?? 0) as number,
     });
   }
 
@@ -228,12 +266,16 @@ export class MidiConfig implements MidiConfigData {
    */
   toDict(): MidiConfigData {
     return {
+      midiOutputBackend: this.midiOutputBackend,
       outputPort: this.outputPort,
       inputPort: this.inputPort,
       channel: this.channel,
       useVirtualPorts: this.useVirtualPorts,
       inputExclude: this.inputExclude,
+      jackClientName: this.jackClientName,
+      jackAutoConnect: this.jackAutoConnect,
       defaultNoteDuration: this.defaultNoteDuration,
+      midiInterMessageDelay: this.midiInterMessageDelay,
     };
   }
 }
@@ -346,8 +388,16 @@ export class MidiStrummerConfig {
     return this._server.httpPort;
   }
 
+  get httpsPort(): number | null {
+    return this._server.httpsPort;
+  }
+
   get wsPort(): number | null {
     return this._server.wsPort;
+  }
+
+  get wssPort(): number | null {
+    return this._server.wssPort;
   }
 
   get wsMessageThrottle(): number {

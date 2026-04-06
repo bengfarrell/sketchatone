@@ -14,7 +14,13 @@ Example:
     from sketchatone.midi import MidiStrummerBridge, RtMidiBackend
 """
 
-__version__ = '0.1.0'
+# Get version from package metadata (reads from pyproject.toml)
+try:
+    from importlib.metadata import version
+    __version__ = version("sketchatone")
+except Exception:
+    # Fallback for development/editable installs where metadata might not be available
+    __version__ = "0.0.0-dev"
 
 # Export main classes and functions
 from .strummer.strummer import Strummer
