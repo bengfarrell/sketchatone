@@ -111,11 +111,11 @@ Wants=jack2.service
 Type=simple
 User=root
 WorkingDirectory=/opt/sketchatone
-# Auto-detect and include Zynthian venv if available
-Environment="PYTHONPATH=/opt/sketchatone/python:/usr/lib/python3/dist-packages"
+# Include Zynthian venv for JACK-Client package (safe to include even on non-Zynthian systems)
+Environment="PYTHONPATH=/opt/sketchatone/python:/zynthian/venv/lib/python3.11/site-packages:/usr/lib/python3/dist-packages"
 Environment="DISPLAY=:0"
-# Small delay to let JACK initialize if present (helps with Zynthian boot)
-ExecStartPre=/bin/sleep 2
+# Delay startup to ensure JACK is fully ready if present (helps with Zynthian boot)
+ExecStartPre=/bin/sleep 3
 ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
 TimeoutStopSec=10
 Restart=on-failure

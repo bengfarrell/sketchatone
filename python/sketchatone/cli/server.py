@@ -1875,6 +1875,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         if self.midi_input:
             available_inputs = self.midi_input.get_available_ports()
             input_ports = available_inputs
+            print(colored(f'[MIDI Devices] Found {len(input_ports)} input ports', Colors.CYAN))
 
         # Get MIDI output ports
         if self.backend:
@@ -1904,13 +1905,15 @@ class StrummerWebSocketServer(TabletReaderBase):
                     current_output_port = port['id']
                     break
 
-        return {
+        data = {
             'inputPorts': input_ports,
             'outputPorts': output_ports,
             'currentInputPorts': current_input_ports,  # Array of connected input port IDs
             'currentOutputPort': current_output_port,
             'excludedInputPorts': excluded_input_ports,  # Ports excluded from input to prevent feedback loops
         }
+        print(colored(f'[MIDI Devices] Sending to client: {len(input_ports)} inputs, {len(output_ports)} outputs', Colors.CYAN))
+        return data
 
     async def _handle_get_midi_devices(self, websocket: WebSocketServerProtocol) -> None:
         """Handle get-midi-devices request - returns available MIDI input and output ports."""

@@ -1,6 +1,6 @@
 {
   "name": "sketchatone",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Sketchatone - Node.js, Python, and Web implementation",
   "main": "dist/cli/index.js",
   "type": "module",

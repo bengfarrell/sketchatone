@@ -133,13 +133,12 @@ class JackMidiInput:
             except Exception as e:
                 print(f"[JackMidiInput] Error in callback: {e}")
 
-    def get_available_ports(self, filter_useful: bool = True) -> List[MidiInputPort]:
+    def get_available_ports(self) -> List[MidiInputPort]:
         """
         Get list of available JACK MIDI output ports (sources we can receive from).
 
-        Args:
-            filter_useful: If True, only return ports that are likely to be useful
-                          MIDI input sources (physical devices, not internal routing)
+        Returns all ports without filtering. Filtering should be done by the caller
+        based on user configuration.
         """
         try:
             # Create temporary client to query ports
@@ -147,37 +146,18 @@ class JackMidiInput:
             ports = temp_client.get_ports(is_midi=True, is_output=True)
             result: List[MidiInputPort] = []
 
-            # Patterns for ports that are useful MIDI input sources
-            useful_patterns = [
-                'system:midi_capture',  # Physical MIDI inputs (USB devices)
-                'a2j:',                 # ALSA to JACK bridge (physical devices)
-            ]
-
-            # Patterns for ports to exclude (internal routing, not useful for user selection)
-            exclude_patterns = [
-                'ZynMidiRouter',        # Zynthian internal routing
-                'zynseq',               # Zynthian sequencer
-                'zynsmf',               # Zynthian SMF player
-                'ttymidi',              # Serial MIDI (usually not useful)
-                'sketchatone',          # Our own ports
-            ]
-
+            print(f"[JackMidiInput] Found {len(ports)} JACK MIDI output ports")
             for i, port in enumerate(ports):
-                if filter_useful:
-                    # Check if port matches any useful pattern
-                    is_useful = any(pattern in port.name for pattern in useful_patterns)
-                    # Check if port matches any exclude pattern
-                    is_excluded = any(pattern in port.name for pattern in exclude_patterns)
-
-                    if is_useful and not is_excluded:
-                        result.append({'id': i, 'name': port.name})
-                else:
-                    result.append({'id': i, 'name': port.name})
+                print(f"[JackMidiInput]   {i}: {port.name}")
+                result.append({'id': i, 'name': port.name})
 
             temp_client.close()
+            print(f"[JackMidiInput] Returning {len(result)} ports to caller")
             return result
         except Exception as e:
             print(f"[JackMidiInput] Failed to get available ports: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def register_only(self) -> bool:

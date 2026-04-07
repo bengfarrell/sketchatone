@@ -520,8 +520,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.midiInput = new RtMidiInput();
       const inputPort = this.config.inputPort;
 
-      // Get available ports (filtered to useful ones) for UI display
-      this.midiInputAvailablePorts = await this.midiInput.getAvailablePorts(true);
+      // Get available ports for UI display
+      this.midiInputAvailablePorts = await this.midiInput.getAvailablePorts();
       console.log(chalk.gray(`[MIDI Input] Available ports: ${this.midiInputAvailablePorts.map(p => p.name).join(', ') || 'none'}`));
 
       let connected = false;
@@ -1337,7 +1337,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Get MIDI input ports
       if (this.midiInput) {
-        const availableInputs = await this.midiInput.getAvailablePorts(false);
+        const availableInputs = await this.midiInput.getAvailablePorts();
         inputPorts.push(...availableInputs);
       }
 
@@ -1401,7 +1401,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Get MIDI input ports
       if (this.midiInput) {
-        const availableInputs = await this.midiInput.getAvailablePorts(false);
+        const availableInputs = await this.midiInput.getAvailablePorts();
         inputPorts.push(...availableInputs);
       }
 

@@ -48,25 +48,6 @@ export interface MidiInputConnectionEvent {
 export const MIDI_INPUT_NOTE_EVENT = 'note';
 export const MIDI_INPUT_CONNECTION_EVENT = 'connection';
 
-/** Patterns for ports that are useful MIDI input sources */
-const USEFUL_PORT_PATTERNS = [
-  'system:midi_capture',  // Physical MIDI inputs (USB devices) - JACK
-  'a2j:',                 // ALSA to JACK bridge (physical devices)
-  'midi through',         // MIDI Through ports (RtMidi on Linux)
-  'usb',                  // USB MIDI devices
-  'keyboard',             // Keyboard devices
-];
-
-/** Patterns for ports to exclude (internal routing, not useful for user selection) */
-const EXCLUDE_PORT_PATTERNS = [
-  'ZynMidiRouter',        // Zynthian internal routing
-  'zynseq',               // Zynthian sequencer
-  'zynsmf',               // Zynthian SMF player
-  'ttymidi',              // Serial MIDI (usually not useful)
-  'sketchatone',          // Our own ports
-  'RtMidi',               // RtMidi virtual ports (our own output)
-];
-
 /**
  * Options for creating a MIDI input
  */
@@ -146,63 +127,24 @@ export class RtMidiInput extends EventEmitter {
   /**
    * Get list of available MIDI input ports
    *
-   * @param filterUseful - If true, only return ports that are likely to be useful
-   *                       MIDI input sources (physical devices, not internal routing)
+   * Returns all ports without filtering. Filtering should be done by the caller
+   * based on user configuration.
    */
-  async getAvailablePorts(filterUseful: boolean = false): Promise<MidiInputPort[]> {
+  async getAvailablePorts(): Promise<MidiInputPort[]> {
     try {
       const midiModule = await loadMidi();
       const tempInput = new midiModule.Input();
 
-      const allPorts: MidiInputPort[] = [];
-      const filteredPorts: MidiInputPort[] = [];
+      const ports: MidiInputPort[] = [];
       const portCount = tempInput.getPortCount();
 
       for (let i = 0; i < portCount; i++) {
         const portName = tempInput.getPortName(i);
-        allPorts.push({ id: i, name: portName });
-
-        if (filterUseful) {
-          const portNameLower = portName.toLowerCase();
-
-          // Check if port matches exclude patterns
-          const shouldExclude = EXCLUDE_PORT_PATTERNS.some(
-            (pattern) => portNameLower.includes(pattern.toLowerCase())
-          );
-
-          if (shouldExclude) {
-            continue;
-          }
-
-          // Check if port matches useful patterns
-          const isUseful = USEFUL_PORT_PATTERNS.some(
-            (pattern) => portNameLower.includes(pattern.toLowerCase())
-          );
-
-          if (isUseful) {
-            filteredPorts.push({ id: i, name: portName });
-          }
-        }
+        ports.push({ id: i, name: portName });
       }
 
       tempInput.closePort();
-
-      if (!filterUseful) {
-        return allPorts;
-      }
-
-      // If filtering returned no results, return all non-excluded ports
-      if (filteredPorts.length === 0) {
-        // Return all ports that don't match exclude patterns
-        return allPorts.filter((port) => {
-          const portNameLower = port.name.toLowerCase();
-          return !EXCLUDE_PORT_PATTERNS.some(
-            (pattern) => portNameLower.includes(pattern.toLowerCase())
-          );
-        });
-      }
-
-      return filteredPorts;
+      return ports;
     } catch (error) {
       console.error('[RtMidiInput] Failed to get available ports:', error);
       return [];
