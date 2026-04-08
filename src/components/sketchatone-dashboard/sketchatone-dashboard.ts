@@ -134,6 +134,9 @@ export class SketchatoneDashboard extends LitElement {
   private lastStrumEvent: StrumEventData | null = null;
 
   @state()
+  private lastChordChange: { chord: string; timestamp: number } | null = null;
+
+  @state()
   private packetCount = 0;
 
   @state()
@@ -299,6 +302,15 @@ export class SketchatoneDashboard extends LitElement {
             }
           }, 1000);
         }
+      }
+
+      // Extract chord changes from chord-related actions (not from MIDI input)
+      const chordName = this.extractChordFromAction(event);
+      if (chordName) {
+        this.lastChordChange = {
+          chord: chordName,
+          timestamp: event.timestamp
+        };
       }
     });
 
@@ -564,6 +576,48 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
+   * Extract chord name from chord-related action events
+   * Returns null if the action is not chord-related
+   */
+  private extractChordFromAction(event: ServerActionEvent): string | null {
+    const { action, params } = event;
+
+    // Handle set-strum-chord action: params[0] is the chord notation
+    if (action === 'set-strum-chord' && params.length > 0 && typeof params[0] === 'string') {
+      return params[0];
+    }
+
+    // Handle set-chord-in-progression and increment-chord-in-progression
+    // These set a chord from a progression, but we need to look up the actual chord
+    // For now, we can't easily determine the chord without the progression data
+    // So we'll show the progression name instead
+    if (action === 'set-chord-in-progression' && params.length >= 2) {
+      const progressionName = params[0] as string;
+      const index = params[1] as number;
+
+      // Try to get the actual chord from the progression
+      const progressions = (this.strummerConfig?.config as any)?.strummer?.chordProgressions;
+      if (progressions && progressionName in progressions) {
+        const chords = progressions[progressionName];
+        if (Array.isArray(chords) && index >= 0 && index < chords.length) {
+          return chords[index];
+        }
+      }
+
+      return `${progressionName}[${index}]`;
+    }
+
+    if (action === 'increment-chord-in-progression' && params.length >= 1) {
+      const progressionName = params[0] as string;
+
+      // We don't know the current index, so just show the progression name
+      return `${progressionName} (next)`;
+    }
+
+    return null;
+  }
+
+  /**
    * Send a config update to the server
    */
   private updateConfig(path: string, value: unknown) {
@@ -581,6 +635,7 @@ export class SketchatoneDashboard extends LitElement {
     this.lastPressedButton = null;
     this.tabletEvents = [];
     this.lastStrumEvent = null;
+    this.lastChordChange = null;
     this.packetCount = 0;
   }
 
@@ -958,6 +1013,7 @@ export class SketchatoneDashboard extends LitElement {
                 .events=${this.tabletEvents}
                 .isEmpty=${this.tabletEvents.length === 0}
                 .lastStrumEvent=${this.lastStrumEvent}
+                .lastChordChange=${this.lastChordChange}
                 .deviceInfo=${{ packetCount: this.packetCount, isMock: false, isTranslated: true }}>
               </strum-events-display>
             </dashboard-panel>

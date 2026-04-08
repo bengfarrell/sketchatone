@@ -29,11 +29,23 @@ class ChordProgressionState:
     def update_progressions(self, chord_progressions: Optional[Dict[str, List[str]]] = None) -> None:
         """
         Update available progressions (e.g., when config changes).
+        If a progression is currently loaded and still exists, reload it to pick up changes.
 
         Args:
             chord_progressions: Chord progressions from config
         """
         self.available_progressions = chord_progressions or {}
+
+        # If we have a loaded progression, reload it to pick up any changes
+        if self.progression_name and self.progression_name in self.available_progressions:
+            old_index = self.current_index
+            self.chords = list(self.available_progressions[self.progression_name])
+            # Preserve index if still valid, otherwise reset to 0
+            if old_index < len(self.chords):
+                self.current_index = old_index
+            else:
+                self.current_index = 0
+            print(f"[PROGRESSION] Reloaded '{self.progression_name}' with {len(self.chords)} chords (index: {self.current_index})")
 
     def load_progression(self, name: str) -> bool:
         """
@@ -170,12 +182,43 @@ class Actions(EventEmitter):
         """
         Update chord progressions.
         This allows dynamically updating the available progressions.
+        If a progression is currently loaded, re-applies the current chord to update notes.
 
         Args:
             chord_progressions: Chord progressions dictionary
         """
         self.chord_progressions = chord_progressions
+
+        # Store the current progression state before update
+        was_loaded = self.progression_state.progression_name is not None
+        current_progression = self.progression_state.progression_name
+        current_index = self.progression_state.current_index
+
+        # Update the progressions (this will reload if currently loaded)
         self.progression_state.update_progressions(chord_progressions)
+
+        # If a progression was loaded and still exists, re-apply the current chord
+        # to update the strummer notes with the new chord definition
+        if was_loaded and current_progression and current_progression in chord_progressions:
+            chord_notation = self.progression_state.get_current_chord()
+            if chord_notation and self.strummer:
+                try:
+                    # Parse chord into notes (using default octave 4)
+                    from sketchatone.models.note import Note
+                    notes = Note.parse_chord(chord_notation, 4)
+
+                    if notes:
+                        # Get note spread configuration
+                        lower_spread = getattr(self.config, 'lower_spread', 0)
+                        upper_spread = getattr(self.config, 'upper_spread', 0)
+
+                        # Apply note spread and set strummer notes
+                        self.strummer.notes = Note.fill_note_spread(notes, lower_spread, upper_spread)
+
+                        print(f"[ACTIONS] Re-applied chord '{chord_notation}' after progression update")
+                        # Note: broadcast happens automatically via strummer's notes_changed event
+                except Exception as e:
+                    print(f"[ACTIONS] Error re-applying chord after progression update: {e}")
 
     def handle_button_event(self, button_id: 'ButtonId', trigger: 'TriggerType') -> bool:
         """

@@ -26,9 +26,23 @@ export class ChordProgressionState {
 
   /**
    * Update available progressions (e.g., when config changes).
+   * If a progression is currently loaded and still exists, reload it to pick up changes.
    */
   updateProgressions(chordProgressions?: Record<string, string[]>): void {
     this.availableProgressions = chordProgressions ?? {};
+
+    // If we have a loaded progression, reload it to pick up any changes
+    if (this.progressionName && this.progressionName in this.availableProgressions) {
+      const oldIndex = this.currentIndex;
+      this.chords = [...this.availableProgressions[this.progressionName]];
+      // Preserve index if still valid, otherwise reset to 0
+      if (oldIndex < this.chords.length) {
+        this.currentIndex = oldIndex;
+      } else {
+        this.currentIndex = 0;
+      }
+      console.log(`[PROGRESSION] Reloaded '${this.progressionName}' with ${this.chords.length} chords (index: ${this.currentIndex})`);
+    }
   }
 
   /**
@@ -225,10 +239,44 @@ export class Actions extends EventEmitter {
   /**
    * Update chord progressions.
    * This allows dynamically updating the available progressions.
+   * If a progression is currently loaded, re-applies the current chord to update notes.
    */
   setChordProgressions(chordProgressions: Record<string, string[]>): void {
     this.chordProgressions = chordProgressions;
+
+    // Store the current progression state before update
+    const wasLoaded = this.progressionState.progressionName !== null;
+    const currentProgression = this.progressionState.progressionName;
+    const currentIndex = this.progressionState.currentIndex;
+
+    // Update the progressions (this will reload if currently loaded)
     this.progressionState.updateProgressions(chordProgressions);
+
+    // If a progression was loaded and still exists, re-apply the current chord
+    // to update the strummer notes with the new chord definition
+    if (wasLoaded && currentProgression && currentProgression in chordProgressions) {
+      const chordNotation = this.progressionState.getCurrentChord();
+      if (chordNotation && this.strummer) {
+        try {
+          // Parse chord into notes (using default octave 4)
+          const notes = Note.parseChord(chordNotation, 4);
+
+          if (notes && notes.length > 0) {
+            // Get note spread configuration
+            const lowerSpread = this.config.lowerSpread ?? 0;
+            const upperSpread = this.config.upperSpread ?? 0;
+
+            // Apply note spread and set strummer notes
+            this.strummer.notes = Note.fillNoteSpread(notes, lowerSpread, upperSpread);
+
+            console.log(`[ACTIONS] Re-applied chord '${chordNotation}' after progression update`);
+            // Note: broadcast happens automatically via strummer's notes_changed event
+          }
+        } catch (e) {
+          console.log(`[ACTIONS] Error re-applying chord after progression update: ${e}`);
+        }
+      }
+    }
   }
 
   /**

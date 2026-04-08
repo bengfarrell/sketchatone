@@ -22,6 +22,14 @@ export interface EventsDeviceInfo {
 }
 
 /**
+ * Chord change event from button actions
+ */
+export interface ChordChangeEvent {
+  chord: string;
+  timestamp: number;
+}
+
+/**
  * Strum Events Display - shows tablet events plus strum events
  */
 @customElement('strum-events-display')
@@ -247,6 +255,29 @@ export class StrumEventsDisplay extends LitElement {
       font-size: 11px;
       color: var(--spectrum-gray-600);
     }
+
+    .chord-change-section {
+      background: var(--spectrum-blue-100);
+      border: 1px solid var(--spectrum-blue-300);
+      border-radius: 6px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+
+    .chord-change-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--spectrum-blue-700);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .chord-change-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--spectrum-blue-900);
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
   `;
 
   @property({ type: Array })
@@ -260,6 +291,9 @@ export class StrumEventsDisplay extends LitElement {
 
   @property({ type: Object })
   lastStrumEvent: StrumEventData | null = null;
+
+  @property({ type: Object })
+  lastChordChange: ChordChangeEvent | null = null;
 
   private _formatValue(value: number | undefined, decimals: number = 3): string {
     if (value === undefined) return '—';
@@ -370,6 +404,13 @@ export class StrumEventsDisplay extends LitElement {
             <span class="button-label">Tablet ${this._getPressedTabletButton(event) ?? '—'}</span>
           </div>
         </div>
+
+        ${this.lastChordChange ? html`
+          <div class="chord-change-section">
+            <div class="chord-change-label">Chord Changed</div>
+            <div class="chord-change-value">${this.lastChordChange.chord}</div>
+          </div>
+        ` : ''}
 
         ${this._renderStrumSection()}
       </div>
