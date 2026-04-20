@@ -108,6 +108,7 @@ export class Note {
 
   /**
    * Translate notation and octave to MIDI index
+   * Uses standard MIDI convention where C4 (middle C) = 60
    */
   static notationToMidi(notation: string): number {
     const noteObj = this.parseNotation(notation);
@@ -118,7 +119,8 @@ export class Note {
         noteIndex = 0;
       }
     }
-    return noteObj.octave * this.sharpNotations.length + noteIndex;
+    // Standard MIDI: C-1 = 0, C0 = 12, C1 = 24, ..., C4 (middle C) = 60
+    return (noteObj.octave + 1) * this.sharpNotations.length + noteIndex;
   }
 
   /**
@@ -303,6 +305,7 @@ export class Note {
 
   /**
    * Convert a note to MIDI note number
+   * Uses standard MIDI convention where C4 (middle C) = 60
    */
   static noteToMidi(note: NoteObject): number {
     let noteIndex = this.sharpNotations.indexOf(note.notation);
@@ -312,7 +315,8 @@ export class Note {
         noteIndex = 0;
       }
     }
-    return note.octave * 12 + noteIndex;
+    // Standard MIDI: C-1 = 0, C0 = 12, C1 = 24, ..., C4 (middle C) = 60
+    return (note.octave + 1) * 12 + noteIndex;
   }
 
   /**

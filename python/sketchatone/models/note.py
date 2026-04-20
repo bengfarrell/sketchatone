@@ -60,7 +60,10 @@ class NoteObject:
         }
     
     def to_midi(self) -> int:
-        """Convert to MIDI note number"""
+        """
+        Convert to MIDI note number.
+        Uses standard MIDI convention where C4 (middle C) = 60.
+        """
         try:
             note_index = Note.sharp_notations.index(self.notation)
         except ValueError:
@@ -68,7 +71,8 @@ class NoteObject:
                 note_index = Note.flat_notations.index(self.notation)
             except ValueError:
                 note_index = 0
-        return self.octave * 12 + note_index
+        # Standard MIDI: C-1 = 0, C0 = 12, C1 = 24, ..., C4 (middle C) = 60
+        return (self.octave + 1) * 12 + note_index
     
     def __str__(self) -> str:
         return f"{self.notation}{self.octave}"
@@ -155,7 +159,10 @@ class Note:
 
     @classmethod
     def notation_to_midi(cls, notation: str) -> int:
-        """Translate notation and octave to MIDI index"""
+        """
+        Translate notation and octave to MIDI index.
+        Uses standard MIDI convention where C4 (middle C) = 60.
+        """
         nt_obj = cls.parse_notation(notation)
         try:
             nt_indx = cls.sharp_notations.index(nt_obj.notation)
@@ -164,7 +171,8 @@ class Note:
                 nt_indx = cls.flat_notations.index(nt_obj.notation)
             except ValueError:
                 nt_indx = 0
-        return nt_obj.octave * len(cls.sharp_notations) + nt_indx
+        # Standard MIDI: C-1 = 0, C0 = 12, C1 = 24, ..., C4 (middle C) = 60
+        return (nt_obj.octave + 1) * len(cls.sharp_notations) + nt_indx
 
     @classmethod
     def sort(cls, notes: List[str]) -> List[str]:

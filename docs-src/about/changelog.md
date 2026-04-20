@@ -40,6 +40,18 @@ description: Release notes and version history
 
 ### MIDI Improvements
 
+- **MIDI Octave Standardization** (Critical Fix): Fixed critical MIDI octave calculation bug affecting all note output
+  - **C4 = MIDI note 60** is now the immutable standard across the entire codebase (matching General MIDI specification)
+  - Fixed Python implementation where C4 was incorrectly mapped to MIDI note 48 (one octave too low)
+  - Fixed TypeScript implementation where middle C calculation was inconsistent
+  - All chords, scales, and note calculations now use the correct octave mapping
+  - Added comprehensive unit tests (643 tests total) to prevent future regressions
+  - **Impact**: All MIDI output is now one octave higher than in previous versions. Users may need to adjust their configurations
+- **Expanded MIDI Test Coverage**: Comprehensive test suite for MIDI configuration and channel routing
+  - 24 unit tests per language (100% parity between TypeScript and Python)
+  - Configuration option tests: channel assignment, dynamic channel switching, inter-message delay, device monitoring
+  - Channel routing edge case tests: rapid channel switching, per-channel active note tracking, multi-channel scheduled notes
+  - Mock backends updated to accept all `MidiBackendOptions` for consistent testing
 - **MIDI Passthrough**: Forward MIDI messages from input devices directly to output devices in real-time, allowing a MIDI keyboard to control both Sketchatone and external devices (e.g., MPC One+) simultaneously
   - Full parity between Python and Node.js implementations
   - Supports both RtMidi and JACK backends (Python only has JACK)

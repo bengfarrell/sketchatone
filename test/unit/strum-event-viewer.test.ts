@@ -411,7 +411,7 @@ describe('Note', () => {
   it('should convert note to MIDI', () => {
     const note = createNote('C', 4);
     const midi = Note.noteToMidi(note);
-    expect(midi).toBe(48); // C4 = 48
+    expect(midi).toBe(60); // C4 (middle C) = MIDI 60
   });
 
   it('should convert note to string', () => {

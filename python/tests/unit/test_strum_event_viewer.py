@@ -639,7 +639,7 @@ class TestNoteClass:
         """Test converting note to MIDI"""
         note = NoteObject(notation='C', octave=4, secondary=False)
         midi = note.to_midi()
-        assert midi == 48  # C4 = 48
+        assert midi == 60  # C4 (middle C) = MIDI 60
     
     def test_note_to_string(self):
         """Test converting note to string"""
