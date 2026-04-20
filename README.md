@@ -29,6 +29,22 @@ sudo apt-get install -f  # Install dependencies
 sketchatone
 ```
 
+#### Optional Raspberry Pi Setup
+
+After installation, you can optionally configure:
+
+**USB MIDI Gadget Mode** - Connect Pi directly to MIDI hardware via USB-C:
+```bash
+sudo sketchatone-setup-usb-gadget
+```
+Perfect for connecting to devices like Akai MPC that can power the Pi over USB.
+
+**Kiosk Mode** - Auto-start web dashboard in fullscreen on boot:
+```bash
+sudo sketchatone-setup-kiosk
+```
+Ideal for dedicated installations or live performance setups.
+
 ### From Source
 ```bash
 npm install

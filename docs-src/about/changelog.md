@@ -40,6 +40,15 @@ description: Release notes and version history
 
 ### MIDI Improvements
 
+- **MIDI Passthrough**: Forward MIDI messages from input devices directly to output devices in real-time, allowing a MIDI keyboard to control both Sketchatone and external devices (e.g., MPC One+) simultaneously
+  - Full parity between Python and Node.js implementations
+  - Supports both RtMidi and JACK backends (Python only has JACK)
+  - Minimal latency - messages forwarded before note processing
+  - Configure via UI toggle for each input device when output is connected
+  - Hot-swapping support - automatically re-registers on device changes
+- **ALSA Client Leak Fix** (Python): Fixed critical ALSA sequencer client leak in RtMidi backend that caused MIDI failure after ~100 port queries on Raspberry Pi
+  - Added explicit cleanup with `try/finally` blocks and `.delete()` calls
+  - Prevents "Cannot create RtMidi input object" errors during long-running sessions
 - **Multiple input ports**: Support for connecting to multiple MIDI input ports simultaneously (array of port IDs)
 - **Explicit input disable**: Empty array explicitly disables all MIDI inputs
 - **Enhanced JACK support** (Python): Improved JACK MIDI input implementation

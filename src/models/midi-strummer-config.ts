@@ -160,6 +160,16 @@ export class ServerConfig implements ServerConfigData {
 }
 
 /**
+ * MIDI passthrough connection configuration
+ */
+export interface MidiPassthroughConnection {
+  /** Input port ID or name to forward from */
+  inputPort: string | number;
+  /** Output port ID or name to forward to */
+  outputPort: string | number;
+}
+
+/**
  * MIDI configuration data
  */
 export interface MidiConfigData {
@@ -183,6 +193,8 @@ export interface MidiConfigData {
   defaultNoteDuration: number;
   /** Delay in seconds after each MIDI message (default: 0). Use e.g. 0.002 (2 ms) on Raspberry Pi when notes stick */
   midiInterMessageDelay: number;
+  /** MIDI passthrough connections - forward MIDI from inputs to outputs */
+  midiPassthrough: MidiPassthroughConnection[];
 }
 
 /**
@@ -213,6 +225,7 @@ export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
   jackAutoConnect: 'chain0',
   defaultNoteDuration: 1.5,
   midiInterMessageDelay: 0,
+  midiPassthrough: [],
 };
 
 /**
@@ -229,6 +242,7 @@ export class MidiConfig implements MidiConfigData {
   jackAutoConnect: string | null;
   defaultNoteDuration: number;
   midiInterMessageDelay: number;
+  midiPassthrough: MidiPassthroughConnection[];
 
   constructor(data: Partial<MidiConfigData> = {}) {
     this.midiOutputBackend = data.midiOutputBackend ?? DEFAULT_MIDI_CONFIG.midiOutputBackend;
@@ -241,6 +255,7 @@ export class MidiConfig implements MidiConfigData {
     this.jackAutoConnect = data.jackAutoConnect ?? DEFAULT_MIDI_CONFIG.jackAutoConnect;
     this.defaultNoteDuration = data.defaultNoteDuration ?? DEFAULT_MIDI_CONFIG.defaultNoteDuration;
     this.midiInterMessageDelay = data.midiInterMessageDelay ?? DEFAULT_MIDI_CONFIG.midiInterMessageDelay;
+    this.midiPassthrough = data.midiPassthrough ?? [];
   }
 
   /**
@@ -258,6 +273,7 @@ export class MidiConfig implements MidiConfigData {
       jackAutoConnect: (data.jack_auto_connect ?? data.jackAutoConnect ?? 'chain0') as string | null | undefined,
       defaultNoteDuration: (data.default_note_duration ?? data.defaultNoteDuration ?? data.note_duration ?? data.noteDuration) as number | undefined,
       midiInterMessageDelay: (data.midi_inter_message_delay ?? data.midiInterMessageDelay ?? 0) as number,
+      midiPassthrough: (data.midi_passthrough ?? data.midiPassthrough ?? []) as MidiPassthroughConnection[],
     });
   }
 
@@ -276,6 +292,7 @@ export class MidiConfig implements MidiConfigData {
       jackAutoConnect: this.jackAutoConnect,
       defaultNoteDuration: this.defaultNoteDuration,
       midiInterMessageDelay: this.midiInterMessageDelay,
+      midiPassthrough: this.midiPassthrough,
     };
   }
 }

@@ -108,6 +108,7 @@ class RtMidiBackend(MidiBackendProtocol):
     
     def get_available_ports(self) -> List[str]:
         """Get list of available MIDI output ports."""
+        temp_out = None
         try:
             # Create a fresh MidiOut instance to force port list refresh
             # On macOS, rtmidi sometimes caches the port list, so we need to
@@ -119,11 +120,22 @@ class RtMidiBackend(MidiBackendProtocol):
             time.sleep(0.01)
 
             ports = temp_out.get_ports()
-            del temp_out
             return ports
         except Exception as e:
             print(f"[RtMidi] Error getting available ports: {e}")
             return []
+        finally:
+            # Explicitly delete C++ instance to prevent ALSA client leak
+            if temp_out is not None:
+                try:
+                    # Call delete() to immediately release the ALSA sequencer client
+                    # Without this, ALSA clients accumulate until hitting the 192 limit
+                    # (seen as "Cannot allocate memory" errors)
+                    if hasattr(temp_out, 'delete'):
+                        temp_out.delete()
+                    del temp_out
+                except Exception:
+                    pass
     
     def connect(self, output_port: Optional[str] = None) -> bool:
         """

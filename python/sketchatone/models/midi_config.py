@@ -5,7 +5,7 @@ Configuration model for MIDI backend settings.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Union, Literal, List
+from typing import Optional, Dict, Any, Union, Literal, List, TypedDict
 import json
 
 
@@ -22,6 +22,12 @@ DEFAULT_MIDI_INPUT_EXCLUDE: List[str] = [
 ]
 
 
+class MidiPassthroughConnection(TypedDict):
+    """A MIDI passthrough connection from input port to output port"""
+    inputPort: Union[int, str]   # Input port ID or name
+    outputPort: Union[int, str]  # Output port ID or name
+
+
 @dataclass
 class MidiConfig:
     """
@@ -32,6 +38,7 @@ class MidiConfig:
         midi_output_id: MIDI output port - can be index (0, 1, 2) or name string, None = port 0
         midi_input_id: MIDI input port selection - can be index or name string, None = auto-connect all
         midi_input_exclude: List of port name patterns to exclude from auto-connect (case-insensitive substring match)
+        midi_passthrough: List of MIDI passthrough connections (input port -> output port)
         jack_client_name: Name for JACK client (default: "sketchatone")
         jack_auto_connect: JACK auto-connect mode (default: "chain0")
         default_note_duration: Default duration of notes in seconds (default: 1.5)
@@ -43,6 +50,7 @@ class MidiConfig:
     midi_output_id: Optional[Union[int, str]] = None
     midi_input_id: Optional[Union[int, str]] = None
     midi_input_exclude: List[str] = field(default_factory=lambda: DEFAULT_MIDI_INPUT_EXCLUDE.copy())
+    midi_passthrough: List[MidiPassthroughConnection] = field(default_factory=list)
     jack_client_name: str = "sketchatone"
     jack_auto_connect: Optional[str] = "chain0"
     default_note_duration: float = 1.5
@@ -60,11 +68,15 @@ class MidiConfig:
         # Get inter-message delay
         delay = data.get('midi_inter_message_delay', data.get('midiInterMessageDelay', 0))
 
+        # Get passthrough connections
+        passthrough = data.get('midi_passthrough', data.get('midiPassthrough', []))
+
         return cls(
             midi_output_backend=data.get('midi_output_backend', data.get('midiOutputBackend', 'rtmidi')),
             midi_output_id=data.get('midi_output_id', data.get('midiOutputId')),
             midi_input_id=data.get('midi_input_id', data.get('midiInputId')),
             midi_input_exclude=exclude_list,
+            midi_passthrough=passthrough,
             jack_client_name=data.get('jack_client_name', data.get('jackClientName', 'sketchatone')),
             jack_auto_connect=data.get('jack_auto_connect', data.get('jackAutoConnect', 'chain0')),
             default_note_duration=data.get('default_note_duration', data.get('defaultNoteDuration', data.get('note_duration', data.get('noteDuration', 1.5)))),
@@ -85,6 +97,7 @@ class MidiConfig:
             'midiOutputId': self.midi_output_id,
             'midiInputId': self.midi_input_id,
             'midiInputExclude': self.midi_input_exclude,
+            'midiPassthrough': self.midi_passthrough,
             'jackClientName': self.jack_client_name,
             'jackAutoConnect': self.jack_auto_connect,
             'defaultNoteDuration': self.default_note_duration,

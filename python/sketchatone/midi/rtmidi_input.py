@@ -93,6 +93,10 @@ class RtMidiInput:
         self._note_callbacks: List[Callable[[MidiInputNoteEvent], None]] = []
         self._lock = threading.Lock()
 
+        # MIDI passthrough support
+        # Callback that receives (raw_midi_message, port_id, port_name)
+        self._passthrough_callback: Optional[Callable[[List[int], int, str], None]] = None
+
         # Device monitoring
         # Normalize: False or 0 means disabled, otherwise convert to seconds
         if device_monitoring is False or device_monitoring == 0:
@@ -129,6 +133,17 @@ class RtMidiInput:
         """Register a callback for note events"""
         self._note_callbacks.append(callback)
 
+    def set_passthrough_callback(self, callback: Optional[Callable[[List[int], int, str], None]]) -> None:
+        """
+        Set a callback for MIDI passthrough.
+
+        Args:
+            callback: Function that receives (raw_midi_message, port_id, port_name)
+                     The callback should forward the MIDI message to appropriate outputs.
+                     Set to None to disable passthrough.
+        """
+        self._passthrough_callback = callback
+
     def off_note(self, callback: Callable[[MidiInputNoteEvent], None]) -> None:
         """Remove a note event callback"""
         if callback in self._note_callbacks:
@@ -153,6 +168,7 @@ class RtMidiInput:
 
     def get_available_ports(self) -> List[MidiInputPort]:
         """Get list of available MIDI input ports."""
+        temp_in = None
         try:
             # Create a fresh MidiIn instance to force port list refresh
             # On macOS, rtmidi sometimes caches the port list, so we need to
@@ -167,11 +183,22 @@ class RtMidiInput:
             port_count = temp_in.get_port_count()
             for i in range(port_count):
                 ports.append({'id': i, 'name': temp_in.get_port_name(i)})
-            del temp_in
             return ports
         except Exception as e:
             print(f"[RtMidiInput] Failed to get available ports: {e}")
             return []
+        finally:
+            # Explicitly delete C++ instance to prevent ALSA client leak
+            if temp_in is not None:
+                try:
+                    # Call delete() to immediately release the ALSA sequencer client
+                    # Without this, ALSA clients accumulate until hitting the 192 limit
+                    # (seen as "Cannot allocate memory" errors)
+                    if hasattr(temp_in, 'delete'):
+                        temp_in.delete()
+                    del temp_in
+                except Exception:
+                    pass
 
     def connect_all(self, exclude_ports: Optional[List[str]] = None) -> bool:
         """
@@ -215,7 +242,7 @@ class RtMidiInput:
                     continue
 
                 # Set up callback with port info
-                midi_in.set_callback(self._create_callback(port_name))
+                midi_in.set_callback(self._create_callback(i, port_name))
 
                 midi_in.open_port(i)
                 self._midi_inputs[i] = midi_in
@@ -280,7 +307,7 @@ class RtMidiInput:
                 port_name = midi_in.get_port_name(port_id)
 
                 # Set up callback with port info
-                midi_in.set_callback(self._create_callback(port_name))
+                midi_in.set_callback(self._create_callback(port_id, port_name))
 
                 midi_in.open_port(port_id)
                 self._midi_inputs[port_id] = midi_in
@@ -355,7 +382,7 @@ class RtMidiInput:
             port_name = midi_in.get_port_name(port_index)
 
             # Set up callback before opening port
-            midi_in.set_callback(self._create_callback(port_name))
+            midi_in.set_callback(self._create_callback(port_index, port_name))
 
             midi_in.open_port(port_index)
 
@@ -395,16 +422,24 @@ class RtMidiInput:
 
         print("[RtMidiInput] Disconnected")
 
-    def _create_callback(self, port_name: str):
+    def _create_callback(self, port_id: int, port_name: str):
         """Create a MIDI message callback for a specific port"""
         def callback(message, data=None):
-            self._handle_midi_message(message[0], port_name)
+            self._handle_midi_message(message[0], port_id, port_name)
         return callback
 
-    def _handle_midi_message(self, message: List[int], port_name: str) -> None:
+    def _handle_midi_message(self, message: List[int], port_id: int, port_name: str) -> None:
         """Handle incoming MIDI messages"""
         if len(message) < 3:
+            # For passthrough, forward even short messages (e.g., clock, start/stop)
+            if self._passthrough_callback:
+                self._passthrough_callback(message, port_id, port_name)
             return
+
+        # Call passthrough callback FIRST (before processing notes)
+        # This ensures MIDI messages are forwarded with minimal latency
+        if self._passthrough_callback:
+            self._passthrough_callback(message, port_id, port_name)
 
         command = message[0]
         note_number = message[1]

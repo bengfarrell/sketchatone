@@ -74,13 +74,26 @@ if [ -d "dist/public" ]; then
     cp -R dist/public/* "$PKG_DIR/opt/sketchatone/dist/public/"
 fi
 
-# Copy setup script
+# Copy setup scripts
 if [ -f "sketchatone-setup" ]; then
     cp sketchatone-setup "$PKG_DIR/usr/bin/sketchatone-setup"
     chmod +x "$PKG_DIR/usr/bin/sketchatone-setup"
     echo "📦 Including setup script"
 else
     echo "⚠️  Warning: sketchatone-setup not found"
+fi
+
+# Copy optional setup scripts
+if [ -f "setup-usb-midi-gadget.sh" ]; then
+    cp setup-usb-midi-gadget.sh "$PKG_DIR/usr/bin/sketchatone-setup-usb-gadget"
+    chmod +x "$PKG_DIR/usr/bin/sketchatone-setup-usb-gadget"
+    echo "📦 Including USB MIDI gadget setup script"
+fi
+
+if [ -f "setup-kiosk-mode.sh" ]; then
+    cp setup-kiosk-mode.sh "$PKG_DIR/usr/bin/sketchatone-setup-kiosk"
+    chmod +x "$PKG_DIR/usr/bin/sketchatone-setup-kiosk"
+    echo "📦 Including kiosk mode setup script"
 fi
 
 # Create launcher script in /usr/bin
@@ -281,6 +294,10 @@ echo "  sudo sketchatone-setup --mode always-on     # Start on boot instead"
 echo ""
 echo "To run manually:"
 echo "  sketchatone -c /opt/sketchatone/configs/config.json"
+echo ""
+echo "Optional advanced setup (run after installation):"
+echo "  sudo sketchatone-setup-usb-gadget           # Configure Pi as USB MIDI device"
+echo "  sudo sketchatone-setup-kiosk                # Enable fullscreen kiosk mode"
 echo ""
 
 exit 0

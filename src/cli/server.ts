@@ -508,6 +508,53 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Register MIDI passthrough for forwarding input to output
+   * Similar to Python implementation
+   */
+  private registerMidiPassthrough(): void {
+    if (!this.midiInput || !this.backend) {
+      return;
+    }
+
+    const passthroughConnections = this.config.midi.midiPassthrough || [];
+    if (passthroughConnections.length === 0) {
+      console.log(chalk.gray('[MIDI Passthrough] No passthrough connections configured'));
+      return;
+    }
+
+    console.log(chalk.cyan('[MIDI Passthrough] Registering passthrough callback...'));
+
+    // Create a passthrough callback that forwards MIDI messages
+    const passthroughCallback = (message: number[], portId: number, portName: string): void => {
+      // Check if this input port has any passthrough connections
+      for (const connection of passthroughConnections) {
+        const inputPort = connection.inputPort;
+
+        // Match by port ID or name
+        if (inputPort === portId || inputPort === portName) {
+          // Forward the MIDI message to the output backend
+          try {
+            if (this.backend && this.backend.isConnected) {
+              // Send raw MIDI message through the backend
+              // RtMidiBackend has _midiOut.sendMessage() for sending raw bytes
+              if (this.backend instanceof RtMidiBackend && (this.backend as any)._midiOut) {
+                (this.backend as any)._midiOut.sendMessage(message);
+              } else {
+                console.log(chalk.yellow('[MIDI Passthrough] Warning: Backend does not support raw MIDI send'));
+              }
+            }
+          } catch (error) {
+            console.error(chalk.red(`[MIDI Passthrough] Error forwarding message: ${error}`));
+          }
+        }
+      }
+    };
+
+    this.midiInput.setPassthroughCallback(passthroughCallback);
+    console.log(chalk.gray('[MIDI Passthrough] Callback registered'));
+  }
+
+  /**
    * Initialize MIDI input for external keyboard.
    * Supports multiple connection modes:
    * - Array of port IDs: Connect to specific selected ports
@@ -555,6 +602,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
 
       // Register the callback for note events
       this.registerMidiInputCallback();
+
+      // Register MIDI passthrough if configured
+      this.registerMidiPassthrough();
 
       return true;
     } catch (error) {
@@ -976,12 +1026,19 @@ class StrummerWebSocketServer extends TabletReaderBase {
           if (success) {
             const portCount = this.midiInput?.connectedPorts.length ?? 0;
             console.log(chalk.green(`[MIDI Input] Reconnected to ${portCount} port(s)`));
-            // Re-register callback after reconnection
+            // Re-register callbacks after reconnection
             this.registerMidiInputCallback();
+            this.registerMidiPassthrough();
           }
           // Always broadcast device status to update UI (even on disconnect)
           this.broadcastMidiDevices();
         });
+      }
+
+      // Re-register MIDI passthrough if passthrough config changed
+      if (path === 'midi.midiPassthrough' || path === 'midi.midi_passthrough') {
+        console.log(chalk.cyan('[MIDI Passthrough] Configuration changed, re-registering...'));
+        this.registerMidiPassthrough();
       }
 
       console.log(chalk.yellow(`Config updated: ${path} = ${JSON.stringify(value)}`));
@@ -1444,6 +1501,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
           currentInputPorts,
           currentOutputPort,
           excludedInputPorts,
+          passthroughConnections: this.config.midi.midiPassthrough || [],
         },
       });
 

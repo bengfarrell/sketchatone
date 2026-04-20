@@ -93,6 +93,9 @@ export class RtMidiInput extends EventEmitter {
   private _lastAvailablePorts: MidiInputPort[] = [];
   private _connectAllMode = false;
 
+  // MIDI passthrough
+  private _passthroughCallback: ((message: number[], portId: number, portName: string) => void) | null = null;
+
   constructor(options: RtMidiInputOptions = {}) {
     super();
 
@@ -122,6 +125,17 @@ export class RtMidiInput extends EventEmitter {
   /** Get the list of currently held notes as NoteObjects */
   getNotesAsObjects(): NoteObject[] {
     return this._notes.map((noteStr) => Note.parseNotation(noteStr));
+  }
+
+  /**
+   * Set a callback for MIDI passthrough.
+   *
+   * @param callback - Function that receives (raw_midi_message, port_id, port_name)
+   *                   The callback should forward the MIDI message to appropriate outputs.
+   *                   Set to null to disable passthrough.
+   */
+  setPassthroughCallback(callback: ((message: number[], portId: number, portName: string) => void) | null): void {
+    this._passthroughCallback = callback;
   }
 
   /**
@@ -172,15 +186,16 @@ export class RtMidiInput extends EventEmitter {
       const input = new midiModule.Input();
 
       // Set up message callback
+      const portId = 0;
       input.on('message', (_deltaTime: number, message: number[]) => {
-        this.handleMidiMessage(message, portName);
+        this.handleMidiMessage(message, portId, portName);
       });
 
       // Open virtual port (creates a port that other apps can connect to)
       input.openVirtualPort(portName);
 
-      this._midiInputs.set(0, input);
-      this._connectedPorts.push({ id: 0, name: portName });
+      this._midiInputs.set(portId, input);
+      this._connectedPorts.push({ id: portId, name: portName });
       this._isConnected = true;
       this._currentInputName = portName;
       this._notes = [];
@@ -257,13 +272,14 @@ export class RtMidiInput extends EventEmitter {
         }
 
         // Set up message callback with port info
+        const portId = i;
         input.on('message', (_deltaTime: number, message: number[]) => {
-          this.handleMidiMessage(message, portName);
+          this.handleMidiMessage(message, portId, portName);
         });
 
-        input.openPort(i);
-        this._midiInputs.set(i, input);
-        this._connectedPorts.push({ id: i, name: portName });
+        input.openPort(portId);
+        this._midiInputs.set(portId, input);
+        this._connectedPorts.push({ id: portId, name: portName });
         connectedCount++;
 
         console.log(`[RtMidiInput] Connected to port ${i}: ${portName}`);
@@ -355,7 +371,7 @@ export class RtMidiInput extends EventEmitter {
 
         // Set up message callback with port info
         input.on('message', (_deltaTime: number, message: number[]) => {
-          this.handleMidiMessage(message, portName);
+          this.handleMidiMessage(message, portId, portName);
         });
 
         input.openPort(portId);
@@ -473,7 +489,7 @@ export class RtMidiInput extends EventEmitter {
 
       // Set up message callback before opening port
       input.on('message', (_deltaTime: number, message: number[]) => {
-        this.handleMidiMessage(message, portName);
+        this.handleMidiMessage(message, portIndex, portName);
       });
 
       input.openPort(portIndex);
@@ -534,7 +550,13 @@ export class RtMidiInput extends EventEmitter {
   /**
    * Handle incoming MIDI messages
    */
-  private handleMidiMessage(message: number[], portName: string): void {
+  private handleMidiMessage(message: number[], portId: number, portName: string): void {
+    // Call passthrough callback FIRST (before processing notes)
+    // This ensures MIDI messages are forwarded with minimal latency
+    if (this._passthroughCallback) {
+      this._passthroughCallback(message, portId, portName);
+    }
+
     if (message.length < 3) return;
 
     const command = message[0];

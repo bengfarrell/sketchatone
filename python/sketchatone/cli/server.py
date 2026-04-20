@@ -865,11 +865,65 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Register note event callback
             self._register_midi_input_callback()
 
+            # Register passthrough callback
+            self._register_midi_passthrough()
+
             return True
 
         except Exception as e:
             print(colored(f'MIDI input not available: {e}', Colors.RED))
             return False
+
+    def _register_midi_passthrough(self) -> None:
+        """
+        Register MIDI passthrough callback to forward MIDI from inputs to outputs.
+        """
+        if not self.midi_input or not self.backend:
+            return
+
+        # Only RtMidiInput supports passthrough callback currently
+        if not hasattr(self.midi_input, 'set_passthrough_callback'):
+            return
+
+        # Get passthrough connections from config
+        passthrough_connections = self.config.midi.midi_passthrough
+
+        if not passthrough_connections:
+            # No passthrough configured
+            self.midi_input.set_passthrough_callback(None)
+            return
+
+        print(colored(f'[MIDI Passthrough] Configuring {len(passthrough_connections)} connection(s)', Colors.CYAN))
+
+        # Create a passthrough callback that forwards MIDI messages
+        def passthrough_callback(message: List[int], port_id: int, port_name: str) -> None:
+            """Forward MIDI message from input to output if configured"""
+            # Check if this input port has any passthrough connections
+            for connection in passthrough_connections:
+                input_port = connection.get('inputPort')
+
+                # Match by port ID or name
+                if input_port == port_id or input_port == port_name:
+                    # Forward the MIDI message to the output backend
+                    try:
+                        if self.backend and self.backend.is_connected:
+                            # Send raw MIDI message through the backend
+                            # Support both RtMidi and JACK backends
+                            if hasattr(self.backend, '_send'):
+                                # RtMidi backend - has _send() method
+                                with self.backend._send_lock:
+                                    self.backend._send(message)
+                            elif hasattr(self.backend, '_queue_midi_event'):
+                                # JACK backend - uses _queue_midi_event()
+                                with self.backend._send_lock:
+                                    self.backend._queue_midi_event(bytes(message))
+                            else:
+                                print(colored('[MIDI Passthrough] Warning: Backend does not support raw MIDI send', Colors.YELLOW))
+                    except Exception as e:
+                        print(colored(f'[MIDI Passthrough] Error forwarding message: {e}', Colors.RED))
+
+        self.midi_input.set_passthrough_callback(passthrough_callback)
+        print(colored('[MIDI Passthrough] Callback registered', Colors.GRAY))
 
     def _broadcast_midi_input(self, event: MidiInputNoteEvent) -> None:
         """Broadcast MIDI input event to all connected clients"""
@@ -1562,8 +1616,17 @@ class StrummerWebSocketServer(TabletReaderBase):
                 if connected:
                     # Re-register the callback after reconnection
                     self._register_midi_input_callback()
+                    # Re-register passthrough after reconnection
+                    self._register_midi_passthrough()
 
                 # Always broadcast updated device list to all clients (even on disconnect)
+                self._broadcast_midi_devices()
+
+            # Update MIDI passthrough if configuration changed
+            if path == 'midi.midiPassthrough':
+                print(colored(f'[MIDI Passthrough] Configuration updated', Colors.CYAN))
+                self._register_midi_passthrough()
+                # Broadcast updated device list to show passthrough status
                 self._broadcast_midi_devices()
 
             # Re-apply action rules if they changed
@@ -1905,14 +1968,18 @@ class StrummerWebSocketServer(TabletReaderBase):
                     current_output_port = port['id']
                     break
 
+        # Get passthrough connections from config
+        passthrough_connections = self.config.midi.midi_passthrough
+
         data = {
             'inputPorts': input_ports,
             'outputPorts': output_ports,
             'currentInputPorts': current_input_ports,  # Array of connected input port IDs
             'currentOutputPort': current_output_port,
             'excludedInputPorts': excluded_input_ports,  # Ports excluded from input to prevent feedback loops
+            'passthroughConnections': passthrough_connections,  # MIDI passthrough connections
         }
-        print(colored(f'[MIDI Devices] Sending to client: {len(input_ports)} inputs, {len(output_ports)} outputs', Colors.CYAN))
+        print(colored(f'[MIDI Devices] Sending to client: {len(input_ports)} inputs, {len(output_ports)} outputs, {len(passthrough_connections)} passthrough', Colors.CYAN))
         return data
 
     async def _handle_get_midi_devices(self, websocket: WebSocketServerProtocol) -> None:

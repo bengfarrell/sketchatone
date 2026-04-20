@@ -41,12 +41,19 @@ export interface ServerMidiInputStatus {
   currentNotes: string[];
 }
 
+/** MIDI passthrough connection */
+export interface MidiPassthroughConnection {
+  inputPort: number | string;
+  outputPort: number | string;
+}
+
 /** MIDI devices list from server */
 export interface ServerMidiDevices {
   inputPorts: ServerMidiInputPort[];
   outputPorts: ServerMidiInputPort[];
   currentInputPorts: number[];
   currentOutputPort: number | null;
+  passthroughConnections?: MidiPassthroughConnection[];
 }
 
 /** Action event from server */
@@ -489,6 +496,7 @@ export class StrummerWebSocketClient extends EventEmitter {
               outputPorts: message.data.outputPorts ?? [],
               currentInputPorts: message.data.currentInputPorts ?? [],
               currentOutputPort: message.data.currentOutputPort ?? null,
+              passthroughConnections: message.data.passthroughConnections ?? [],
             });
           }
           break;

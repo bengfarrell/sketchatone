@@ -7,6 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { MidiDevicePort } from '../../types/tablet-events.js';
+import type { MidiPassthroughConnection } from '../../utils/strummer-websocket-client.js';
 
 @customElement('midi-devices-config')
 export class MidiDevicesConfig extends LitElement {
@@ -170,6 +171,19 @@ export class MidiDevicesConfig extends LitElement {
       font-family: monospace;
     }
 
+    .passthrough-label {
+      font-size: 0.75rem;
+      color: var(--spectrum-gray-700);
+      margin-left: 4px;
+    }
+
+    .passthrough-toggle-container {
+      display: flex;
+      align-items: center;
+      margin-top: 4px;
+      gap: 4px;
+    }
+
     .empty-message {
       padding: 20px;
       text-align: center;
@@ -189,6 +203,9 @@ export class MidiDevicesConfig extends LitElement {
 
   @property()
   currentOutputPort: string | number | null = null;
+
+  @property({ type: Array })
+  passthroughConnections: MidiPassthroughConnection[] = [];
 
   private handleInputToggle(portId: string | number, event: Event): void {
     event.stopPropagation();
@@ -231,6 +248,40 @@ export class MidiDevicesConfig extends LitElement {
     }));
   }
 
+  private handlePassthroughToggle(inputPortId: string | number, event: Event): void {
+    event.stopPropagation();
+    const checkbox = event.target as HTMLInputElement;
+
+    let newPassthroughConnections: MidiPassthroughConnection[];
+    if (checkbox.checked) {
+      // Add passthrough connection for this input port
+      // Since we're doing "all or nothing", we forward to the current output port
+      if (this.currentOutputPort !== null) {
+        newPassthroughConnections = [
+          ...this.passthroughConnections,
+          { inputPort: inputPortId, outputPort: this.currentOutputPort }
+        ];
+      } else {
+        // No output port selected, can't enable passthrough
+        checkbox.checked = false;
+        return;
+      }
+    } else {
+      // Remove passthrough connection for this input port
+      newPassthroughConnections = this.passthroughConnections.filter(
+        conn => conn.inputPort !== inputPortId
+      );
+    }
+
+    this.dispatchEvent(new CustomEvent('apply-devices', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        passthroughConnections: newPassthroughConnections,
+      },
+    }));
+  }
+
   private handleRefresh(): void {
     this.dispatchEvent(new CustomEvent('refresh-devices', {
       bubbles: true,
@@ -260,6 +311,9 @@ export class MidiDevicesConfig extends LitElement {
               <div class="empty-message">No MIDI input devices found</div>
             ` : this.inputPorts.map(port => {
               const isConnected = this.currentInputPorts.includes(port.id);
+              const hasPassthrough = this.passthroughConnections.some(
+                conn => conn.inputPort === port.id
+              );
               return html`
                 <div class="device-item ${isConnected ? 'connected' : ''}">
                   <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>
@@ -273,6 +327,19 @@ export class MidiDevicesConfig extends LitElement {
                   <div class="device-info">
                     <span class="device-name">${port.name}</span>
                     <span class="device-index">Index: ${port.id}</span>
+                    ${isConnected && this.currentOutputPort !== null ? html`
+                      <div class="passthrough-toggle-container">
+                        <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            .checked=${hasPassthrough}
+                            @change=${(e: Event) => this.handlePassthroughToggle(port.id, e)}
+                          />
+                          <span class="toggle-slider"></span>
+                        </label>
+                        <span class="passthrough-label">Passthrough</span>
+                      </div>
+                    ` : ''}
                   </div>
                 </div>
               `;

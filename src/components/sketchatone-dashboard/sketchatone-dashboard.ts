@@ -188,6 +188,9 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private currentMidiOutputPort: string | number | null = null;
 
+  @state()
+  private midiPassthroughConnections: Array<{ inputPort: number | string; outputPort: number | string }> = [];
+
   // Version info
   @state()
   private serverVersion: string | null = null;
@@ -277,6 +280,7 @@ export class SketchatoneDashboard extends LitElement {
       this.midiOutputPorts = devices.outputPorts;
       this.currentMidiInputPorts = devices.currentInputPorts;
       this.currentMidiOutputPort = devices.currentOutputPort;
+      this.midiPassthroughConnections = devices.passthroughConnections ?? [];
 
       // Update MIDI Input panel status based on whether any input ports are connected
       this.serverMidiConnected = devices.currentInputPorts.length > 0;
@@ -735,7 +739,7 @@ export class SketchatoneDashboard extends LitElement {
    * Handle MIDI devices apply
    */
   private handleMidiDevicesApply(e: CustomEvent) {
-    const { inputPorts, outputPort } = e.detail;
+    const { inputPorts, outputPort, passthroughConnections } = e.detail;
 
     // Update MIDI input ports if specified (server will reconnect)
     // Array of port IDs = connect to those specific ports
@@ -747,6 +751,11 @@ export class SketchatoneDashboard extends LitElement {
     // Update MIDI output port if specified and changed
     if (outputPort !== undefined && outputPort !== this.currentMidiOutputPort) {
       this.client.updateConfig('midi.midiOutputId', outputPort);
+    }
+
+    // Update MIDI passthrough connections if specified
+    if (passthroughConnections !== undefined) {
+      this.client.updateConfig('midi.midiPassthrough', passthroughConnections);
     }
   }
 
@@ -1220,6 +1229,7 @@ export class SketchatoneDashboard extends LitElement {
                 .outputPorts=${this.midiOutputPorts}
                 .currentInputPorts=${this.currentMidiInputPorts}
                 .currentOutputPort=${this.currentMidiOutputPort}
+                .passthroughConnections=${this.midiPassthroughConnections}
                 @refresh-devices=${this.handleMidiDevicesRefresh}
                 @apply-devices=${this.handleMidiDevicesApply}>
               </midi-devices-config>
