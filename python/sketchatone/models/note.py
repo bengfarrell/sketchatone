@@ -109,7 +109,7 @@ class Note:
         'sus2': [0, 2, 7],          # Suspended 2nd
         'sus4': [0, 5, 7],          # Suspended 4th
         '5': [0, 7],                # Power chord (root + fifth)
-        
+
         # Seventh chords
         '7': [0, 4, 7, 10],         # Dominant 7th
         'maj7': [0, 4, 7, 11],      # Major 7th
@@ -121,12 +121,39 @@ class Note:
         'min9': [0, 3, 7, 10, 14],  # Minor 9th
         'm9': [0, 3, 7, 10, 14],    # Minor 9th (short form)
         '9': [0, 4, 7, 10, 14],     # Dominant 9th
-        
+
         # Extended chords
         'add9': [0, 4, 7, 14],      # Major add 9
         '6': [0, 4, 7, 9],          # Major 6th
         'min6': [0, 3, 7, 9],       # Minor 6th
         'm6': [0, 3, 7, 9],         # Minor 6th (short form)
+    }
+
+    # Scale intervals (semitones from root)
+    scale_intervals = {
+        # Common scales
+        'major': [0, 2, 4, 5, 7, 9, 11],        # Major scale (Ionian mode)
+        'minor': [0, 2, 3, 5, 7, 8, 10],        # Natural minor scale (Aeolian mode)
+        'harmonic-minor': [0, 2, 3, 5, 7, 8, 11],  # Harmonic minor scale
+        'melodic-minor': [0, 2, 3, 5, 7, 9, 11],   # Melodic minor scale (ascending)
+
+        # Pentatonic scales
+        'major-pentatonic': [0, 2, 4, 7, 9],    # Major pentatonic
+        'minor-pentatonic': [0, 3, 5, 7, 10],   # Minor pentatonic
+
+        # Modes
+        'ionian': [0, 2, 4, 5, 7, 9, 11],       # Ionian (same as major)
+        'dorian': [0, 2, 3, 5, 7, 9, 10],       # Dorian mode
+        'phrygian': [0, 1, 3, 5, 7, 8, 10],     # Phrygian mode
+        'lydian': [0, 2, 4, 6, 7, 9, 11],       # Lydian mode
+        'mixolydian': [0, 2, 4, 5, 7, 9, 10],   # Mixolydian mode
+        'aeolian': [0, 2, 3, 5, 7, 8, 10],      # Aeolian (same as natural minor)
+        'locrian': [0, 1, 3, 5, 6, 8, 10],      # Locrian mode
+
+        # Other scales
+        'chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # Chromatic scale
+        'whole-tone': [0, 2, 4, 6, 8, 10],      # Whole tone scale
+        'blues': [0, 3, 5, 6, 7, 10],           # Blues scale
     }
 
     @classmethod
@@ -209,11 +236,11 @@ class Note:
     def parse_chord(cls, chord_notation: str, octave: int = 4) -> List[NoteObject]:
         """
         Parse a chord notation into a list of notes.
-        
+
         Args:
             chord_notation: Chord notation (e.g., "C", "Gm", "Am7", "Fmaj7", "Ddim", "Esus4")
             octave: Base octave for the root note (default: 4)
-            
+
         Returns:
             List of NoteObject instances representing the chord
         """
@@ -225,32 +252,87 @@ class Note:
         else:
             root = chord_notation[0]
             chord_type = chord_notation[1:]
-        
+
         # Default to major triad if no chord type specified
         if not chord_type:
             chord_type = 'maj'
-        
+
         # Get the intervals for this chord type
         intervals = cls.chord_intervals.get(chord_type)
         if intervals is None:
             # Unknown chord type, default to major triad
             intervals = cls.chord_intervals['maj']
-        
+
         # Parse the root note
         root_note = cls.parse_notation(root + str(octave))
         root_index = cls.index_of_notation(root_note.notation)
-        
+
         # Build the chord notes
         chord_notes = []
         for interval in intervals:
             note_index = (root_index + interval) % 12
             # Calculate which octave this note should be in
             note_octave = octave + (root_index + interval) // 12
-            
+
             notation = cls.sharp_notations[note_index]
             chord_notes.append(NoteObject(notation=notation, octave=note_octave))
-        
+
         return chord_notes
+
+    @classmethod
+    def parse_scale(cls, scale_notation: str, octave: int = 4) -> List[NoteObject]:
+        """
+        Parse a scale notation into a list of notes.
+
+        Args:
+            scale_notation: Scale notation in format "root:scale-type" (e.g., "C:major", "Am:minor", "G:dorian")
+                           Also accepts legacy format without colon (e.g., "Cmajor", "Aminor")
+            octave: Base octave for the root note (default: 4)
+
+        Returns:
+            List of NoteObject instances representing the scale
+        """
+        # Parse the root note and scale type
+        # Check for colon separator first (preferred format: "C:major")
+        if ':' in scale_notation:
+            parts = scale_notation.split(':')
+            root = parts[0]
+            scale_type = parts[1] if len(parts) > 1 else 'major'
+        else:
+            # Legacy format without colon - extract root note (first 1-2 characters)
+            if len(scale_notation) >= 2 and scale_notation[1] in ['#', 'b']:
+                root = scale_notation[:2]
+                scale_type = scale_notation[2:]
+            else:
+                root = scale_notation[0]
+                scale_type = scale_notation[1:]
+
+        # Default to major scale if no scale type specified
+        if not scale_type:
+            scale_type = 'major'
+
+        # Get the intervals for this scale type
+        intervals = cls.scale_intervals.get(scale_type)
+        if intervals is None:
+            # Unknown scale type, default to major scale
+            print(f"Warning: Unknown scale type '{scale_type}', defaulting to major scale")
+            intervals = cls.scale_intervals['major']
+
+        # Parse the root note
+        root_note = cls.parse_notation(root + str(octave))
+        root_index = cls.index_of_notation(root_note.notation)
+
+        # Build the scale notes
+        scale_notes = []
+        for interval in intervals:
+            note_index = (root_index + interval) % 12
+            # Calculate which octave this note should be in
+            note_octave = octave + (root_index + interval) // 12
+
+            notation = cls.sharp_notations[note_index]
+            scale_notes.append(NoteObject(notation=notation, octave=note_octave))
+
+        return scale_notes
     
     @classmethod
     def fill_note_spread(cls, notes: List[NoteObject], lower_spread: int = 0, upper_spread: int = 0) -> List[NoteObject]:
@@ -279,5 +361,71 @@ class Note:
                 octave=notes[reverse_index].octave - octave_decrease - 1,
                 secondary=True
             ))
-        
+
         return [*lower, *notes, *upper]
+
+    @classmethod
+    def analyze_notes_for_scale(cls, notes: List[NoteObject]) -> Optional[Dict[str, Any]]:
+        """
+        Analyze held MIDI notes and determine the appropriate scale.
+
+        Args:
+            notes: List of NoteObject instances representing currently held MIDI notes
+
+        Returns:
+            Dictionary with 'root' (str), 'scaleType' (str), and 'octave' (int),
+            or None if no notes held
+        """
+        if not notes:
+            return None
+
+        # Use the lowest note as the root
+        sorted_notes = sorted(notes, key=lambda n: n.to_midi())
+
+        root = sorted_notes[0]
+        root_index = cls.index_of_notation(root.notation)
+
+        # Single note - default to major scale
+        if len(notes) == 1:
+            return {
+                'root': root.notation,
+                'scaleType': 'major',
+                'octave': root.octave
+            }
+
+        # Multiple notes - analyze intervals to determine major or minor
+        # Calculate semitone intervals from root
+        intervals = []
+        for note in sorted_notes:
+            note_index = cls.index_of_notation(note.notation)
+            interval = note_index - root_index
+            if interval < 0:
+                interval += 12  # Wrap around
+            intervals.append(interval)
+
+        # Check if we have a minor third (3 semitones) - indicates minor scale
+        has_minor_third = 3 in intervals
+
+        # Check if we have a major third (4 semitones) - indicates major scale
+        has_major_third = 4 in intervals
+
+        # Determine scale type based on intervals
+        scale_type = 'major'  # Default
+        if has_minor_third and not has_major_third:
+            scale_type = 'minor'
+        elif has_major_third and not has_minor_third:
+            scale_type = 'major'
+        elif has_minor_third and has_major_third:
+            # Both thirds present - could be a complex chord
+            # Default to minor if minor third is closer to root in the sorted list
+            minor_third_index = next((i for i, n in enumerate(sorted_notes)
+                                     if (cls.index_of_notation(n.notation) - root_index) % 12 == 3), -1)
+            major_third_index = next((i for i, n in enumerate(sorted_notes)
+                                     if (cls.index_of_notation(n.notation) - root_index) % 12 == 4), -1)
+            scale_type = 'minor' if minor_third_index < major_third_index else 'major'
+
+        return {
+            'root': root.notation,
+            'scaleType': scale_type,
+            'octave': root.octave
+        }

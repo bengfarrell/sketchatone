@@ -143,6 +143,7 @@ class Actions(EventEmitter):
             'transpose': self.transpose,
             'set-strum-notes': self.set_strum_notes,
             'set-strum-chord': self.set_strum_chord,
+            'set-strum-scale': self.set_strum_scale,
             'set-chord-in-progression': self.set_chord_in_progression,
             'increment-chord-in-progression': self.increment_chord_in_progression,
         }
@@ -540,28 +541,78 @@ class Actions(EventEmitter):
         try:
             # Parse chord into notes
             notes = Note.parse_chord(chord_notation, octave)
-            
+
             if not notes:
                 print(f"[ACTIONS] Error: Failed to parse chord '{chord_notation}'")
                 return
-            
+
             # Get note spread configuration
             lower_spread = getattr(self.config, 'lower_spread', 0)
             upper_spread = getattr(self.config, 'upper_spread', 0)
-            
+
             # Apply note spread and set strummer notes
             self.strummer.notes = Note.fill_note_spread(notes, lower_spread, upper_spread)
-            
+
             # Log the action
             button = context.get('button', 'Unknown')
             note_names = ', '.join([f"{n.notation}{n.octave}" for n in notes])
             print(f"[ACTIONS] {button} button set strum chord: {chord_notation} [{note_names}]")
-            
+
             # Note: broadcast happens automatically via strummer's notes_changed event
-            
+
         except Exception as e:
             print(f"[ACTIONS] Error parsing chord: {e}")
-    
+
+    def set_strum_scale(self, params: List[Any], context: Dict[str, Any]) -> None:
+        """
+        Set the strumming notes using scale notation.
+
+        Args:
+            params: Required parameters:
+                   - params[0] (str): Scale notation (e.g., "C:major", "Am:minor", "G:dorian")
+                   - params[1] (int, optional): Octave (default: 4)
+            context: Context data (e.g., which button triggered the action)
+        """
+        if len(params) == 0 or not isinstance(params[0], str):
+            print(f"[ACTIONS] Error: set-strum-scale action requires scale notation string")
+            return
+
+        scale_notation = params[0]
+        octave = 4  # Default octave
+
+        # Check for optional octave parameter
+        if len(params) > 1 and isinstance(params[1], (int, float)):
+            octave = int(params[1])
+
+        if self.strummer is None:
+            print(f"[ACTIONS] Error: No strummer instance available")
+            return
+
+        try:
+            # Parse scale into notes
+            notes = Note.parse_scale(scale_notation, octave)
+
+            if not notes:
+                print(f"[ACTIONS] Error: Failed to parse scale '{scale_notation}'")
+                return
+
+            # Get note spread configuration
+            lower_spread = getattr(self.config, 'lower_spread', 0)
+            upper_spread = getattr(self.config, 'upper_spread', 0)
+
+            # Apply note spread and set strummer notes
+            self.strummer.notes = Note.fill_note_spread(notes, lower_spread, upper_spread)
+
+            # Log the action
+            button = context.get('button', 'Unknown')
+            note_names = ', '.join([f"{n.notation}{n.octave}" for n in notes])
+            print(f"[ACTIONS] {button} button set strum scale: {scale_notation} [{note_names}]")
+
+            # Note: broadcast happens automatically via strummer's notes_changed event
+
+        except Exception as e:
+            print(f"[ACTIONS] Error parsing scale: {e}")
+
     def set_chord_in_progression(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
         Set the chord progression to a specific index and apply that chord.

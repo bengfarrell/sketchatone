@@ -245,6 +245,38 @@ Set specific notes for the strummer (not based on a chord).
 
 ---
 
+### Set Scale
+
+Set the strummer to play a specific scale. Supports major, minor, modes, pentatonics, and more.
+
+**Action:** `set-strum-scale`
+
+**Parameters:** `[scaleNotation, octave]`
+- `scaleNotation` (string) - Scale notation in format "root:scale-type" (e.g., "C:major", "A:minor", "G:dorian")
+- `octave` (number, optional) - Base octave (default: 4)
+
+**Example:**
+
+```json
+{
+  "id": "set-c-major-scale",
+  "name": "C Major Scale",
+  "button": "button:1",
+  "action": ["set-strum-scale", "C:major", 4],
+  "trigger": "press"
+}
+```
+
+**Available Scale Types:**
+- Common: `major`, `minor`, `harmonic-minor`, `melodic-minor`
+- Pentatonic: `major-pentatonic`, `minor-pentatonic`
+- Modes: `ionian`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `aeolian`, `locrian`
+- Other: `chromatic`, `whole-tone`, `blues`
+
+See **[Scales and MIDI-Driven Mode](/about/scales-and-midi-driven-mode/)** for complete scale documentation.
+
+---
+
 ## Button Groups
 
 Button groups allow you to assign multiple buttons to work together, typically for chord progressions.

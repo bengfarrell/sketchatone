@@ -77,6 +77,33 @@ export class Note {
     m6: [0, 3, 7, 9], // Minor 6th (short form)
   };
 
+  // Scale intervals (semitones from root)
+  static scaleIntervals: Record<string, number[]> = {
+    // Common scales
+    major: [0, 2, 4, 5, 7, 9, 11], // Major scale (Ionian mode)
+    minor: [0, 2, 3, 5, 7, 8, 10], // Natural minor scale (Aeolian mode)
+    'harmonic-minor': [0, 2, 3, 5, 7, 8, 11], // Harmonic minor scale
+    'melodic-minor': [0, 2, 3, 5, 7, 9, 11], // Melodic minor scale (ascending)
+
+    // Pentatonic scales
+    'major-pentatonic': [0, 2, 4, 7, 9], // Major pentatonic
+    'minor-pentatonic': [0, 3, 5, 7, 10], // Minor pentatonic
+
+    // Modes
+    ionian: [0, 2, 4, 5, 7, 9, 11], // Ionian (same as major)
+    dorian: [0, 2, 3, 5, 7, 9, 10], // Dorian mode
+    phrygian: [0, 1, 3, 5, 7, 8, 10], // Phrygian mode
+    lydian: [0, 2, 4, 6, 7, 9, 11], // Lydian mode
+    mixolydian: [0, 2, 4, 5, 7, 9, 10], // Mixolydian mode
+    aeolian: [0, 2, 3, 5, 7, 8, 10], // Aeolian (same as natural minor)
+    locrian: [0, 1, 3, 5, 6, 8, 10], // Locrian mode
+
+    // Other scales
+    chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], // Chromatic scale
+    'whole-tone': [0, 2, 4, 6, 8, 10], // Whole tone scale
+    blues: [0, 3, 5, 6, 7, 10], // Blues scale
+  };
+
   /**
    * Get notation index when notation is either flat or sharp
    */
@@ -219,6 +246,66 @@ export class Note {
   }
 
   /**
+   * Parse a scale notation into a list of notes.
+   *
+   * @param scaleNotation - Scale notation in format "root:scale-type" (e.g., "C:major", "Am:minor", "G:dorian")
+   *                        Also accepts legacy format without colon (e.g., "Cmajor", "Aminor")
+   * @param octave - Base octave for the root note (default: 4)
+   * @returns List of NoteObject instances representing the scale
+   */
+  static parseScale(scaleNotation: string, octave = 4): NoteObject[] {
+    // Parse the root note and scale type
+    let root: string;
+    let scaleType: string;
+
+    // Check for colon separator first (preferred format: "C:major")
+    if (scaleNotation.includes(':')) {
+      const parts = scaleNotation.split(':');
+      root = parts[0];
+      scaleType = parts[1] || 'major';
+    } else {
+      // Legacy format without colon - extract root note (first 1-2 characters)
+      if (scaleNotation.length >= 2 && ['#', 'b'].includes(scaleNotation[1])) {
+        root = scaleNotation.slice(0, 2);
+        scaleType = scaleNotation.slice(2);
+      } else {
+        root = scaleNotation[0];
+        scaleType = scaleNotation.slice(1);
+      }
+    }
+
+    // Default to major scale if no scale type specified
+    if (!scaleType) {
+      scaleType = 'major';
+    }
+
+    // Get the intervals for this scale type
+    let intervals = this.scaleIntervals[scaleType];
+    if (!intervals) {
+      // Unknown scale type, default to major scale
+      console.warn(`Unknown scale type '${scaleType}', defaulting to major scale`);
+      intervals = this.scaleIntervals['major'];
+    }
+
+    // Parse the root note
+    const rootNote = this.parseNotation(root + octave);
+    const rootIndex = this.indexOfNotation(rootNote.notation);
+
+    // Build the scale notes
+    const scaleNotes: NoteObject[] = [];
+    for (const interval of intervals) {
+      const noteIndex = (rootIndex + interval) % 12;
+      // Calculate which octave this note should be in
+      const noteOctave = octave + Math.floor((rootIndex + interval) / 12);
+
+      const notation = this.sharpNotations[noteIndex];
+      scaleNotes.push(createNote(notation, noteOctave));
+    }
+
+    return scaleNotes;
+  }
+
+  /**
    * Fill note spread with upper and lower notes
    */
   static fillNoteSpread(
@@ -324,5 +411,82 @@ export class Note {
    */
   static noteToString(note: NoteObject): string {
     return `${note.notation}${note.octave}`;
+  }
+
+  /**
+   * Analyze held MIDI notes and determine the appropriate scale.
+   *
+   * @param notes - Array of NoteObject instances representing currently held MIDI notes
+   * @returns Object with root note and scale type, or null if no notes held
+   */
+  static analyzeNotesForScale(notes: NoteObject[]): { root: string; scaleType: string; octave: number } | null {
+    if (notes.length === 0) {
+      return null;
+    }
+
+    // Use the lowest note as the root
+    const sortedNotes = [...notes].sort((a, b) => {
+      const midiA = this.noteToMidi(a);
+      const midiB = this.noteToMidi(b);
+      return midiA - midiB;
+    });
+
+    const root = sortedNotes[0];
+    const rootIndex = this.indexOfNotation(root.notation);
+
+    // Single note - default to major scale
+    if (notes.length === 1) {
+      return {
+        root: root.notation,
+        scaleType: 'major',
+        octave: root.octave
+      };
+    }
+
+    // Multiple notes - analyze intervals to determine major or minor
+    // Calculate semitone intervals from root
+    const intervals: number[] = [];
+    for (const note of sortedNotes) {
+      const noteIndex = this.indexOfNotation(note.notation);
+      let interval = noteIndex - rootIndex;
+      if (interval < 0) interval += 12; // Wrap around
+      intervals.push(interval);
+    }
+
+    // Check if we have a minor third (3 semitones) - indicates minor scale
+    const hasMinorThird = intervals.includes(3);
+
+    // Check if we have a major third (4 semitones) - indicates major scale
+    const hasMajorThird = intervals.includes(4);
+
+    // Determine scale type based on intervals
+    let scaleType = 'major'; // Default
+    if (hasMinorThird && !hasMajorThird) {
+      scaleType = 'minor';
+    } else if (hasMajorThird && !hasMinorThird) {
+      scaleType = 'major';
+    } else if (hasMinorThird && hasMajorThird) {
+      // Both thirds present - could be a complex chord
+      // Default to minor if minor third is closer to root in the sorted list
+      const minorThirdIndex = sortedNotes.findIndex(n => {
+        const noteIndex = this.indexOfNotation(n.notation);
+        let interval = noteIndex - rootIndex;
+        if (interval < 0) interval += 12;
+        return interval === 3;
+      });
+      const majorThirdIndex = sortedNotes.findIndex(n => {
+        const noteIndex = this.indexOfNotation(n.notation);
+        let interval = noteIndex - rootIndex;
+        if (interval < 0) interval += 12;
+        return interval === 4;
+      });
+      scaleType = minorThirdIndex < majorThirdIndex ? 'minor' : 'major';
+    }
+
+    return {
+      root: root.notation,
+      scaleType,
+      octave: root.octave
+    };
   }
 }

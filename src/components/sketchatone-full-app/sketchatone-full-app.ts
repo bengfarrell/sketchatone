@@ -320,9 +320,45 @@ export class SketchatoneFullApp extends LitElement {
     this.midiInput.on(MIDI_NOTE_EVENT, (event: MidiNoteEvent) => {
       this.midiInputNotes = event.notes.map(n => Note.parseNotation(n));
       this.midiInputConnected = true;
+
+      // Handle MIDI-driven scales if enabled
+      if (this.strummerConfig.strumming.midiDrivenScales) {
+        this.handleMidiDrivenScales();
+      }
     });
     // Auto-connect to first available input
     this.midiInput.connect();
+  }
+
+  /**
+   * Handle MIDI-driven scale changes based on held MIDI notes
+   */
+  private handleMidiDrivenScales() {
+    const scaleInfo = Note.analyzeNotesForScale(this.midiInputNotes);
+
+    if (scaleInfo) {
+      // Build scale notation (e.g., "C:major", "A:minor")
+      const scaleNotation = `${scaleInfo.root}:${scaleInfo.scaleType}`;
+
+      // Parse scale into notes
+      const scaleNotes = Note.parseScale(scaleNotation, scaleInfo.octave);
+
+      if (scaleNotes && scaleNotes.length > 0) {
+        // Apply note spread configuration
+        const upper = this.strummerConfig.strumming.upperNoteSpread;
+        const lower = this.strummerConfig.strumming.lowerNoteSpread;
+        const notes = Note.fillNoteSpread(scaleNotes, lower, upper);
+
+        // Update strummer notes
+        this.strummer.notes = notes;
+        this.strummerNotes = notes;
+
+        console.log(`[MIDI-DRIVEN] Scale changed to: ${scaleNotation} [${scaleNotes.map(n => `${n.notation}${n.octave}`).join(', ')}]`);
+      }
+    } else {
+      // No MIDI notes held - could optionally revert to default chord/scale
+      // For now, we'll leave the current notes as-is
+    }
   }
 
   private setupStrummer() {
@@ -1048,6 +1084,20 @@ export class SketchatoneFullApp extends LitElement {
                       @change=${(e: Event) => this.updateConfig('strumming.invertX', (e.target as HTMLInputElement).checked)}>
                     </sp-switch>
                   </div>
+                  <div class="setting-row">
+                    <label>MIDI-Driven Scales</label>
+                    <sp-switch
+                      ?checked=${config.strumming.midiDrivenScales}
+                      @change=${(e: Event) => this.updateConfig('strumming.midiDrivenScales', (e.target as HTMLInputElement).checked)}>
+                    </sp-switch>
+                  </div>
+                  ${config.strumming.midiDrivenScales ? html`
+                    <div class="setting-note">
+                      <span style="font-size: 0.875rem; color: var(--spectrum-global-color-gray-600);">
+                        Scales will dynamically change based on held MIDI notes. Hold 1 note for major scale, 2+ notes with minor 3rd for minor scale.
+                      </span>
+                    </div>
+                  ` : ''}
                 </div>
               </dashboard-panel>
 

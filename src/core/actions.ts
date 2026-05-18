@@ -212,6 +212,7 @@ export class Actions extends EventEmitter {
       ['transpose', this.transpose.bind(this)],
       ['set-strum-notes', this.setStrumNotes.bind(this)],
       ['set-strum-chord', this.setStrumChord.bind(this)],
+      ['set-strum-scale', this.setStrumScale.bind(this)],
       ['set-chord-in-progression', this.setChordInProgression.bind(this)],
       ['increment-chord-in-progression', this.incrementChordInProgression.bind(this)],
       ['set-group-progression', this.setGroupProgression.bind(this)],
@@ -610,6 +611,55 @@ export class Actions extends EventEmitter {
       // Note: broadcast happens automatically via strummer's notes_changed event
     } catch (e) {
       console.log(`[ACTIONS] Error parsing chord: ${e}`);
+    }
+  }
+
+  /**
+   * Set the strumming notes using scale notation.
+   */
+  setStrumScale(params: unknown[], context: ActionContext): void {
+    if (params.length === 0 || typeof params[0] !== 'string') {
+      console.log('[ACTIONS] Error: set-strum-scale action requires scale notation string');
+      return;
+    }
+
+    const scaleNotation = params[0] as string;
+    let octave = 4; // Default octave
+
+    // Check for optional octave parameter
+    if (params.length > 1 && typeof params[1] === 'number') {
+      octave = Math.floor(params[1]);
+    }
+
+    if (!this.strummer) {
+      console.log('[ACTIONS] Error: No strummer instance available');
+      return;
+    }
+
+    try {
+      // Parse scale into notes
+      const notes = Note.parseScale(scaleNotation, octave);
+
+      if (!notes || notes.length === 0) {
+        console.log(`[ACTIONS] Error: Failed to parse scale '${scaleNotation}'`);
+        return;
+      }
+
+      // Get note spread configuration
+      const lowerSpread = this.config.lowerSpread ?? 0;
+      const upperSpread = this.config.upperSpread ?? 0;
+
+      // Apply note spread and set strummer notes
+      this.strummer.notes = Note.fillNoteSpread(notes, lowerSpread, upperSpread);
+
+      // Log the action
+      const button = context.button ?? 'Unknown';
+      const noteNames = notes.map((n) => `${n.notation}${n.octave}`).join(', ');
+      console.log(`[ACTIONS] ${button} button set strum scale: ${scaleNotation} [${noteNames}]`);
+
+      // Note: broadcast happens automatically via strummer's notes_changed event
+    } catch (e) {
+      console.log(`[ACTIONS] Error parsing scale: ${e}`);
     }
   }
 

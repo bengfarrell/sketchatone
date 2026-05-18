@@ -28,6 +28,7 @@ class StrummingConfig:
         upper_note_spread: Number of notes to add above the chord
         lower_note_spread: Number of notes to add below the chord
         invert_x: Invert X axis for left-handed use (flips which notes are on which side)
+        midi_driven_scales: Enable MIDI-driven scale mode (dynamically changes scales based on held MIDI notes)
     """
     pressure_threshold: float = 0.1
     pressure_buffer_size: int = 10
@@ -37,6 +38,7 @@ class StrummingConfig:
     upper_note_spread: int = 3
     lower_note_spread: int = 3
     invert_x: bool = False
+    midi_driven_scales: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrummingConfig':
@@ -58,7 +60,8 @@ class StrummingConfig:
             chord=data.get('chord'),
             upper_note_spread=data.get('upper_note_spread', data.get('upperNoteSpread', 3)),
             lower_note_spread=data.get('lower_note_spread', data.get('lowerNoteSpread', 3)),
-            invert_x=data.get('invert_x', data.get('invertX', False))
+            invert_x=data.get('invert_x', data.get('invertX', False)),
+            midi_driven_scales=data.get('midi_driven_scales', data.get('midiDrivenScales', False))
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -79,7 +82,8 @@ class StrummingConfig:
             'chord': self.chord,
             'upperNoteSpread': self.upper_note_spread,
             'lowerNoteSpread': self.lower_note_spread,
-            'invertX': self.invert_x
+            'invertX': self.invert_x,
+            'midiDrivenScales': self.midi_driven_scales
         }
 
 
