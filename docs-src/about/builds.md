@@ -127,7 +127,10 @@ cd sketchatone/python
 python3 -m venv venv
 source venv/bin/activate
 
-# Install in editable mode
+# Upgrade pip/setuptools (editable install requires pip >= 21.3, setuptools >= 64)
+pip install --upgrade pip setuptools
+
+# Install in editable mode (also fetches blankslate from GitHub)
 pip install -e .
 
 # Run manually
@@ -308,6 +311,7 @@ git clone https://github.com/bengfarrell/sketchatone.git
 cd sketchatone/python
 python -m venv venv
 source venv/bin/activate
+pip install --upgrade pip setuptools
 pip install -e .
 python -m sketchatone.cli.midi_strummer
 ```

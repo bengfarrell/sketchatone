@@ -18,10 +18,46 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 
 # Default settings
-KIOSK_URL="http://localhost:8080"
+# Matches the default http_port (80) in public/configs/default.json.
+# Using localhost avoids mDNS/avahi dependencies since the kiosk runs on the same host.
+KIOSK_URL="http://localhost"
 KIOSK_USER="${SUDO_USER:-pi}"
-AUTOSTART_DIR="/home/$KIOSK_USER/.config/lxsession/LXDE-pi"
+
+# Kiosk targets labwc (Wayland) on Raspberry Pi OS Bookworm or newer.
+# Older LXDE/X11 sessions are not supported.
+AUTOSTART_DIR="/home/$KIOSK_USER/.config/labwc"
 AUTOSTART_FILE="$AUTOSTART_DIR/autostart"
+
+# Chromium package/binary names are resolved at runtime (varies by distro).
+# Bookworm/Debian 12+ ships "chromium"; older Raspberry Pi OS shipped "chromium-browser".
+CHROMIUM_PKG=""
+CHROMIUM_BIN=""
+
+# Pick the available chromium apt package name.
+detect_chromium_pkg() {
+    local candidate
+    for candidate in chromium-browser chromium; do
+        if apt-cache policy "$candidate" 2>/dev/null \
+            | grep -E "Candidate:" \
+            | grep -vq "Candidate: (none)"; then
+            CHROMIUM_PKG="$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Pick the installed chromium binary name.
+detect_chromium_bin() {
+    local candidate
+    for candidate in chromium-browser chromium; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            CHROMIUM_BIN="$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
 
 # Check if running as root
 check_root() {
@@ -31,12 +67,14 @@ check_root() {
     fi
 }
 
-# Check if desktop environment exists
-check_desktop() {
-    if [ ! -d "/usr/share/xsessions" ]; then
-        print_error "No desktop environment detected"
-        print_info "Kiosk mode requires a desktop environment (e.g., LXDE, PIXEL)"
-        print_info "Install with: sudo apt install raspberrypi-ui-mods"
+# Verify labwc (Wayland) is the active compositor.
+# Raspberry Pi OS Bookworm (Oct 2024+) defaults to labwc on Pi 4/5.
+check_labwc() {
+    if ! command -v labwc >/dev/null 2>&1 && [ ! -d "/usr/share/wayland-sessions" ]; then
+        print_error "labwc not found"
+        print_info "Sketchatone kiosk requires Raspberry Pi OS Bookworm or newer"
+        print_info "with the labwc Wayland session (default on Pi 4 and Pi 5)."
+        print_info "Older LXDE/X11 sessions and wayfire are not supported."
         exit 1
     fi
 }
@@ -44,18 +82,27 @@ check_desktop() {
 # Install required packages
 install_dependencies() {
     print_info "Installing kiosk dependencies..."
-    
+
     apt-get update -qq
-    
-    # Install chromium and utilities
+
+    if ! detect_chromium_pkg; then
+        print_error "No chromium package available in apt (tried chromium-browser, chromium)"
+        print_info "On Raspberry Pi OS, ensure 'sudo apt update' succeeds and the standard repos are enabled"
+        exit 1
+    fi
+    print_info "Using chromium package: $CHROMIUM_PKG"
+
     local packages=(
-        "chromium-browser"
-        "unclutter"           # Hide mouse cursor
-        "x11-xserver-utils"   # For xset commands
+        "$CHROMIUM_PKG"
     )
-    
+
     apt-get install -y "${packages[@]}"
-    print_success "Dependencies installed"
+
+    if ! detect_chromium_bin; then
+        print_error "chromium installed but no chromium/chromium-browser binary found on PATH"
+        exit 1
+    fi
+    print_success "Dependencies installed (binary: $CHROMIUM_BIN)"
 }
 
 # Configure autostart directory
@@ -75,72 +122,49 @@ setup_autostart_dir() {
     fi
 }
 
-# Disable screensaver and power management
-disable_screensaver() {
-    print_info "Configuring display settings..."
-    
-    # Create or append to autostart
-    touch "$AUTOSTART_FILE"
-    
-    # Remove existing screensaver settings
-    sed -i '/@xset s/d' "$AUTOSTART_FILE"
-    sed -i '/@xset -dpms/d' "$AUTOSTART_FILE"
-    
-    # Add screensaver disable commands
-    cat >> "$AUTOSTART_FILE" << AUTOEOF
-
-# Sketchatone Kiosk - Disable screensaver and power management
-@xset s noblank
-@xset s off
-@xset -dpms
-AUTOEOF
-    
-    print_success "Disabled screensaver and power management"
-}
-
-# Hide mouse cursor
-setup_cursor_hiding() {
-    print_info "Configuring cursor auto-hide..."
-    
-    # Remove existing unclutter entry
-    sed -i '/@unclutter/d' "$AUTOSTART_FILE"
-    
-    # Add unclutter
-    cat >> "$AUTOSTART_FILE" << AUTOEOF
-
-# Sketchatone Kiosk - Hide mouse cursor when idle
-@unclutter -idle 0.5 -root
-AUTOEOF
-    
-    print_success "Configured cursor auto-hide"
-}
-
-# Setup Chromium kiosk mode
+# Setup Chromium kiosk mode (labwc autostart, plain shell script)
 setup_chromium_kiosk() {
     print_info "Configuring Chromium kiosk mode..."
-    
+
     # Ask for URL
     echo ""
     read -p "Enter kiosk URL [default: $KIOSK_URL]: " user_url
     if [ -n "$user_url" ]; then
         KIOSK_URL="$user_url"
     fi
-    
-    # Remove existing chromium entries
-    sed -i '/chromium-browser.*--kiosk/d' "$AUTOSTART_FILE"
-    
-    # Add chromium kiosk startup
+
+    # Resolve binary if install_dependencies was skipped (e.g., chromium already present)
+    if [ -z "$CHROMIUM_BIN" ] && ! detect_chromium_bin; then
+        print_error "No chromium binary found on PATH"
+        exit 1
+    fi
+
+    # Remove any previous Sketchatone-managed block (between markers, inclusive)
+    if [ -f "$AUTOSTART_FILE" ]; then
+        sed -i '/# >>> Sketchatone Kiosk >>>/,/# <<< Sketchatone Kiosk <<</d' "$AUTOSTART_FILE"
+    fi
+
+    # Ensure shebang on a fresh file
+    if [ ! -s "$AUTOSTART_FILE" ]; then
+        echo '#!/bin/sh' > "$AUTOSTART_FILE"
+    fi
+
+    # Append Sketchatone-managed block. Backgrounded with & so labwc continues startup.
+    # --ozone-platform=wayland makes chromium use native Wayland instead of XWayland.
     cat >> "$AUTOSTART_FILE" << AUTOEOF
 
-# Sketchatone Kiosk - Auto-start Chromium in kiosk mode
-@bash -c 'sleep 5 && chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --disable-translate --disable-features=TranslateUI --disk-cache-dir=/dev/null --password-store=basic $KIOSK_URL'
+# >>> Sketchatone Kiosk >>>
+(sleep 5 && $CHROMIUM_BIN --kiosk --ozone-platform=wayland --noerrdialogs --disable-infobars --no-first-run --disable-translate --disable-features=TranslateUI --disk-cache-dir=/dev/null --password-store=basic $KIOSK_URL) &
+# <<< Sketchatone Kiosk <<<
 AUTOEOF
-    
-    # Set ownership
+
+    # labwc requires the autostart file to be executable
+    chmod +x "$AUTOSTART_FILE"
     chown "$KIOSK_USER:$KIOSK_USER" "$AUTOSTART_FILE"
-    
+
     print_success "Configured Chromium kiosk mode"
     print_info "URL: $KIOSK_URL"
+    print_info "Binary: $CHROMIUM_BIN"
 }
 
 # Configure auto-login (optional)
@@ -163,37 +187,57 @@ setup_autologin() {
     fi
 }
 
-# Ensure Sketchatone starts before kiosk
+# Ensure Sketchatone is running and starts on boot.
+# Kiosk mode is useless without the server, so always-on is non-negotiable here.
 ensure_sketchatone_service() {
     echo ""
     print_info "Checking Sketchatone service configuration..."
-    
+
     if [ ! -f "/etc/systemd/system/sketchatone.service" ]; then
-        print_warning "Sketchatone service not found"
-        print_info "Install Sketchatone first, or the kiosk will show an error page"
+        print_error "Sketchatone service not found at /etc/systemd/system/sketchatone.service"
+        print_info "Install the Sketchatone .deb package first, then re-run this script"
+        exit 1
+    fi
+
+    if systemctl is-enabled --quiet sketchatone 2>/dev/null \
+       && systemctl is-active --quiet sketchatone 2>/dev/null; then
+        print_success "Sketchatone service is already enabled and running"
         return
     fi
-    
-    # Check if service is enabled
-    if systemctl is-enabled --quiet sketchatone 2>/dev/null; then
-        print_success "Sketchatone service is enabled (starts on boot)"
+
+    print_info "Configuring Sketchatone for always-on (required for kiosk)..."
+    if [ -x /usr/bin/sketchatone-setup ]; then
+        /usr/bin/sketchatone-setup --mode always-on
     else
-        print_warning "Sketchatone service is not enabled for boot"
-        print_info "The kiosk relies on Sketchatone running at $KIOSK_URL"
-        
-        read -p "Enable Sketchatone to start on boot? (Y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            # Check current mode
-            if [ -f /etc/udev/rules.d/99-sketchatone.rules ]; then
-                print_info "Detected USB-trigger mode, switching to always-on for kiosk..."
-                /usr/bin/sketchatone-setup --mode always-on
-            else
-                systemctl enable sketchatone
-                print_success "Enabled Sketchatone service"
-            fi
-        fi
+        # Fallback if the setup helper isn't installed for some reason
+        systemctl enable sketchatone
+        systemctl start sketchatone
+        print_success "Sketchatone service enabled and started"
     fi
+}
+
+# Verify the server is actually serving the kiosk URL before declaring success.
+# Catches cases where the service is "active" but exiting in a restart loop
+# (e.g. no tablet + missing --poll), which would otherwise only surface as a
+# blank chromium error page after reboot.
+verify_server_reachable() {
+    echo ""
+    print_info "Verifying Sketchatone is responding at $KIOSK_URL..."
+
+    local deadline=$((SECONDS + 20))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if curl -sf --max-time 2 -o /dev/null "$KIOSK_URL"; then
+            print_success "Sketchatone is serving the kiosk URL"
+            return 0
+        fi
+        sleep 1
+    done
+
+    print_warning "Sketchatone is not responding at $KIOSK_URL after 20s"
+    print_warning "Kiosk will boot but Chromium will show a connection error."
+    print_info "Inspect the service with:"
+    print_info "  systemctl status sketchatone --no-pager"
+    print_info "  sudo journalctl -u sketchatone -n 80 --no-pager"
 }
 
 # Configure GPU memory for better performance
@@ -245,10 +289,7 @@ show_summary() {
     echo "  • Autostart: $AUTOSTART_FILE"
     echo ""
     echo "Features enabled:"
-    echo "  ✓ Chromium fullscreen kiosk mode"
-    echo "  ✓ Screensaver disabled"
-    echo "  ✓ Power management disabled"
-    echo "  ✓ Mouse cursor auto-hide"
+    echo "  ✓ Chromium fullscreen kiosk mode (Wayland / labwc)"
     echo ""
     echo "On next boot:"
     echo "  1. Desktop will auto-login (if enabled)"
@@ -257,40 +298,40 @@ show_summary() {
     echo "  4. Dashboard will be displayed fullscreen"
     echo ""
     echo "To exit kiosk mode when running:"
-    echo "  • Press Alt+F4 to close Chromium"
-    echo "  • Or press Ctrl+Alt+F1 to switch to console"
+    echo "  • Press Ctrl+Alt+Backspace (if enabled) to end the session"
+    echo "  • Or switch to a TTY with Ctrl+Alt+F2 and 'sudo systemctl restart display-manager'"
     echo ""
     echo "To disable kiosk mode:"
-    echo "  • Edit or remove: $AUTOSTART_FILE"
-    echo "  • Or run: sudo systemctl set-default multi-user.target"
+    echo "  • Run: sudo sketchatone-setup-kiosk --uninstall"
+    echo "  • Or edit/remove: $AUTOSTART_FILE"
     echo ""
     echo "To test without rebooting:"
     echo "  • Log out and log back in"
-    echo "  • Or run: DISPLAY=:0 chromium-browser --kiosk $KIOSK_URL"
+    echo "  • Or run on the Pi's local display:"
+    echo "    ${CHROMIUM_BIN:-chromium} --kiosk --ozone-platform=wayland $KIOSK_URL"
     echo ""
 }
 
 # Uninstall kiosk mode
 uninstall_kiosk() {
     print_info "Removing kiosk mode configuration..."
-    
+
     if [ -f "$AUTOSTART_FILE" ]; then
-        # Remove Sketchatone kiosk entries
-        sed -i '/# Sketchatone Kiosk/d' "$AUTOSTART_FILE"
-        sed -i '/@xset s/d' "$AUTOSTART_FILE"
-        sed -i '/@xset -dpms/d' "$AUTOSTART_FILE"
-        sed -i '/@unclutter/d' "$AUTOSTART_FILE"
-        sed -i '/chromium-browser.*--kiosk/d' "$AUTOSTART_FILE"
-        
-        # Remove empty lines
-        sed -i '/^$/N;/^\n$/D' "$AUTOSTART_FILE"
-        
-        print_success "Removed kiosk configuration from $AUTOSTART_FILE"
+        # Remove the Sketchatone-managed block (between markers, inclusive)
+        sed -i '/# >>> Sketchatone Kiosk >>>/,/# <<< Sketchatone Kiosk <<</d' "$AUTOSTART_FILE"
+
+        # If the file is now empty or only contains the shebang, remove it entirely
+        if [ ! -s "$AUTOSTART_FILE" ] || [ "$(grep -cvE '^(#!|\s*$)' "$AUTOSTART_FILE")" = "0" ]; then
+            rm -f "$AUTOSTART_FILE"
+            print_success "Removed $AUTOSTART_FILE"
+        else
+            print_success "Removed Sketchatone kiosk block from $AUTOSTART_FILE"
+        fi
     fi
-    
+
     echo ""
     print_success "Kiosk mode removed"
-    echo "Chromium and unclutter are still installed if you need them."
+    echo "Chromium is still installed if you need it."
 }
 
 # Show usage
@@ -330,30 +371,29 @@ main_install() {
     echo "the Sketchatone web dashboard in fullscreen kiosk mode."
     echo ""
     echo "What this does:"
-    echo "  • Installs Chromium browser and utilities"
-    echo "  • Configures auto-start in kiosk mode"
-    echo "  • Disables screensaver and power management"
-    echo "  • Hides mouse cursor when idle"
-    echo "  • Optimizes GPU memory for browser performance"
+    echo "  • Installs Chromium browser"
+    echo "  • Configures labwc autostart to launch Chromium in kiosk mode"
+    echo "  • Optionally enables auto-login on boot"
+    echo "  • Optionally bumps GPU memory for browser performance"
     echo ""
+    print_warning "Requires Raspberry Pi OS Bookworm or newer with labwc (Pi 4 / Pi 5)"
     print_warning "Best used with auto-login enabled"
     read -p "Continue with setup? (y/N) " -n 1 -r
     echo
-    
+
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "Setup cancelled."
         exit 0
     fi
-    
+
     check_root
-    check_desktop
+    check_labwc
     install_dependencies
     setup_autostart_dir
-    disable_screensaver
-    setup_cursor_hiding
     setup_chromium_kiosk
     setup_autologin
     ensure_sketchatone_service
+    verify_server_reachable
     optimize_gpu_memory
     show_summary
     

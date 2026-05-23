@@ -4,6 +4,8 @@ RtMidi Backend
 MIDI output backend using python-rtmidi for cross-platform MIDI support.
 """
 
+from __future__ import annotations
+
 import threading
 import time
 from typing import Optional, List, Tuple, Set, Union, Callable

@@ -5,6 +5,8 @@ Provides a fake MIDI backend that records all MIDI messages
 without requiring actual MIDI hardware or virtual ports.
 """
 
+from __future__ import annotations
+
 import time
 import threading
 from typing import List, Optional, Set, Dict, Any, Union

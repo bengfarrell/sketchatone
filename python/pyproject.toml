@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sketchatone"
-version = "0.3.0"
+version = "0.3.0.dev6"
 description = "Sketchatone - Python implementation"
 requires-python = ">=3.8"
 license = {text = "CC-BY-NC-SA-4.0"}
@@ -32,11 +32,16 @@ dependencies = [
     "inquirer>=3.1.0",
     "colorama>=0.4.6",
     "cryptography>=41.0.0",
+    "python-rtmidi>=1.5.0",
     "evdev>=1.6.0; sys_platform == 'linux'",
     "pynput>=1.7.0; sys_platform == 'darwin' or sys_platform == 'win32'",
+    "blankslate @ git+https://github.com/bengfarrell/blankslate.git#subdirectory=python",
 ]
 
 [project.optional-dependencies]
+jack = [
+    "JACK-Client>=0.5.4",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

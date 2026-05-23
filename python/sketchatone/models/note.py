@@ -362,7 +362,11 @@ class Note:
                 secondary=True
             ))
 
-        return [*lower, *notes, *upper]
+        # Combine and sort by pitch (MIDI note number) so the lower spread
+        # is in ascending order (e.g. C3, E3, G3) rather than mirrored from the base notes.
+        combined = [*lower, *notes, *upper]
+        combined.sort(key=lambda n: n.to_midi())
+        return combined
 
     @classmethod
     def analyze_notes_for_scale(cls, notes: List[NoteObject]) -> Optional[Dict[str, Any]]:

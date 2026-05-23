@@ -16,6 +16,8 @@ Usage:
     python -m sketchatone.cli.midi_strummer -c config.json --jack --channel 1
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import os

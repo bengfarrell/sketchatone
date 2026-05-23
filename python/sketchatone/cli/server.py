@@ -11,6 +11,8 @@ Usage:
     python -m sketchatone.cli.server --ws-port 8081 --http-port 3000 --throttle 100
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json

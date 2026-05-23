@@ -129,7 +129,10 @@ Environment="PYTHONPATH=/opt/sketchatone/python:/zynthian/venv/lib/python3.11/si
 Environment="DISPLAY=:0"
 # Delay startup to ensure JACK is fully ready if present (helps with Zynthian boot)
 ExecStartPre=/bin/sleep 3
-ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json
+# --poll 2000: keep the server running while waiting for a tablet to be plugged in,
+# instead of exiting (which would loop indefinitely under Restart=on-failure and prevent
+# the web UI from ever being reachable on always-on / kiosk setups).
+ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json --poll 2000
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=5
@@ -219,11 +222,16 @@ install_package() {
 }
 
 # Install common dependencies
+# Note: blankslate is vendored at /opt/sketchatone/python/blankslate and loaded via
+# PYTHONPATH (see launcher and systemd unit), so we deliberately do NOT pip-install it
+# or let pip resolve it from the git URL declared in pyproject.toml.
 install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
 install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
 install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
 install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
 install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
+install_package "evdev>=1.6.0" || echo "⚠️  Warning: evdev install failed"
+install_package "typing-extensions>=4.0.0" || true  # only needed on Python <3.10
 
 # Install python-rtmidi for ALSA support - first try apt, then pip
 echo "📦 Installing python-rtmidi (ALSA backend)..."
@@ -241,11 +249,16 @@ fi
 # JACK support is available via Zynthian venv if present (auto-detected at runtime)
 
 # Install sketchatone package itself (creates package metadata with version info)
-echo "📦 Installing sketchatone package..."
+# --no-deps: deps were already installed explicitly above, and this prevents pip from
+# resolving the blankslate git URL in pyproject.toml (which would fetch from GitHub
+# and ignore the vendored copy at /opt/sketchatone/python/blankslate).
+echo "📦 Installing sketchatone package (no-deps; deps installed above, blankslate vendored)..."
 cd /opt/sketchatone/python
-pip3 install --break-system-packages -e . 2>/dev/null || pip3 install -e . 2>/dev/null || {
-    echo "⚠️  Warning: sketchatone package install failed, version may show as 0.0.0-dev"
-}
+pip3 install --break-system-packages --no-deps -e . 2>/dev/null \
+    || pip3 install --no-deps -e . 2>/dev/null \
+    || {
+        echo "⚠️  Warning: sketchatone package install failed, version may show as 0.0.0-dev"
+    }
 cd - >/dev/null
 
 # Set correct permissions
@@ -266,12 +279,36 @@ fi
 # Reload systemd daemon to recognize new service
 systemctl daemon-reload
 
-# Automatically generate udev rules with usb-trigger mode (default)
-# This is needed for HID device permissions (especially keyboard HID buttons)
+# Detect the currently-configured mode so upgrades don't clobber user choice.
+# Matches the detection logic in sketchatone-setup's show_status.
+detect_current_mode() {
+    if [ -f /etc/udev/rules.d/99-sketchatone.rules ] \
+        && grep -q "SYSTEMD_WANTS" /etc/udev/rules.d/99-sketchatone.rules 2>/dev/null; then
+        echo "usb-trigger"
+    elif systemctl is-enabled --quiet sketchatone 2>/dev/null; then
+        echo "always-on"
+    else
+        echo "manual"
+    fi
+}
+
+# dpkg passes the previously-configured version in $2 on upgrade, empty on first install.
+# First install → use default mode (usb-trigger).
+# Upgrade/reinstall → preserve existing mode (e.g. always-on set by kiosk setup).
+# Either way, we still re-run sketchatone-setup so udev rules are regenerated against
+# the (possibly updated) device configs shipped in this version.
 echo ""
 echo "🔧 Setting up udev rules and auto-start..."
+if [ -z "${2:-}" ]; then
+    INSTALL_MODE="usb-trigger"
+    echo "  → First install, using default mode: $INSTALL_MODE"
+else
+    INSTALL_MODE="$(detect_current_mode)"
+    echo "  → Upgrade from ${2}, preserving existing mode: $INSTALL_MODE"
+fi
+
 if [ -x /usr/bin/sketchatone-setup ]; then
-    /usr/bin/sketchatone-setup --mode usb-trigger
+    /usr/bin/sketchatone-setup --mode "$INSTALL_MODE"
 else
     echo "⚠️  Warning: sketchatone-setup not found, skipping udev configuration"
 fi
@@ -282,8 +319,7 @@ echo "✅ Sketchatone installed successfully!"
 echo "=========================================="
 echo ""
 echo "Environment: $DETECTED_ENV"
-echo ""
-echo "Sketchatone is configured to auto-start when your tablet is plugged in."
+echo "Auto-start mode: $INSTALL_MODE"
 echo ""
 echo "Configure MIDI backend (ALSA/JACK) and other settings via the web UI:"
 echo "  http://$(hostname -I | awk '{print $1}')"
@@ -304,28 +340,39 @@ exit 0
 POSTINSTEOF
 chmod +x "$PKG_DIR/DEBIAN/postinst"
 
-# Create prerm script (runs before uninstall)
+# Create prerm script (runs before uninstall or upgrade)
+# $1 distinguishes "upgrade" from "remove"/"purge" - we must NOT disable the service
+# or wipe udev rules on upgrade, otherwise the new postinst's mode-detection will
+# see disabled + no rules and "preserve" mode as manual, silently breaking always-on.
 cat > "$PKG_DIR/DEBIAN/prerm" << 'PRERMEOF'
 #!/bin/bash
 set -e
 
-# Stop and disable service if it's running
-if systemctl is-active --quiet sketchatone 2>/dev/null; then
-    echo "Stopping Sketchatone service..."
-    systemctl stop sketchatone
-fi
-
-if systemctl is-enabled --quiet sketchatone 2>/dev/null; then
-    echo "Disabling Sketchatone service..."
-    systemctl disable sketchatone
-fi
-
-# Remove udev rules if they exist
-if [ -f /etc/udev/rules.d/99-sketchatone.rules ]; then
-    echo "Removing udev rules..."
-    rm -f /etc/udev/rules.d/99-sketchatone.rules
-    udevadm control --reload-rules 2>/dev/null || true
-fi
+case "$1" in
+    upgrade|deconfigure)
+        # Stop the running process so files can be replaced cleanly,
+        # but leave enable/disable state and udev rules intact for postinst.
+        if systemctl is-active --quiet sketchatone 2>/dev/null; then
+            echo "Stopping Sketchatone service for upgrade..."
+            systemctl stop sketchatone
+        fi
+        ;;
+    remove|purge|failed-upgrade)
+        if systemctl is-active --quiet sketchatone 2>/dev/null; then
+            echo "Stopping Sketchatone service..."
+            systemctl stop sketchatone
+        fi
+        if systemctl is-enabled --quiet sketchatone 2>/dev/null; then
+            echo "Disabling Sketchatone service..."
+            systemctl disable sketchatone
+        fi
+        if [ -f /etc/udev/rules.d/99-sketchatone.rules ]; then
+            echo "Removing udev rules..."
+            rm -f /etc/udev/rules.d/99-sketchatone.rules
+            udevadm control --reload-rules 2>/dev/null || true
+        fi
+        ;;
+esac
 
 exit 0
 PRERMEOF

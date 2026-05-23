@@ -616,11 +616,36 @@ class TestNoteClass:
             NoteObject(notation='G', octave=4, secondary=False),
         ]
         filled = Note.fill_note_spread(base_notes, 3, 0)
-        
+
         assert len(filled) == 6  # 3 lower + 3 base
         assert filled[0].octave == 3  # First lower note
         assert filled[0].secondary is True
-    
+
+        # Lower spread should be in ascending pitch order (not mirrored from the base),
+        # so a C major chord with lower_spread=3 yields C3, E3, G3, C4, E4, G4.
+        notations = [(n.notation, n.octave) for n in filled]
+        assert notations == [
+            ('C', 3), ('E', 3), ('G', 3),
+            ('C', 4), ('E', 4), ('G', 4),
+        ]
+
+    def test_fill_note_spread_lower_and_upper_sorted(self):
+        """Combined lower + upper spread is returned in ascending pitch order"""
+        base_notes = [
+            NoteObject(notation='C', octave=4, secondary=False),
+            NoteObject(notation='E', octave=4, secondary=False),
+            NoteObject(notation='G', octave=4, secondary=False),
+        ]
+        filled = Note.fill_note_spread(base_notes, 3, 2)
+
+        assert len(filled) == 8  # 3 lower + 3 base + 2 upper
+        notations = [(n.notation, n.octave) for n in filled]
+        assert notations == [
+            ('C', 3), ('E', 3), ('G', 3),
+            ('C', 4), ('E', 4), ('G', 4),
+            ('C', 5), ('E', 5),
+        ]
+
     def test_transpose_note_up(self):
         """Test transposing note up"""
         note = NoteObject(notation='C', octave=4, secondary=False)

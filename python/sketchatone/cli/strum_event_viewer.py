@@ -10,6 +10,8 @@ Usage:
     python -m sketchatone.cli.strum_event_viewer --config path/to/config.json --strummer-config path/to/strummer.json
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import os

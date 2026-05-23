@@ -42,3 +42,7 @@ python/build/
 python/*.egg-info/
 python/.mypy_cache/
 python/.ruff_cache/
+
+# Vendored build dependencies (cloned by package-for-pi.sh)
+/.blankslate-build/
+/blankslate/

@@ -29,6 +29,13 @@ import {
 } from '../../models/action-rules.js';
 import { ActionDefinition } from '../../core/actions.js';
 import { getAllChordProgressionNames } from '../../models/strummer-features.js';
+import { Note } from '../../models/note.js';
+
+// Root note options for scale picker (chromatic, sharp notation)
+const ROOT_NOTE_OPTIONS: { value: string; label: string }[] = Note.sharpNotations.map((n) => ({ value: n, label: n }));
+
+// Scale type options for scale picker (derived from Note.scaleIntervals)
+const SCALE_TYPE_OPTIONS: { value: string; label: string }[] = Object.keys(Note.scaleIntervals).map((k) => ({ value: k, label: k }));
 
 // Import Spectrum components
 import '@spectrum-web-components/button/sp-button.js';
@@ -192,6 +199,15 @@ export class ActionRulesConfigComponent extends LitElement {
       ],
     },
     {
+      value: 'set-strum-scale',
+      label: 'Set Strum Scale',
+      params: [
+        { key: 'root', label: 'Root Note', type: 'select', defaultValue: 'C', options: ROOT_NOTE_OPTIONS },
+        { key: 'scaleType', label: 'Scale Type', type: 'select', defaultValue: 'major', options: SCALE_TYPE_OPTIONS },
+        { key: 'octave', label: 'Octave', type: 'number', min: 0, max: 8, step: 1, defaultValue: 4 },
+      ],
+    },
+    {
       value: 'set-group-progression',
       label: 'Set Group Progression',
       params: [
@@ -246,8 +262,39 @@ export class ActionRulesConfigComponent extends LitElement {
 
   private buildActionDefinition(actionName: string, params: unknown[]): ActionDefinition {
     if (actionName === 'none' || !actionName) return null;
+    // set-strum-scale form stores [root, scaleType, octave]; combine into notation "root:scaleType"
+    if (actionName === 'set-strum-scale') {
+      const root = (params[0] as string) ?? 'C';
+      const scaleType = (params[1] as string) ?? 'major';
+      const octave = (params[2] as number) ?? 4;
+      return ['set-strum-scale', `${root}:${scaleType}`, octave];
+    }
     if (params.length === 0) return actionName;
     return [actionName, ...params] as [string, ...unknown[]];
+  }
+
+  // Convert stored action params back into form params for editing.
+  // For set-strum-scale, split "root:scaleType" back into [root, scaleType, octave].
+  private actionParamsToFormParams(actionName: string, params: unknown[]): unknown[] {
+    if (actionName === 'set-strum-scale') {
+      const notation = (params[0] as string) ?? 'C:major';
+      const octave = (params[1] as number) ?? 4;
+      let root = 'C';
+      let scaleType = 'major';
+      if (notation.includes(':')) {
+        const [r, s] = notation.split(':');
+        root = r || 'C';
+        scaleType = s || 'major';
+      } else if (notation.length >= 2 && (notation[1] === '#' || notation[1] === 'b')) {
+        root = notation.slice(0, 2);
+        scaleType = notation.slice(2) || 'major';
+      } else {
+        root = notation[0] || 'C';
+        scaleType = notation.slice(1) || 'major';
+      }
+      return [root, scaleType, octave];
+    }
+    return params;
   }
 
   // Event dispatching
@@ -294,7 +341,7 @@ export class ActionRulesConfigComponent extends LitElement {
       this.formParams = [];
     } else if (Array.isArray(rule.action)) {
       this.formAction = rule.action[0] as string;
-      this.formParams = rule.action.slice(1);
+      this.formParams = this.actionParamsToFormParams(this.formAction, rule.action.slice(1));
     } else {
       this.formAction = 'none';
       this.formParams = [];
@@ -324,7 +371,7 @@ export class ActionRulesConfigComponent extends LitElement {
       this.formParams = [];
     } else if (Array.isArray(rule.action)) {
       this.formAction = rule.action[0] as string;
-      this.formParams = rule.action.slice(1);
+      this.formParams = this.actionParamsToFormParams(this.formAction, rule.action.slice(1));
     } else {
       this.formAction = 'none';
       this.formParams = [];
@@ -715,12 +762,18 @@ export class ActionRulesConfigComponent extends LitElement {
           ? this.progressionNames.map((n) => ({ value: n, label: n }))
           : param.options;
 
+        // Use a native <select> rather than sp-picker; the Spectrum picker overlay
+        // can disappear when populated with longer option lists (e.g. scale types).
         return html`
           <div class="form-field">
             <sp-field-label>${param.label}</sp-field-label>
-            <sp-picker value="${value}" @change=${(e: Event) => this.handleParamChange(index, (e.target as HTMLSelectElement).value)}>
-              ${options.map((opt) => html`<sp-menu-item value="${opt.value}">${opt.label}</sp-menu-item>`)}
-            </sp-picker>
+            <select
+              class="native-select"
+              .value=${live(String(value))}
+              @change=${(e: Event) => this.handleParamChange(index, (e.target as HTMLSelectElement).value)}
+            >
+              ${options.map((opt) => html`<option value="${opt.value}" ?selected=${opt.value === value}>${opt.label}</option>`)}
+            </select>
           </div>
         `;
       }

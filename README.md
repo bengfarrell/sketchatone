@@ -45,6 +45,10 @@ sudo sketchatone-setup-kiosk
 ```
 Ideal for dedicated installations or live performance setups.
 
+> Requires Raspberry Pi OS Bookworm or newer (Pi 4 or Pi 5) running the
+> default labwc Wayland session. Older LXDE/X11 sessions and the brief
+> wayfire-default era are not supported.
+
 ### From Source
 ```bash
 npm install
