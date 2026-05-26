@@ -1,6 +1,17 @@
+---
+title: Scales & MIDI-Driven Mode
+description: Use musical scales (instead of chord notes) as the tablet's strings, either via buttons, at startup, or driven by a MIDI keyboard
+---
+
 # Scales and MIDI-Driven Mode
 
-Sketchatone supports dynamic scale selection through both manual button mapping and MIDI-driven automatic scale detection.
+By default Sketchatone lays out the tablet's "strings" from a chord (e.g. `Am` → A, C, E). You can instead use any scale's notes — major, minor, modes, pentatonic, blues, etc. — as the strings. Scales can be selected in three ways:
+
+1. **At startup**, via a startup action rule (use this when you just want a fixed scale instead of a chord).
+2. **From a button**, via the `set-strum-scale` action (switch scales live while playing).
+3. **From a connected MIDI keyboard**, via [MIDI-Driven Scales](#midi-driven-scales-mode) (the scale follows the notes you hold).
+
+In all three cases the strings are the scale's notes, expanded by your `upperNoteSpread` / `lowerNoteSpread` settings just like chord notes are.
 
 ## Scale Support
 
@@ -43,6 +54,35 @@ Examples:
 - `D:major-pentatonic` - D major pentatonic
 
 Legacy format without colon is also supported: `Cmajor`, `Aminor`
+
+---
+
+## Setting a Scale Instead of a Chord
+
+The strumming config (`strumming.chord` / `strumming.initial_notes`) has no `scale` field — scales are applied by running the `set-strum-scale` action. The simplest way to use a scale as your default string layout is to put `set-strum-scale` in `action_rules.startup_rules`, so it runs once on startup:
+
+```json
+{
+  "strumming": {
+    "midi_channel": 1,
+    "upper_note_spread": 2,
+    "lower_note_spread": 0
+  },
+  "action_rules": {
+    "startup_rules": [
+      {
+        "id": "default-scale",
+        "name": "C Major as default strings",
+        "action": ["set-strum-scale", "C:major", 4]
+      }
+    ]
+  }
+}
+```
+
+When the server starts, this replaces the default chord-based strings with the C major scale, expanded by your `upper_note_spread` / `lower_note_spread`. Any `chord` or `initial_notes` set in `strumming` is overwritten by the startup action and is effectively ignored.
+
+To change scales while playing, map `set-strum-scale` to buttons (see below).
 
 ---
 
