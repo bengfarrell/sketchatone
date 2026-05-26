@@ -90,6 +90,21 @@ export interface MidiBackendProtocol {
   sendPitchBend?(bendValue: number): void;
 
   /**
+   * Send a channel aftertouch (channel pressure) message (optional).
+   *
+   * @param value - MIDI value (0-127)
+   */
+  sendAftertouch?(value: number): void;
+
+  /**
+   * Send a Control Change message (optional).
+   *
+   * @param ccNumber - CC number (0-127)
+   * @param value - CC value (0-127)
+   */
+  sendCc?(ccNumber: number, value: number): void;
+
+  /**
    * Get list of available MIDI output ports.
    *
    * @returns List of port names

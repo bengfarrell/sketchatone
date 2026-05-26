@@ -52,10 +52,12 @@ import '../tablet-buttons-config/tablet-buttons-config.js';
 
 // Core strummer
 import { Strummer, type StrummerEvent, type StrumEvent, type ReleaseEvent } from '../../core/strummer.js';
+import { Slider, routeSlideEventToMidi, type SliderEvent } from '../../core/slider.js';
 
 // Models
 import { Note, type NoteObject } from '../../models/note.js';
 import { StrummerConfig, type StrummerConfigData } from '../../models/strummer-config.js';
+import { PRESSURE_MODULATION_CC_PRESETS } from '../../models/strummer-features.js';
 import { ParameterMapping } from '../../models/parameter-mapping.js';
 
 // MIDI input (for external keyboards)
@@ -186,6 +188,18 @@ class WebMidiOutput {
     }
   }
 
+  sendNoteOn(note: NoteObject, velocity: number): void {
+    if (!this.midiOut) return;
+    const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
+    this.midiOut.send([0x90 + this._channel, midiNote, velocity]);
+  }
+
+  sendNoteOff(note: NoteObject): void {
+    if (!this.midiOut) return;
+    const midiNote = Note.notationToMidi(`${note.notation}${note.octave}`);
+    this.midiOut.send([0x80 + this._channel, midiNote, 0x40]);
+  }
+
   sendPitchBend(bendValue: number): void {
     if (!this.midiOut) return;
     bendValue = Math.max(-1.0, Math.min(1.0, bendValue));
@@ -194,6 +208,19 @@ class WebMidiOutput {
     const lsb = midiBend & 0x7F;
     const msb = (midiBend >> 7) & 0x7F;
     this.midiOut.send([0xE0 + this._channel, lsb, msb]);
+  }
+
+  sendAftertouch(value: number): void {
+    if (!this.midiOut) return;
+    const v = Math.max(0, Math.min(127, Math.round(value)));
+    this.midiOut.send([0xD0 + this._channel, v]);
+  }
+
+  sendCc(ccNumber: number, value: number): void {
+    if (!this.midiOut) return;
+    const cc = Math.max(0, Math.min(127, Math.round(ccNumber)));
+    const v = Math.max(0, Math.min(127, Math.round(value)));
+    this.midiOut.send([0xB0 + this._channel, cc, v]);
   }
 
   releaseAll(): void {
@@ -258,7 +285,10 @@ export class SketchatoneFullApp extends LitElement {
   private midiOutput = new WebMidiOutput();
   private midiInput = new WebMidiInput();
   private strummer = new Strummer();
+  private slider = new Slider();
   private activeNotes: NoteObject[] = [];
+  private activeSlideNote: NoteObject | null = null;
+  private lastSlideModulationValue: number | null = null;
 
   constructor() {
     super();
@@ -351,6 +381,7 @@ export class SketchatoneFullApp extends LitElement {
 
         // Update strummer notes
         this.strummer.notes = notes;
+        this.slider.notes = notes;
         this.strummerNotes = notes;
 
         console.log(`[MIDI-DRIVEN] Scale changed to: ${scaleNotation} [${scaleNotes.map(n => `${n.notation}${n.octave}`).join(', ')}]`);
@@ -368,6 +399,10 @@ export class SketchatoneFullApp extends LitElement {
     this.strummer.on('release', (event: ReleaseEvent) => {
       this.handleReleaseEvent(event);
     });
+    this.slider.configure(
+      this.strummerConfig.slide.pressureThreshold,
+      this.strummerConfig.slide.maxBendSemitones
+    );
   }
 
   private async initializeMidiOutput() {
@@ -464,6 +499,12 @@ export class SketchatoneFullApp extends LitElement {
     const x = this.tabletData.x;
     const pressure = this.tabletData.pressure;
 
+    // Branch on top-level mode: 'slide' uses Slider, 'strum' uses Strummer
+    if (this.strummerConfig.mode === 'slide') {
+      this.processSliding(x, pressure);
+      return;
+    }
+
     // Process through strummer
     const event = this.strummer.strum(x, pressure);
     if (event) {
@@ -479,6 +520,38 @@ export class SketchatoneFullApp extends LitElement {
       const bendValue = this.strummerConfig.pitchBend.mapValue(this.tabletData.y);
       this.midiOutput.sendPitchBend(bendValue);
     }
+  }
+
+  private processSliding(x: number, pressure: number) {
+    const event = this.slider.slide(x, pressure);
+    if (!event) return;
+    this.handleSlideEvent(event, pressure);
+  }
+
+  private handleSlideEvent(event: SliderEvent, pressure: number) {
+    if (!this.midiOutput.isConnected) return;
+    const state = {
+      activeSlideNote: this.activeSlideNote,
+      lastModulationValue: this.lastSlideModulationValue,
+    };
+    const slide = this.strummerConfig.slide;
+    const mod = slide.pressureModulation;
+    routeSlideEventToMidi(
+      event,
+      this.midiOutput,
+      state,
+      slide.maxBendSemitones,
+      {
+        type: mod.type,
+        ccNumber: mod.ccNumber,
+        minValue: mod.minValue,
+        maxValue: mod.maxValue,
+        pressureThreshold: slide.pressureThreshold,
+      },
+      pressure,
+    );
+    this.activeSlideNote = state.activeSlideNote;
+    this.lastSlideModulationValue = state.lastModulationValue ?? null;
   }
 
   private handleStrumEvent(event: StrumEvent) {
@@ -554,6 +627,7 @@ export class SketchatoneFullApp extends LitElement {
       octave: note.octave + direction
     }));
     this.strummer.notes = this.strummerNotes;
+    this.slider.notes = this.strummerNotes;
   }
 
   private setChord(chord: string) {
@@ -578,6 +652,7 @@ export class SketchatoneFullApp extends LitElement {
 
     this.strummerNotes = notes;
     this.strummer.notes = notes;
+    this.slider.notes = notes;
   }
 
   private extractButtonsFromData(data: Record<string, unknown>): Set<number> {
@@ -648,6 +723,8 @@ export class SketchatoneFullApp extends LitElement {
       try {
         const data = JSON.parse(event.target?.result as string);
         this.strummerConfig = StrummerConfig.fromDict(data);
+        // Release any notes held under the previous config and reset both controllers
+        this.clearControllerState();
         this.updateStrummerNotes();
         console.log('[SketchatoneFullApp] Loaded strummer config');
       } catch (error) {
@@ -687,6 +764,9 @@ export class SketchatoneFullApp extends LitElement {
   }
 
   private updateConfig(path: string, value: unknown) {
+    // Capture old mode so we can detect a strum <-> slide transition
+    const previousMode = this.strummerConfig.mode;
+
     // Update local config
     const parts = path.split('.');
     let obj: Record<string, unknown> = this.strummerConfig as unknown as Record<string, unknown>;
@@ -695,11 +775,34 @@ export class SketchatoneFullApp extends LitElement {
     }
     obj[parts[parts.length - 1]] = value;
     this.requestUpdate();
-    
+
+    // Mode change: release any held notes and reset both controllers
+    if (path === 'mode' && this.strummerConfig.mode !== previousMode) {
+      this.clearControllerState();
+    }
+
     // Re-apply notes if strumming config changed
     if (path.includes('strumming') || path.includes('transpose')) {
       this.updateStrummerNotes();
     }
+  }
+
+  /**
+   * Release any held notes and reset transient controller state.
+   * Called when switching modes (strum <-> slide).
+   */
+  private clearControllerState() {
+    if (this.midiOutput.isConnected) {
+      if (this.activeSlideNote) {
+        this.midiOutput.releaseNotes([this.activeSlideNote]);
+      }
+      this.midiOutput.releaseNotes(this.strummerNotes);
+      this.midiOutput.sendPitchBend(0);
+    }
+    this.activeSlideNote = null;
+    this.lastSlideModulationValue = null;
+    this.slider.clear();
+    this.strummer.clearStrum();
   }
 
   private handleCurveConfigChange(e: CustomEvent) {
@@ -1057,6 +1160,73 @@ export class SketchatoneFullApp extends LitElement {
               <!-- Settings Panels -->
               <dashboard-panel title="Strumming Settings" size="medium" .draggable=${false} .minimizable=${false}>
                 <div class="settings-form">
+                  <div class="setting-row">
+                    <label>Mode</label>
+                    <sp-picker
+                      size="s"
+                      value=${config.mode}
+                      @change=${(e: Event) => this.updateConfig('mode', (e.target as HTMLSelectElement).value)}>
+                      <sp-menu-item value="strum" ?selected=${config.mode === 'strum'}>Strum</sp-menu-item>
+                      <sp-menu-item value="slide" ?selected=${config.mode === 'slide'}>Slide</sp-menu-item>
+                    </sp-picker>
+                  </div>
+                  ${config.mode === 'slide' ? html`
+                    <div class="setting-row">
+                      <label>Slide Pressure Threshold</label>
+                      <sp-number-field value="${config.slide.pressureThreshold}" step="0.01" min="0" max="1"
+                        @change=${(e: Event) => this.updateConfig('slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    </div>
+                    <div class="setting-row">
+                      <label>Max Bend (semitones)</label>
+                      <sp-number-field value="${config.slide.maxBendSemitones}" step="0.5" min="0" max="24"
+                        @change=${(e: Event) => this.updateConfig('slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    </div>
+                    <div class="setting-row">
+                      <label>Pressure Modulation</label>
+                      <sp-picker
+                        size="s"
+                        value=${config.slide.pressureModulation.type}
+                        @change=${(e: Event) => this.updateConfig('slide.pressureModulation.type', (e.target as HTMLSelectElement).value)}>
+                        <sp-menu-item value="none" ?selected=${config.slide.pressureModulation.type === 'none'}>None</sp-menu-item>
+                        <sp-menu-item value="aftertouch" ?selected=${config.slide.pressureModulation.type === 'aftertouch'}>Aftertouch</sp-menu-item>
+                        <sp-menu-item value="cc" ?selected=${config.slide.pressureModulation.type === 'cc'}>Control Change</sp-menu-item>
+                      </sp-picker>
+                    </div>
+                    ${config.slide.pressureModulation.type === 'cc' ? html`
+                      <div class="setting-row">
+                        <label>CC Preset</label>
+                        <sp-picker
+                          size="s"
+                          value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === config.slide.pressureModulation.ccNumber)?.ccNumber ?? '')}
+                          @change=${(e: Event) => {
+                            const v = (e.target as HTMLSelectElement).value;
+                            if (v !== '') this.updateConfig('slide.pressureModulation.ccNumber', Number(v));
+                          }}>
+                          ${PRESSURE_MODULATION_CC_PRESETS.map(p => html`
+                            <sp-menu-item value=${String(p.ccNumber)} ?selected=${config.slide.pressureModulation.ccNumber === p.ccNumber}>${p.label}</sp-menu-item>
+                          `)}
+                          <sp-menu-item value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === config.slide.pressureModulation.ccNumber)}>Custom</sp-menu-item>
+                        </sp-picker>
+                      </div>
+                      <div class="setting-row">
+                        <label>CC Number</label>
+                        <sp-number-field value="${config.slide.pressureModulation.ccNumber}" step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      </div>
+                    ` : ''}
+                    ${config.slide.pressureModulation.type !== 'none' ? html`
+                      <div class="setting-row">
+                        <label>Modulation Min</label>
+                        <sp-number-field value="${config.slide.pressureModulation.minValue}" step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      </div>
+                      <div class="setting-row">
+                        <label>Modulation Max</label>
+                        <sp-number-field value="${config.slide.pressureModulation.maxValue}" step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      </div>
+                    ` : ''}
+                  ` : ''}
                   <div class="setting-row">
                     <label>Pressure Threshold</label>
                     <sp-number-field value="${config.strumming.pressureThreshold}" step="0.01" min="0" max="1"

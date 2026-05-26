@@ -16,6 +16,8 @@ import {
 import {
   StrumReleaseConfig,
   StrumReleaseConfigData,
+  SliderConfig,
+  SliderConfigData,
 } from './strummer-features.js';
 import {
   ActionRulesConfig,
@@ -141,13 +143,24 @@ export class StrummingConfig implements StrummingConfigData {
 }
 
 /**
+ * Top-level controller mode. 'strum' uses the Strummer (pluck on cross);
+ * 'slide' uses the Slider (trombone: hold + pitch-bend between strings).
+ */
+export type StrummerMode = 'strum' | 'slide';
+
+export const VALID_STRUMMER_MODES: readonly StrummerMode[] = ['strum', 'slide'];
+export const DEFAULT_STRUMMER_MODE: StrummerMode = 'strum';
+
+/**
  * Full strummer configuration data interface
  */
 export interface StrummerConfigData {
+  mode: StrummerMode;
   noteDuration: ParameterMappingData;
   pitchBend: ParameterMappingData;
   noteVelocity: ParameterMappingData;
   strumming: StrummingConfigData;
+  slide: SliderConfigData;
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
   chordProgressions?: Record<string, string[]>;
@@ -166,27 +179,33 @@ export interface StrummerConfigData {
  * not by config. Use action rules to configure these features.
  */
 export class StrummerConfig {
+  mode: StrummerMode;
   noteDuration: ParameterMapping;
   pitchBend: ParameterMapping;
   noteVelocity: ParameterMapping;
   strumming: StrummingConfig;
+  slide: SliderConfig;
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
   chordProgressions: Record<string, string[]>;
 
   constructor(data: {
+    mode?: StrummerMode;
     noteDuration?: ParameterMapping;
     pitchBend?: ParameterMapping;
     noteVelocity?: ParameterMapping;
     strumming?: StrummingConfig;
+    slide?: SliderConfig;
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
     chordProgressions?: Record<string, string[]>;
   } = {}) {
+    this.mode = data.mode ?? DEFAULT_STRUMMER_MODE;
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
     this.pitchBend = data.pitchBend ?? defaultPitchBend();
     this.noteVelocity = data.noteVelocity ?? defaultNoteVelocity();
     this.strumming = data.strumming ?? new StrummingConfig();
+    this.slide = data.slide ?? new SliderConfig();
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
     this.chordProgressions = data.chordProgressions ?? {};
@@ -226,11 +245,18 @@ export class StrummerConfig {
     const pitchBendData = (data.pitch_bend ?? data.pitchBend ?? {}) as Record<string, unknown>;
     const noteVelocityData = (data.note_velocity ?? data.noteVelocity ?? {}) as Record<string, unknown>;
     const strummingData = (data.strumming ?? {}) as Record<string, unknown>;
+    const slideData = (data.slide ?? {}) as Record<string, unknown>;
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
     const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
 
+    const rawMode = data.mode as string | undefined;
+    const mode: StrummerMode = VALID_STRUMMER_MODES.includes(rawMode as StrummerMode)
+      ? (rawMode as StrummerMode)
+      : DEFAULT_STRUMMER_MODE;
+
     return new StrummerConfig({
+      mode,
       noteDuration: Object.keys(noteDurationData).length > 0
         ? ParameterMapping.fromDict(noteDurationData)
         : defaultNoteDuration(),
@@ -243,6 +269,9 @@ export class StrummerConfig {
       strumming: Object.keys(strummingData).length > 0
         ? StrummingConfig.fromDict(strummingData)
         : new StrummingConfig(),
+      slide: Object.keys(slideData).length > 0
+        ? SliderConfig.fromDict(slideData)
+        : new SliderConfig(),
       strumRelease: Object.keys(strumReleaseData).length > 0
         ? StrumReleaseConfig.fromDict(strumReleaseData)
         : new StrumReleaseConfig(),
@@ -267,10 +296,12 @@ export class StrummerConfig {
    */
   toDict(): StrummerConfigData {
     const result: StrummerConfigData = {
+      mode: this.mode,
       noteDuration: this.noteDuration.toDict(),
       pitchBend: this.pitchBend.toDict(),
       noteVelocity: this.noteVelocity.toDict(),
       strumming: this.strumming.toDict(),
+      slide: this.slide.toDict(),
       strumRelease: this.strumRelease.toDict(),
       actionRules: this.actionRules.toDict(),
     };

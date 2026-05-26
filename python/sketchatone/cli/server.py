@@ -143,6 +143,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from sketchatone import __version__ as SKETCHATONE_VERSION
 from sketchatone.strummer.strummer import Strummer
+from sketchatone.strummer.slider import Slider
 from sketchatone.strummer.actions import Actions
 from sketchatone.models.midi_strummer_config import MidiStrummerConfig
 from sketchatone.models.note import Note, NoteObject
@@ -571,6 +572,19 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.strummer = Strummer()
         self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
 
+        # Create slider (trombone-style controller); notes are kept in sync with the strummer
+        self.slider = Slider()
+        self.slider.configure(
+            self.config.strummer.slide.pressure_threshold,
+            self.config.strummer.slide.max_bend_semitones
+        )
+
+        # Slide state: currently held note + channel (for routing slide_update/slide_off MIDI)
+        self.slide_active_note: Optional[NoteObject] = None
+        self.slide_active_channel: Optional[int] = None
+        # Last modulation value sent (aftertouch / CC) for dedup; reset on slide_off
+        self.last_slide_modulation_value: Optional[int] = None
+
         # Listen for notes_changed events to broadcast config updates
         # Store the callback as an instance method to prevent garbage collection
         self.strummer.on('notes_changed', self._on_strummer_notes_changed)
@@ -666,6 +680,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         )
 
         self.strummer.notes = notes
+        self.slider.notes = notes
 
     def _initialize_tablet_button_state(self) -> None:
         """Initialize tablet button state based on device capabilities"""
@@ -1537,6 +1552,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         
         # Reconfigure strummer
         self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
+        self.slider.configure(self.config.strummer.slide.pressure_threshold, self.config.strummer.slide.max_bend_semitones)
         self._setup_notes()
 
         print(colored('Config updated from client', Colors.GREEN))
@@ -1551,12 +1567,23 @@ class StrummerWebSocketServer(TabletReaderBase):
             value: The new value for the property
         """
         try:
+            # Capture old mode so we can detect a strum <-> slide transition
+            previous_mode = self.config.strummer.mode
+
             # Set the config value using the path
             self._set_config_value(path, value)
+
+            # Mode change: release any held notes and reset both controllers
+            if path == 'strummer.mode' and self.config.strummer.mode != previous_mode:
+                self._clear_controller_state()
 
             # Re-apply strummer settings if relevant
             if path.startswith('strummer.strumming.'):
                 self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
+
+            # Re-apply slider settings if relevant
+            if path.startswith('strummer.slide.'):
+                self.slider.configure(self.config.strummer.slide.pressure_threshold, self.config.strummer.slide.max_bend_semitones)
 
             # Re-setup notes if chord or note spread changed
             if 'chord' in path.lower() or 'spread' in path.lower() or 'initialNotes' in path:
@@ -1742,8 +1769,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.strummer_config_path = config_path
             self.current_config_name = config_name
 
+            # Release any notes held under the previous config and reset both controllers
+            self._clear_controller_state()
+
             # Re-apply strummer settings
             self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
+            self.slider.configure(self.config.strummer.slide.pressure_threshold, self.config.strummer.slide.max_bend_semitones)
             self._setup_notes()
             self.actions.set_action_rules_config(self.config.strummer.action_rules)
             self.actions.execute_startup_rules()
@@ -1884,8 +1915,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.current_config_name = config_name
             self.config = parsed_config
 
+            # Release any notes held under the previous config and reset both controllers
+            self._clear_controller_state()
+
             # Re-apply settings from the new config
             self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
+            self.slider.configure(self.config.strummer.slide.pressure_threshold, self.config.strummer.slide.max_bend_semitones)
             self._setup_notes()
             self.actions.set_action_rules_config(self.config.strummer.action_rules)
             self.actions.execute_startup_rules()
@@ -2101,7 +2136,7 @@ class StrummerWebSocketServer(TabletReaderBase):
             The converted config object, or the original dict if no conversion needed
         """
         from ..models.action_rules import ActionRulesConfig
-        from ..models.strummer_features import StrumReleaseConfig
+        from ..models.strummer_features import StrumReleaseConfig, SliderConfig, PressureModulationConfig
         from ..models.strummer_config import StrummingConfig
         from ..models.parameter_mapping import ParameterMapping
 
@@ -2109,6 +2144,8 @@ class StrummerWebSocketServer(TabletReaderBase):
             'action_rules': ActionRulesConfig.from_dict,
             'strum_release': StrumReleaseConfig.from_dict,
             'strumming': StrummingConfig.from_dict,
+            'slide': SliderConfig.from_dict,
+            'pressure_modulation': PressureModulationConfig.from_dict,
             'note_duration': ParameterMapping.from_dict,
             'pitch_bend': ParameterMapping.from_dict,
             'note_velocity': ParameterMapping.from_dict,
@@ -2246,11 +2283,17 @@ class StrummerWebSocketServer(TabletReaderBase):
             )
             self.event_bus.emit_tablet_event(tablet_data)
 
-            # Update strummer bounds (use normalized 0-1 range)
+            # Update strummer/slider bounds (use normalized 0-1 range)
             self.strummer.update_bounds(1.0, 1.0)
+            self.slider.update_bounds(1.0, 1.0)
 
             # Apply X inversion for left-handed use if configured
             strum_x = 1.0 - x if self.config.strummer.strumming.invert_x else x
+
+            # Branch on top-level mode: 'slide' uses Slider, 'strum' uses Strummer
+            if self.config.strummer.mode == 'slide':
+                self._handle_slide(strum_x, pressure, x)
+                return
 
             # Process strum
             event = self.strummer.strum(strum_x, pressure)
@@ -2410,7 +2453,131 @@ class StrummerWebSocketServer(TabletReaderBase):
             import traceback
             print(colored(f'Error processing packet: {e}', Colors.RED))
             traceback.print_exc()
-    
+
+    def _clear_controller_state(self) -> None:
+        """
+        Release any held notes and reset transient controller state.
+        Called when switching modes (strum <-> slide) or reloading config.
+        """
+        if self.backend:
+            try:
+                self.backend.release_all()
+                self.backend.send_pitch_bend(0.0)
+            except Exception:
+                pass
+        if self.slide_active_note is not None and self.backend:
+            try:
+                self.backend.send_note_off(self.slide_active_note)
+            except Exception:
+                pass
+        self.slide_active_note = None
+        self.last_slide_modulation_value = None
+        self.slider.clear()
+        self.strummer.clear_strum()
+
+    def _handle_slide(self, slide_x: float, pressure: float, raw_x: float) -> None:
+        """
+        Process a tablet sample in slide (trombone) mode.
+
+        Routes Slider events to the MIDI backend (note on/off + pitch bend) and
+        emits a StrumEventData on the event bus so visualizers see activity.
+        """
+        event = self.slider.slide(slide_x, pressure)
+        if not event:
+            return
+
+        event_type = event.get('type')
+        slide_config = self.config.strummer.slide
+        max_bend = slide_config.max_bend_semitones or 1.0
+        strum_notes: List[StrumNoteEventData] = []
+        velocity_for_event = 0
+
+        if event_type == 'slide_on':
+            note_obj: NoteObject = event['note']
+            velocity = int(event.get('velocity', 0))
+            bend_semis = float(event.get('bend_semitones', 0.0))
+            bend_value = max(-1.0, min(1.0, bend_semis / max_bend)) if max_bend else 0.0
+
+            self.slide_active_note = note_obj
+            velocity_for_event = velocity
+
+            if self.backend:
+                # Send pitch bend first so the note starts at the correct pitch
+                self.backend.send_pitch_bend(bend_value)
+                self.backend.send_note_on(note_obj, velocity)
+                self._send_slide_pressure_modulation(pressure)
+                self.notes_played += 1
+
+            strum_notes.append(StrumNoteEventData(
+                note=note_obj.to_midi(),
+                velocity=velocity,
+                name=note_obj.notation,
+                octave=note_obj.octave,
+                duration=0.0
+            ))
+
+        elif event_type == 'slide_update':
+            note_obj = event['note']
+            bend_semis = float(event.get('bend_semitones', 0.0))
+            bend_value = max(-1.0, min(1.0, bend_semis / max_bend)) if max_bend else 0.0
+            event_pressure = float(event.get('pressure', pressure))
+            if self.backend:
+                self.backend.send_pitch_bend(bend_value)
+                self._send_slide_pressure_modulation(event_pressure)
+
+            strum_notes.append(StrumNoteEventData(
+                note=note_obj.to_midi(),
+                velocity=0,
+                name=note_obj.notation,
+                octave=note_obj.octave,
+                duration=0.0
+            ))
+
+        elif event_type == 'slide_off':
+            if self.backend and self.slide_active_note is not None:
+                self.backend.send_note_off(self.slide_active_note)
+                self.backend.send_pitch_bend(0.0)
+            self.slide_active_note = None
+            self.last_slide_modulation_value = None
+
+        strum_data = StrumEventData(
+            type=event_type,
+            notes=strum_notes,
+            velocity=velocity_for_event,
+            x=raw_x,
+            pressure=pressure
+        )
+        self.event_bus.emit_strum_event(strum_data)
+
+    def _send_slide_pressure_modulation(self, pressure: float) -> None:
+        """
+        Route the current pen pressure to channel aftertouch or a CC,
+        based on the slide.pressure_modulation config. No-op when type is
+        'none' or backend is missing.
+        """
+        if not self.backend:
+            return
+        mod = self.config.strummer.slide.pressure_modulation
+        if mod.type == 'none':
+            return
+        from sketchatone.strummer.slider import pressure_to_modulation_value
+        value = pressure_to_modulation_value(
+            pressure,
+            self.config.strummer.slide.pressure_threshold,
+            mod.min_value,
+            mod.max_value,
+        )
+        # Skip if the mapped value hasn't changed since the last send (avoids
+        # flooding the synth with redundant aftertouch/CC messages on dense
+        # input streams). Reset to None on slide_off / clear_controller_state.
+        if value == self.last_slide_modulation_value:
+            return
+        self.last_slide_modulation_value = value
+        if mod.type == 'aftertouch':
+            self.backend.send_aftertouch(value)
+        elif mod.type == 'cc':
+            self.backend.send_cc(mod.cc_number, value)
+
     def handle_device_disconnect(self) -> None:
         """Handle device disconnection"""
         super().handle_device_disconnect()

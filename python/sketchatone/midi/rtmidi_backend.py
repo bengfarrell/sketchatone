@@ -454,6 +454,31 @@ class RtMidiBackend(MidiBackendProtocol):
             if self._inter_message_delay > 0:
                 time.sleep(self._inter_message_delay)
 
+    def send_aftertouch(self, value: int) -> None:
+        """Send channel aftertouch (channel pressure) message."""
+        if not self.is_connected:
+            return
+        value = max(0, min(127, int(value)))
+        channels = self._get_channels()
+        for ch in channels:
+            with self._send_lock:
+                self._send([0xD0 + ch, value])
+            if self._inter_message_delay > 0:
+                time.sleep(self._inter_message_delay)
+
+    def send_cc(self, cc_number: int, value: int) -> None:
+        """Send a Control Change message."""
+        if not self.is_connected:
+            return
+        cc_number = max(0, min(127, int(cc_number)))
+        value = max(0, min(127, int(value)))
+        channels = self._get_channels()
+        for ch in channels:
+            with self._send_lock:
+                self._send([0xB0 + ch, cc_number, value])
+            if self._inter_message_delay > 0:
+                time.sleep(self._inter_message_delay)
+
     def on_device_change(self, callback: Callable[[], None]) -> None:
         """
         Register a callback to be called when MIDI devices change.

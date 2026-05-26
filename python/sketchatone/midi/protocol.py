@@ -101,9 +101,28 @@ class MidiBackendProtocol(ABC):
     def send_pitch_bend(self, bend_value: float) -> None:
         """
         Send a pitch bend message (optional).
-        
+
         Args:
             bend_value: Float between -1.0 (full down) and 1.0 (full up), 0 is center
+        """
+        pass  # Default no-op, backends can override
+
+    def send_aftertouch(self, value: int) -> None:
+        """
+        Send a channel aftertouch (channel pressure) message (optional).
+
+        Args:
+            value: MIDI value (0-127)
+        """
+        pass  # Default no-op, backends can override
+
+    def send_cc(self, cc_number: int, value: int) -> None:
+        """
+        Send a Control Change message (optional).
+
+        Args:
+            cc_number: CC number (0-127)
+            value: CC value (0-127)
         """
         pass  # Default no-op, backends can override
     

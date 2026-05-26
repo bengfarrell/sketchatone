@@ -494,6 +494,36 @@ export class RtMidiBackend implements MidiBackendProtocol {
   }
 
   /**
+   * Send a channel aftertouch (channel pressure) message.
+   *
+   * @param value - MIDI value (0-127)
+   */
+  sendAftertouch(value: number): void {
+    if (!this._isConnected || !this._midiOut) {
+      return;
+    }
+    const clamped = Math.max(0, Math.min(127, Math.round(value)));
+    const channel = this._channel ?? 0;
+    this._midiOut.sendMessage([0xd0 + channel, clamped]);
+  }
+
+  /**
+   * Send a Control Change message.
+   *
+   * @param ccNumber - CC number (0-127)
+   * @param value - CC value (0-127)
+   */
+  sendCc(ccNumber: number, value: number): void {
+    if (!this._isConnected || !this._midiOut) {
+      return;
+    }
+    const cc = Math.max(0, Math.min(127, Math.round(ccNumber)));
+    const v = Math.max(0, Math.min(127, Math.round(value)));
+    const channel = this._channel ?? 0;
+    this._midiOut.sendMessage([0xb0 + channel, cc, v]);
+  }
+
+  /**
    * Start device monitoring for device changes
    */
   private _startHotSwapMonitoring(): void {

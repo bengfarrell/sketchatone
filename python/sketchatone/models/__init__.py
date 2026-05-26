@@ -4,7 +4,7 @@ Data models for sketchatone.
 
 from .note import Note, NoteObject
 from .parameter_mapping import ParameterMapping
-from .strummer_features import StrumReleaseConfig
+from .strummer_features import StrumReleaseConfig, SliderConfig, PressureModulationConfig
 from .strummer_config import StrummerConfig, StrummingConfig
 from .midi_config import MidiConfig
 from .keyboard_config import KeyboardConfig
@@ -16,6 +16,8 @@ __all__ = [
     'NoteObject',
     'ParameterMapping',
     'StrumReleaseConfig',
+    'SliderConfig',
+    'PressureModulationConfig',
     'StrummerConfig',
     'StrummingConfig',
     'MidiConfig',

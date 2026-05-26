@@ -6,7 +6,10 @@
  */
 
 import { EventEmitter } from '../utils/event-emitter.js';
+import { StringLayout, type NotesState } from './string-layout.js';
 import type { NoteObject } from '../models/note.js';
+
+export type { NotesState };
 
 /**
  * Strum event data for a single note
@@ -32,17 +35,6 @@ export interface ReleaseEvent {
   velocity: number;
 }
 
-/**
- * Notes state for broadcasting
- */
-export interface NotesState {
-  type: 'notes';
-  notes: NoteObject[];
-  stringCount: number;
-  baseNotes: NoteObject[];
-  timestamp: number;
-}
-
 export type StrummerEvent = StrumEvent | ReleaseEvent;
 
 /**
@@ -57,9 +49,7 @@ export type StrummerEvent = StrumEvent | ReleaseEvent;
  *   - 'notes_changed': When the notes list changes
  */
 export class Strummer extends EventEmitter {
-  private _width = 1.0;
-  private _height = 1.0;
-  private _notes: NoteObject[] = [];
+  readonly layout = new StringLayout();
 
   lastX = -1.0;
   lastStrummedIndex = -1;
@@ -76,33 +66,23 @@ export class Strummer extends EventEmitter {
 
   constructor() {
     super();
+    // Re-emit notes_changed from the layout so consumers can listen on the Strummer
+    this.layout.on('notes_changed', () => this.emit('notes_changed'));
   }
 
   get notes(): NoteObject[] {
-    return this._notes;
+    return this.layout.notes;
   }
 
   set notes(notes: NoteObject[]) {
-    this._notes = notes;
-    this.updateBounds(this._width, this._height);
-    // Emit event when notes change
-    this.emit('notes_changed');
+    this.layout.notes = notes;
   }
 
   /**
    * Get the current notes state as a dictionary for broadcasting.
    */
   getNotesState(): NotesState {
-    // Get base notes (non-secondary) as NoteObject instances for recalculation
-    const baseNotes = this._notes.filter((note) => !note.secondary);
-
-    return {
-      type: 'notes',
-      notes: [...this._notes],
-      stringCount: this._notes.length,
-      baseNotes: [...baseNotes],
-      timestamp: Date.now() / 1000,
-    };
+    return this.layout.getNotesState();
   }
 
   /**
@@ -113,9 +93,8 @@ export class Strummer extends EventEmitter {
    * @returns Strum or release event data, or null if no event triggered
    */
   strum(x: number, pressure: number): StrummerEvent | null {
-    if (this._notes.length > 0) {
-      const stringWidth = this._width / this._notes.length;
-      const index = Math.min(Math.floor(x / stringWidth), this._notes.length - 1);
+    if (this.layout.notes.length > 0) {
+      const index = this.layout.indexAt(x);
 
       // Calculate time delta and pressure velocity
       const currentTime = Date.now() / 1000;
@@ -145,7 +124,7 @@ export class Strummer extends EventEmitter {
           let midiVelocity = Math.floor(20 + normalizedPressure * 107);
           midiVelocity = Math.max(20, Math.min(127, midiVelocity));
 
-          const note = this._notes[this.pendingTapIndex];
+          const note = this.layout.notes[this.pendingTapIndex];
 
           // Reset state
           this.lastStrummedIndex = -1;
@@ -232,7 +211,7 @@ export class Strummer extends EventEmitter {
           // Store velocity for potential release event
           this.lastStrumVelocity = midiVelocity;
 
-          const note = this._notes[this.pendingTapIndex];
+          const note = this.layout.notes[this.pendingTapIndex];
           this.lastStrummedIndex = this.pendingTapIndex;
           this.pendingTapIndex = -1;
           this.pressureBuffer = [];
@@ -275,7 +254,7 @@ export class Strummer extends EventEmitter {
         }
 
         for (const i of indices) {
-          const note = this._notes[i];
+          const note = this.layout.notes[i];
           notesToPlay.push({
             note,
             velocity: midiVelocity,
@@ -318,7 +297,6 @@ export class Strummer extends EventEmitter {
    * Update the bounds of the strummer
    */
   updateBounds(width: number, height: number): void {
-    this._width = width;
-    this._height = height;
+    this.layout.updateBounds(width, height);
   }
 }

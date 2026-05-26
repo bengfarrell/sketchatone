@@ -7,30 +7,30 @@ Ported from midi-strummer/server/strummer.py
 
 from typing import List, Optional, Dict, Any, Tuple
 import time
-from dataclasses import asdict
 
 from ..models.note import NoteObject
 from ..utils.event_emitter import EventEmitter
+from .string_layout import StringLayout
 
 
 class Strummer(EventEmitter):
     """
     Strummer class for detecting strum events from tablet input.
-    
+
     The strummer divides the tablet width into "strings" based on the number of notes.
     When the pen moves across strings with sufficient pressure, it triggers strum events.
-    
+
     Events emitted:
         - 'strum': When notes are strummed (data: {'type': 'strum', 'notes': [...]})
         - 'release': When pressure is released (data: {'type': 'release', 'velocity': int})
         - 'notes_changed': When the notes list changes
     """
-    
+
     def __init__(self):
         super().__init__()
-        self._width: float = 1.0
-        self._height: float = 1.0
-        self._notes: List[NoteObject] = []
+        self.layout = StringLayout()
+        # Re-emit notes_changed from the layout so consumers can listen on the Strummer
+        self.layout.on('notes_changed', self._on_layout_notes_changed)
         self.last_x: float = -1.0
         self.last_strummed_index: int = -1
         self.last_pressure: float = 0.0
@@ -38,40 +38,44 @@ class Strummer(EventEmitter):
         self.pressure_velocity: float = 0.0  # Rate of pressure change
         self.pressure_threshold: float = 0.1  # Minimum pressure to trigger a strum
         self.last_strum_velocity: int = 0  # Last calculated velocity for release event
-        
+
         # Pressure buffering for accurate velocity sensing on quick taps
         self.pressure_buffer: List[Tuple[float, float]] = []  # List of (pressure, timestamp) tuples
         self.buffer_max_samples: int = 10  # Number of samples to collect before triggering
         self.pending_tap_index: int = -1  # Index of pending tap waiting for buffer
 
+    def _on_layout_notes_changed(self) -> None:
+        self.emit('notes_changed')
+
     @property
     def notes(self) -> List[NoteObject]:
-        return self._notes
+        return self.layout.notes
 
     @notes.setter
     def notes(self, notes: List[NoteObject]) -> None:
-        self._notes = notes
-        self.update_bounds(self._width, self._height)
-        # Emit event when notes change
-        self.emit('notes_changed')
-    
+        self.layout.notes = notes
+
+    # Backward-compatible aliases for state that now lives on the layout.
+    @property
+    def _width(self) -> float:
+        return self.layout.width
+
+    @property
+    def _height(self) -> float:
+        return self.layout.height
+
+    @property
+    def _notes(self) -> List[NoteObject]:
+        return self.layout.notes
+
     def get_notes_state(self) -> Dict[str, Any]:
         """
         Get the current notes state as a dictionary for broadcasting.
-        
+
         Returns:
             Dictionary with type, notes, stringCount, baseNotes, and timestamp
         """
-        # Get base notes (non-secondary) as NoteObject instances for recalculation
-        base_notes = [note for note in self._notes if not note.secondary]
-        
-        return {
-            'type': 'notes',
-            'notes': [asdict(note) for note in self._notes],
-            'stringCount': len(self._notes),
-            'baseNotes': [asdict(note) for note in base_notes],
-            'timestamp': time.time()
-        }
+        return self.layout.get_notes_state()
 
     def strum(self, x: float, pressure: float) -> Optional[Dict[str, Any]]:
         """
@@ -84,9 +88,8 @@ class Strummer(EventEmitter):
         Returns:
             Dictionary with strum event data, or None if no event triggered
         """
-        if len(self._notes) > 0:
-            string_width = self._width / len(self._notes)
-            index = min(int(x / string_width), len(self._notes) - 1)
+        if len(self.layout.notes) > 0:
+            index = self.layout.index_at(x)
             
             # Calculate time delta and pressure velocity
             current_time = time.time()
@@ -251,5 +254,4 @@ class Strummer(EventEmitter):
 
     def update_bounds(self, width: float, height: float) -> None:
         """Update the bounds of the strummer"""
-        self._width = width
-        self._height = height
+        self.layout.update_bounds(width, height)

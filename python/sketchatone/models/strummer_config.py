@@ -11,8 +11,14 @@ import json
 import os
 
 from .parameter_mapping import ParameterMapping, default_note_duration, default_pitch_bend, default_note_velocity
-from .strummer_features import StrumReleaseConfig
+from .strummer_features import StrumReleaseConfig, SliderConfig
 from .action_rules import ActionRulesConfig
+
+
+# Top-level controller mode. 'strum' uses the Strummer (pluck on cross);
+# 'slide' uses the Slider (trombone: hold + pitch-bend between strings).
+VALID_MODES = ('strum', 'slide')
+DEFAULT_MODE = 'strum'
 
 
 @dataclass
@@ -103,18 +109,22 @@ class StrummerConfig:
     not by config. Use action rules to configure these features.
 
     Attributes:
+        mode: Top-level controller mode ('strum' or 'slide')
         note_duration: Parameter mapping for note duration
         pitch_bend: Parameter mapping for pitch bend
         note_velocity: Parameter mapping for note velocity
-        strumming: Core strumming configuration
+        strumming: Core strumming configuration (note layout shared with slide mode)
+        slide: Slider (trombone-style) mode configuration
         strum_release: Strum release feature configuration
         action_rules: Action rules for button-to-action mapping
         chord_progressions: Chord progressions (name -> list of chords)
     """
+    mode: str = DEFAULT_MODE
     note_duration: ParameterMapping = field(default_factory=default_note_duration)
     pitch_bend: ParameterMapping = field(default_factory=default_pitch_bend)
     note_velocity: ParameterMapping = field(default_factory=default_note_velocity)
     strumming: StrummingConfig = field(default_factory=StrummingConfig)
+    slide: SliderConfig = field(default_factory=SliderConfig)
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
     action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
     chord_progressions: Dict[str, List[str]] = field(default_factory=dict)
@@ -154,15 +164,22 @@ class StrummerConfig:
         pitch_bend_data = data.get('pitch_bend', data.get('pitchBend', {}))
         note_velocity_data = data.get('note_velocity', data.get('noteVelocity', {}))
         strumming_data = data.get('strumming', {})
+        slide_data = data.get('slide', {})
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
         action_rules_data = data.get('action_rules', data.get('actionRules', {}))
         chord_progressions_data = data.get('chordProgressions', data.get('chord_progressions', {}))
 
+        mode = data.get('mode', DEFAULT_MODE)
+        if mode not in VALID_MODES:
+            mode = DEFAULT_MODE
+
         return cls(
+            mode=mode,
             note_duration=ParameterMapping.from_dict(note_duration_data) if note_duration_data else default_note_duration(),
             pitch_bend=ParameterMapping.from_dict(pitch_bend_data) if pitch_bend_data else default_pitch_bend(),
             note_velocity=ParameterMapping.from_dict(note_velocity_data) if note_velocity_data else default_note_velocity(),
             strumming=StrummingConfig.from_dict(strumming_data) if strumming_data else StrummingConfig(),
+            slide=SliderConfig.from_dict(slide_data) if slide_data else SliderConfig(),
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
             action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig(),
             chord_progressions=chord_progressions_data
@@ -178,10 +195,12 @@ class StrummerConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (camelCase for webapp compatibility)"""
         result = {
+            'mode': self.mode,
             'noteDuration': self.note_duration.to_dict(),
             'pitchBend': self.pitch_bend.to_dict(),
             'noteVelocity': self.note_velocity.to_dict(),
             'strumming': self.strumming.to_dict(),
+            'slide': self.slide.to_dict(),
             'strumRelease': self.strum_release.to_dict(),
             'actionRules': self.action_rules.to_dict()
         }

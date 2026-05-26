@@ -16,7 +16,7 @@ from sketchatone.models.note import NoteObject
 
 class MidiMessage:
     """Represents a recorded MIDI message"""
-    
+
     def __init__(
         self,
         msg_type: str,
@@ -25,7 +25,9 @@ class MidiMessage:
         velocity: Optional[int] = None,
         channel: Optional[int] = None,
         bend_value: Optional[float] = None,
-        raw_bytes: Optional[bytes] = None
+        raw_bytes: Optional[bytes] = None,
+        cc_number: Optional[int] = None,
+        value: Optional[int] = None
     ):
         self.type = msg_type
         self.timestamp = timestamp
@@ -34,7 +36,9 @@ class MidiMessage:
         self.channel = channel
         self.bend_value = bend_value
         self.raw_bytes = raw_bytes
-    
+        self.cc_number = cc_number
+        self.value = value
+
     def __repr__(self):
         return f"MidiMessage(type={self.type}, channel={self.channel}, note={self.note})"
 
@@ -154,7 +158,26 @@ class MockMidiBackend(MidiBackendProtocol):
                 bend_value=bend_value,
                 channel=self._channel
             ))
-    
+
+    def send_aftertouch(self, value: int) -> None:
+        with self._lock:
+            self._messages.append(MidiMessage(
+                msg_type='aftertouch',
+                timestamp=time.time(),
+                value=int(value),
+                channel=self._channel
+            ))
+
+    def send_cc(self, cc_number: int, value: int) -> None:
+        with self._lock:
+            self._messages.append(MidiMessage(
+                msg_type='cc',
+                timestamp=time.time(),
+                cc_number=int(cc_number),
+                value=int(value),
+                channel=self._channel
+            ))
+
     def get_available_ports(self) -> List[str]:
         return list(self._available_ports)
     

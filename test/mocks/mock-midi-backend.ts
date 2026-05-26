@@ -9,13 +9,15 @@ import type { MidiBackendProtocol, MidiBackendOptions } from '../../src/midi/pro
 import type { NoteObject } from '../../src/models/note.js';
 
 export interface MidiMessage {
-  type: 'note_on' | 'note_off' | 'pitch_bend' | 'raw';
+  type: 'note_on' | 'note_off' | 'pitch_bend' | 'aftertouch' | 'cc' | 'raw';
   timestamp: number;
   note?: NoteObject;
   velocity?: number;
   channel?: number;
   bendValue?: number;
   rawBytes?: number[];
+  ccNumber?: number;
+  value?: number;
 }
 
 /**
@@ -110,6 +112,25 @@ export class MockMidiBackend implements MidiBackendProtocol {
       type: 'pitch_bend',
       timestamp: Date.now(),
       bendValue,
+      channel: this._channel,
+    });
+  }
+
+  sendAftertouch(value: number): void {
+    this._messages.push({
+      type: 'aftertouch',
+      timestamp: Date.now(),
+      value: Math.round(value),
+      channel: this._channel,
+    });
+  }
+
+  sendCc(ccNumber: number, value: number): void {
+    this._messages.push({
+      type: 'cc',
+      timestamp: Date.now(),
+      ccNumber: Math.round(ccNumber),
+      value: Math.round(value),
       channel: this._channel,
     });
   }

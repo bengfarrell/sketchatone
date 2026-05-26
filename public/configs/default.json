@@ -1,5 +1,6 @@
 {
   "_comment": "Default Sketchatone configuration. Works with all CLI commands (server, midi_strummer, strum_event_viewer). Each command uses only the sections it needs and ignores the rest.",
+  "mode": "strum",
   "note_duration": {
     "min": 0.15,
     "max": 1.5,
@@ -35,6 +36,17 @@
     "chord": "Am",
     "upper_note_spread": 3,
     "lower_note_spread": 3
+  },
+  "slide": {
+    "_comment": "Slider (trombone) mode: hold one note for the whole pen-down stroke; x-axis bends pitch continuously across the full tablet via piecewise interpolation. Activate via top-level \"mode\": \"slide\". max_bend_semitones must match the synth's pitch-bend range (e.g. set the synth's bend range to 24 semitones to span two octaves). pressure_modulation routes held-note pressure to aftertouch or a CC (type: none|aftertouch|cc).",
+    "pressure_threshold": 0.1,
+    "max_bend_semitones": 24.0,
+    "pressure_modulation": {
+      "type": "aftertouch",
+      "cc_number": 11,
+      "min_value": 0,
+      "max_value": 127
+    }
   },
   "note_repeater": {
     "active": false,

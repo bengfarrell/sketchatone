@@ -79,6 +79,155 @@ export class StrumReleaseConfig implements StrumReleaseConfigData {
 }
 
 /**
+ * Slider (trombone-style) configuration data.
+ *
+ * Tuning parameters specific to the Slider; the note layout (initialNotes,
+ * chord, spreads, midiChannel, invertX) is shared with StrummingConfig.
+ */
+export type PressureModulationType = 'none' | 'aftertouch' | 'cc';
+
+export const VALID_PRESSURE_MODULATION_TYPES: readonly PressureModulationType[] = [
+  'none', 'aftertouch', 'cc',
+] as const;
+
+export const DEFAULT_PRESSURE_MODULATION_TYPE: PressureModulationType = 'aftertouch';
+
+/**
+ * Common Control Change presets surfaced in slide-mode pressure modulation UIs.
+ */
+export interface PressureModulationCcPreset {
+  readonly label: string;
+  readonly ccNumber: number;
+}
+
+export const PRESSURE_MODULATION_CC_PRESETS: readonly PressureModulationCcPreset[] = [
+  { label: 'CC1 Mod Wheel', ccNumber: 1 },
+  { label: 'CC2 Breath', ccNumber: 2 },
+  { label: 'CC7 Volume', ccNumber: 7 },
+  { label: 'CC11 Expression', ccNumber: 11 },
+  { label: 'CC74 Brightness', ccNumber: 74 },
+] as const;
+
+/**
+ * Configuration for routing held-note pressure in slide mode.
+ */
+export interface PressureModulationConfigData {
+  /** 'none' (disabled), 'aftertouch' (channel pressure), or 'cc' */
+  type: PressureModulationType;
+  /** CC number to send when type === 'cc' (default 11 = Expression) */
+  ccNumber: number;
+  /** MIDI value at pressure == pressureThreshold (0-127) */
+  minValue: number;
+  /** MIDI value at pressure == 1.0 (0-127) */
+  maxValue: number;
+}
+
+export const DEFAULT_PRESSURE_MODULATION_CONFIG: PressureModulationConfigData = {
+  type: DEFAULT_PRESSURE_MODULATION_TYPE,
+  ccNumber: 11,
+  minValue: 0,
+  maxValue: 127,
+};
+
+export class PressureModulationConfig implements PressureModulationConfigData {
+  type: PressureModulationType;
+  ccNumber: number;
+  minValue: number;
+  maxValue: number;
+
+  constructor(data: Partial<PressureModulationConfigData> = {}) {
+    const rawType = data.type ?? DEFAULT_PRESSURE_MODULATION_CONFIG.type;
+    this.type = (VALID_PRESSURE_MODULATION_TYPES as readonly string[]).includes(rawType)
+      ? rawType
+      : DEFAULT_PRESSURE_MODULATION_CONFIG.type;
+    this.ccNumber = data.ccNumber ?? DEFAULT_PRESSURE_MODULATION_CONFIG.ccNumber;
+    this.minValue = data.minValue ?? DEFAULT_PRESSURE_MODULATION_CONFIG.minValue;
+    this.maxValue = data.maxValue ?? DEFAULT_PRESSURE_MODULATION_CONFIG.maxValue;
+  }
+
+  static fromDict(data: Record<string, unknown>): PressureModulationConfig {
+    return new PressureModulationConfig({
+      type: (data.type ?? undefined) as PressureModulationType | undefined,
+      ccNumber: (data.cc_number ?? data.ccNumber) as number | undefined,
+      minValue: (data.min_value ?? data.minValue) as number | undefined,
+      maxValue: (data.max_value ?? data.maxValue) as number | undefined,
+    });
+  }
+
+  toDict(): PressureModulationConfigData {
+    return {
+      type: this.type,
+      ccNumber: this.ccNumber,
+      minValue: this.minValue,
+      maxValue: this.maxValue,
+    };
+  }
+}
+
+export interface SliderConfigData {
+  /** Minimum pressure to register pen-down (0-1) */
+  pressureThreshold: number;
+  /**
+   * Maximum signed pitch bend in semitones. Should match the synth's
+   * configured pitch-bend range so the interpolation between adjacent
+   * strings reaches exactly the neighbor's pitch.
+   */
+  maxBendSemitones: number;
+  /** How held-note pressure is routed to MIDI. */
+  pressureModulation: PressureModulationConfigData;
+}
+
+/**
+ * Default slider configuration
+ */
+export const DEFAULT_SLIDER_CONFIG: SliderConfigData = {
+  pressureThreshold: 0.1,
+  maxBendSemitones: 24.0,
+  pressureModulation: { ...DEFAULT_PRESSURE_MODULATION_CONFIG },
+};
+
+/**
+ * Configuration for the slider (trombone-style) mode.
+ */
+export class SliderConfig implements SliderConfigData {
+  pressureThreshold: number;
+  maxBendSemitones: number;
+  pressureModulation: PressureModulationConfig;
+
+  constructor(data: Partial<SliderConfigData> = {}) {
+    this.pressureThreshold = data.pressureThreshold ?? DEFAULT_SLIDER_CONFIG.pressureThreshold;
+    this.maxBendSemitones = data.maxBendSemitones ?? DEFAULT_SLIDER_CONFIG.maxBendSemitones;
+    this.pressureModulation = data.pressureModulation instanceof PressureModulationConfig
+      ? data.pressureModulation
+      : new PressureModulationConfig(data.pressureModulation ?? {});
+  }
+
+  /**
+   * Create from dictionary (supports both snake_case and camelCase)
+   */
+  static fromDict(data: Record<string, unknown>): SliderConfig {
+    const modData = (data.pressure_modulation ?? data.pressureModulation) as
+      Record<string, unknown> | undefined;
+    return new SliderConfig({
+      pressureThreshold: (data.pressure_threshold ?? data.pressureThreshold) as number | undefined,
+      maxBendSemitones: (data.max_bend_semitones ?? data.maxBendSemitones) as number | undefined,
+      pressureModulation: modData ? PressureModulationConfig.fromDict(modData) : undefined,
+    });
+  }
+
+  /**
+   * Convert to dictionary for JSON serialization
+   */
+  toDict(): SliderConfigData {
+    return {
+      pressureThreshold: this.pressureThreshold,
+      maxBendSemitones: this.maxBendSemitones,
+      pressureModulation: this.pressureModulation.toDict(),
+    };
+  }
+}
+
+/**
  * Get all chord progression names from config.
  * If no progressions provided, returns empty array.
  *

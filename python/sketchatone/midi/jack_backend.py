@@ -413,3 +413,24 @@ class JackMidiBackend(MidiBackendProtocol):
         for ch in channels:
             message = bytes([0xE0 + ch, lsb, msb])
             self._queue_midi_event(message)
+
+    def send_aftertouch(self, value: int) -> None:
+        """Send channel aftertouch (channel pressure) message."""
+        if not self.is_connected:
+            return
+        value = max(0, min(127, int(value)))
+        channels = self._get_channels()
+        for ch in channels:
+            message = bytes([0xD0 + ch, value])
+            self._queue_midi_event(message)
+
+    def send_cc(self, cc_number: int, value: int) -> None:
+        """Send a Control Change message."""
+        if not self.is_connected:
+            return
+        cc_number = max(0, min(127, int(cc_number)))
+        value = max(0, min(127, int(value)))
+        channels = self._get_channels()
+        for ch in channels:
+            message = bytes([0xB0 + ch, cc_number, value])
+            self._queue_midi_event(message)

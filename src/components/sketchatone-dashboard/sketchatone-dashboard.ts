@@ -77,6 +77,7 @@ import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
 import { Note, type NoteObject } from '../../models/note.js';
+import { PRESSURE_MODULATION_CC_PRESETS } from '../../models/strummer-features.js';
 
 // Shared tablet interaction controller for curve visualizers
 import { sharedTabletInteraction } from '../../controllers/index.js';
@@ -1084,6 +1085,73 @@ export class SketchatoneDashboard extends LitElement {
             <dashboard-panel title="Strumming Settings" panelId="strummingSettings" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('strummingSettings')}>
               <div class="settings-form">
+                <div class="setting-row">
+                  <label>Mode</label>
+                  <sp-picker
+                    size="s"
+                    value=${this.fullConfig?.strummer?.mode ?? 'strum'}
+                    @change=${(e: Event) => this.updateConfig('strummer.mode', (e.target as HTMLSelectElement).value)}>
+                    <sp-menu-item value="strum" ?selected=${(this.fullConfig?.strummer?.mode ?? 'strum') === 'strum'}>Strum</sp-menu-item>
+                    <sp-menu-item value="slide" ?selected=${this.fullConfig?.strummer?.mode === 'slide'}>Slide</sp-menu-item>
+                  </sp-picker>
+                </div>
+                ${(this.fullConfig?.strummer?.mode ?? 'strum') === 'slide' ? html`
+                  <div class="setting-row">
+                    <label>Slide Pressure Threshold</label>
+                    <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
+                      @change=${(e: Event) => this.updateConfig('strummer.slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  </div>
+                  <div class="setting-row">
+                    <label>Max Bend (semitones)</label>
+                    <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.maxBendSemitones ?? 2}" step="0.5" min="0" max="24"
+                      @change=${(e: Event) => this.updateConfig('strummer.slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  </div>
+                  <div class="setting-row">
+                    <label>Pressure Modulation</label>
+                    <sp-picker
+                      size="s"
+                      value=${this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch'}
+                      @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.type', (e.target as HTMLSelectElement).value)}>
+                      <sp-menu-item value="none" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'none'}>None</sp-menu-item>
+                      <sp-menu-item value="aftertouch" ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch') === 'aftertouch'}>Aftertouch</sp-menu-item>
+                      <sp-menu-item value="cc" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'cc'}>Control Change</sp-menu-item>
+                    </sp-picker>
+                  </div>
+                  ${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'cc' ? html`
+                    <div class="setting-row">
+                      <label>CC Preset</label>
+                      <sp-picker
+                        size="s"
+                        value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))?.ccNumber ?? '')}
+                        @change=${(e: Event) => {
+                          const v = (e.target as HTMLSelectElement).value;
+                          if (v !== '') this.updateConfig('strummer.slide.pressureModulation.ccNumber', Number(v));
+                        }}>
+                        ${PRESSURE_MODULATION_CC_PRESETS.map(p => html`
+                          <sp-menu-item value=${String(p.ccNumber)} ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11) === p.ccNumber}>${p.label}</sp-menu-item>
+                        `)}
+                        <sp-menu-item value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))}>Custom</sp-menu-item>
+                      </sp-picker>
+                    </div>
+                    <div class="setting-row">
+                      <label>CC Number</label>
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11}" step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    </div>
+                  ` : ''}
+                  ${(this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch') !== 'none' ? html`
+                    <div class="setting-row">
+                      <label>Modulation Min</label>
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.minValue ?? 0}" step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    </div>
+                    <div class="setting-row">
+                      <label>Modulation Max</label>
+                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.maxValue ?? 127}" step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    </div>
+                  ` : ''}
+                ` : ''}
                 <div class="setting-row">
                   <label>Pressure Threshold</label>
                   <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
