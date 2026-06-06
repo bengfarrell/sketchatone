@@ -7,6 +7,8 @@ description: Trombone-style continuous pitch bend across the tablet — hold a s
 
 > **Experimental.** Slide mode is a new controller mode and the configuration surface may change. It depends on your destination synth respecting a wide pitch-bend range; if yours can't, the audible bend will saturate before reaching the next string.
 
+> **Implementation status.** Slide mode is wired into all three entry points: the **browser webapp**, the **Python CLI server** (`python -m sketchatone.cli.server`), and the **Node.js CLI server** (`npm run server`).
+
 Slide mode (sometimes called "trombone mode") is an alternative to the default Strum mode. Instead of triggering a new note each time the pen crosses a string boundary, the pen-down event triggers a **single** note that's held for the entire stroke. As you slide the pen across the tablet, the pitch bends continuously between the strings' pitches via piecewise linear interpolation, reaching each neighbouring string's exact pitch when the pen is over its center.
 
 The result is a single, glissando-like sustained note — closer to a trombone or a fretless instrument than to a guitar strum.

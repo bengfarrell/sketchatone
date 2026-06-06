@@ -1281,6 +1281,16 @@ export class SketchatoneDashboard extends LitElement {
                     ? this.serverMidiNotes.map((n) => `${n.notation}${n.octave}`).join(', ')
                     : '—'}</span>
                 </div>
+                <div class="midi-input-mode-row">
+                  <span class="midi-notes-label">Input Mode:</span>
+                  <sp-picker size="s" value="${this.fullConfig?.midi?.inputMode ?? 'direct'}"
+                    @change=${(e: Event) => this.updateConfig('midi.inputMode', (e.target as HTMLInputElement).value)}>
+                    <sp-menu-item value="direct" ?selected=${(this.fullConfig?.midi?.inputMode ?? 'direct') === 'direct'}>Direct</sp-menu-item>
+                    <sp-menu-item value="majorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'majorScale'}>Major Scale</sp-menu-item>
+                    <sp-menu-item value="minorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'minorScale'}>Minor Scale</sp-menu-item>
+                    <sp-menu-item value="autoScale" ?selected=${this.fullConfig?.midi?.inputMode === 'autoScale'}>Auto Scale</sp-menu-item>
+                  </sp-picker>
+                </div>
                 ${this.lastMidiPortName ? html`
                   <div class="midi-source">from: ${this.lastMidiPortName}</div>
                 ` : ''}

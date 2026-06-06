@@ -22,6 +22,18 @@ DEFAULT_MIDI_INPUT_EXCLUDE: List[str] = [
 ]
 
 
+# How incoming MIDI notes drive the strummer strings.
+#   'direct'      : held MIDI notes become the strummer notes (1:1)
+#   'majorScale'  : lowest held note is the root of a major scale
+#   'minorScale'  : lowest held note is the root of a natural minor scale
+#   'autoScale'   : 1 note  -> neutral scale [1, 2, 4, 5]
+#                   2 notes -> major or minor scale (minor 3rd interval -> minor)
+#                   >2 notes -> fall back to direct
+MidiInputMode = Literal['direct', 'majorScale', 'minorScale', 'autoScale']
+VALID_MIDI_INPUT_MODES: tuple = ('direct', 'majorScale', 'minorScale', 'autoScale')
+DEFAULT_MIDI_INPUT_MODE: MidiInputMode = 'direct'
+
+
 class MidiPassthroughConnection(TypedDict):
     """A MIDI passthrough connection from input port to output port"""
     inputPort: Union[int, str]   # Input port ID or name
@@ -49,6 +61,7 @@ class MidiConfig:
     midi_output_backend: Literal["rtmidi", "jack"] = "rtmidi"
     midi_output_id: Optional[Union[int, str]] = None
     midi_input_id: Optional[Union[int, str]] = None
+    input_mode: MidiInputMode = DEFAULT_MIDI_INPUT_MODE
     midi_input_exclude: List[str] = field(default_factory=lambda: DEFAULT_MIDI_INPUT_EXCLUDE.copy())
     midi_passthrough: List[MidiPassthroughConnection] = field(default_factory=list)
     jack_client_name: str = "sketchatone"
@@ -71,10 +84,15 @@ class MidiConfig:
         # Get passthrough connections
         passthrough = data.get('midi_passthrough', data.get('midiPassthrough', []))
 
+        # Validate input mode (fall back to default for unknown values)
+        raw_input_mode = data.get('input_mode', data.get('inputMode'))
+        input_mode = raw_input_mode if raw_input_mode in VALID_MIDI_INPUT_MODES else DEFAULT_MIDI_INPUT_MODE
+
         return cls(
             midi_output_backend=data.get('midi_output_backend', data.get('midiOutputBackend', 'rtmidi')),
             midi_output_id=data.get('midi_output_id', data.get('midiOutputId')),
             midi_input_id=data.get('midi_input_id', data.get('midiInputId')),
+            input_mode=input_mode,
             midi_input_exclude=exclude_list,
             midi_passthrough=passthrough,
             jack_client_name=data.get('jack_client_name', data.get('jackClientName', 'sketchatone')),
@@ -96,6 +114,7 @@ class MidiConfig:
             'midiOutputBackend': self.midi_output_backend,
             'midiOutputId': self.midi_output_id,
             'midiInputId': self.midi_input_id,
+            'inputMode': self.input_mode,
             'midiInputExclude': self.midi_input_exclude,
             'midiPassthrough': self.midi_passthrough,
             'jackClientName': self.jack_client_name,

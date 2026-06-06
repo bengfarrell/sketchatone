@@ -57,7 +57,13 @@ import { Slider, routeSlideEventToMidi, type SliderEvent } from '../../core/slid
 // Models
 import { Note, type NoteObject } from '../../models/note.js';
 import { StrummerConfig, type StrummerConfigData } from '../../models/strummer-config.js';
+import {
+  DEFAULT_MIDI_INPUT_MODE,
+  VALID_MIDI_INPUT_MODES,
+  type MidiInputMode,
+} from '../../models/midi-strummer-config.js';
 import { PRESSURE_MODULATION_CC_PRESETS } from '../../models/strummer-features.js';
+import { mapMidiInputToStrummerNotes } from '../../core/midi-input-mapper.js';
 import { ParameterMapping } from '../../models/parameter-mapping.js';
 
 // MIDI input (for external keyboards)
@@ -253,6 +259,7 @@ export class SketchatoneFullApp extends LitElement {
   // WebMIDI input state (external keyboard)
   @state() private midiInputConnected = false;
   @state() private midiInputNotes: NoteObject[] = [];
+  @state() private midiInputMode: MidiInputMode = DEFAULT_MIDI_INPUT_MODE;
 
   // Strummer state
   @state() private strummerConfig: StrummerConfig = new StrummerConfig();
@@ -350,46 +357,27 @@ export class SketchatoneFullApp extends LitElement {
     this.midiInput.on(MIDI_NOTE_EVENT, (event: MidiNoteEvent) => {
       this.midiInputNotes = event.notes.map(n => Note.parseNotation(n));
       this.midiInputConnected = true;
-
-      // Handle MIDI-driven scales if enabled
-      if (this.strummerConfig.strumming.midiDrivenScales) {
-        this.handleMidiDrivenScales();
-      }
+      this.applyMidiInputMapping();
     });
     // Auto-connect to first available input
     this.midiInput.connect();
   }
 
   /**
-   * Handle MIDI-driven scale changes based on held MIDI notes
+   * Route the currently-held MIDI notes through the input mapper and
+   * apply the resulting base notes (with spread) to the strummer/slider.
    */
-  private handleMidiDrivenScales() {
-    const scaleInfo = Note.analyzeNotesForScale(this.midiInputNotes);
+  private applyMidiInputMapping() {
+    const baseNotes = mapMidiInputToStrummerNotes(this.midiInputNotes, this.midiInputMode);
+    if (!baseNotes || baseNotes.length === 0) return;
 
-    if (scaleInfo) {
-      // Build scale notation (e.g., "C:major", "A:minor")
-      const scaleNotation = `${scaleInfo.root}:${scaleInfo.scaleType}`;
+    const upper = this.strummerConfig.strumming.upperNoteSpread;
+    const lower = this.strummerConfig.strumming.lowerNoteSpread;
+    const notes = Note.fillNoteSpread(baseNotes, lower, upper);
 
-      // Parse scale into notes
-      const scaleNotes = Note.parseScale(scaleNotation, scaleInfo.octave);
-
-      if (scaleNotes && scaleNotes.length > 0) {
-        // Apply note spread configuration
-        const upper = this.strummerConfig.strumming.upperNoteSpread;
-        const lower = this.strummerConfig.strumming.lowerNoteSpread;
-        const notes = Note.fillNoteSpread(scaleNotes, lower, upper);
-
-        // Update strummer notes
-        this.strummer.notes = notes;
-        this.slider.notes = notes;
-        this.strummerNotes = notes;
-
-        console.log(`[MIDI-DRIVEN] Scale changed to: ${scaleNotation} [${scaleNotes.map(n => `${n.notation}${n.octave}`).join(', ')}]`);
-      }
-    } else {
-      // No MIDI notes held - could optionally revert to default chord/scale
-      // For now, we'll leave the current notes as-is
-    }
+    this.strummer.notes = notes;
+    this.slider.notes = notes;
+    this.strummerNotes = notes;
   }
 
   private setupStrummer() {
@@ -1088,6 +1076,22 @@ export class SketchatoneFullApp extends LitElement {
                     ? this.midiInputNotes.map(n => `${n.notation}${n.octave}`).join(', ')
                     : '—'}</span>
                 </div>
+                <div class="midi-input-mode-row">
+                  <span class="midi-notes-label">Input Mode:</span>
+                  <sp-picker size="s" value="${this.midiInputMode}"
+                    @change=${(e: Event) => {
+                      const v = (e.target as HTMLInputElement).value as MidiInputMode;
+                      if (VALID_MIDI_INPUT_MODES.includes(v)) {
+                        this.midiInputMode = v;
+                        this.applyMidiInputMapping();
+                      }
+                    }}>
+                    <sp-menu-item value="direct" ?selected=${this.midiInputMode === 'direct'}>Direct</sp-menu-item>
+                    <sp-menu-item value="majorScale" ?selected=${this.midiInputMode === 'majorScale'}>Major Scale</sp-menu-item>
+                    <sp-menu-item value="minorScale" ?selected=${this.midiInputMode === 'minorScale'}>Minor Scale</sp-menu-item>
+                    <sp-menu-item value="autoScale" ?selected=${this.midiInputMode === 'autoScale'}>Auto Scale</sp-menu-item>
+                  </sp-picker>
+                </div>
               </div>
 
               <!-- Events Panel -->
@@ -1254,20 +1258,6 @@ export class SketchatoneFullApp extends LitElement {
                       @change=${(e: Event) => this.updateConfig('strumming.invertX', (e.target as HTMLInputElement).checked)}>
                     </sp-switch>
                   </div>
-                  <div class="setting-row">
-                    <label>MIDI-Driven Scales</label>
-                    <sp-switch
-                      ?checked=${config.strumming.midiDrivenScales}
-                      @change=${(e: Event) => this.updateConfig('strumming.midiDrivenScales', (e.target as HTMLInputElement).checked)}>
-                    </sp-switch>
-                  </div>
-                  ${config.strumming.midiDrivenScales ? html`
-                    <div class="setting-note">
-                      <span style="font-size: 0.875rem; color: var(--spectrum-global-color-gray-600);">
-                        Scales will dynamically change based on held MIDI notes. Hold 1 note for major scale, 2+ notes with minor 3rd for minor scale.
-                      </span>
-                    </div>
-                  ` : ''}
                 </div>
               </dashboard-panel>
 

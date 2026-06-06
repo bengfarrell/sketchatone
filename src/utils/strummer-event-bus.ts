@@ -61,7 +61,7 @@ export interface StrumNoteEventData {
  * Strum event data
  */
 export interface StrumEventData {
-  type: 'strum' | 'release';
+  type: 'strum' | 'release' | 'slide_on' | 'slide_update' | 'slide_off';
   notes: StrumNoteEventData[];
   velocity: number;
   timestamp: number;

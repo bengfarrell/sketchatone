@@ -147,6 +147,7 @@ from sketchatone.strummer.slider import Slider
 from sketchatone.strummer.actions import Actions
 from sketchatone.models.midi_strummer_config import MidiStrummerConfig
 from sketchatone.models.note import Note, NoteObject
+from sketchatone.strummer.midi_input_mapper import map_midi_input_to_strummer_notes
 from sketchatone.midi.bridge import MidiStrummerBridge
 from sketchatone.midi.protocol import MidiBackendProtocol
 from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
@@ -999,12 +1000,27 @@ class StrummerWebSocketServer(TabletReaderBase):
         await websocket.send(json.dumps(midi_input_message))
 
     def _update_notes_from_midi_input(self, note_strings: List[str]) -> None:
-        """Update strummer notes from MIDI input"""
+        """
+        Update strummer notes from MIDI input.
+
+        Routes the held MIDI notes through the configured ``midi.input_mode``
+        mapper (direct / majorScale / minorScale / autoScale) and assigns the
+        resulting base notes as the strummer's initial_notes. ``_setup_notes()``
+        then applies the upper/lower note spread on top.
+        """
         if not note_strings:
             return
 
+        midi_notes = [Note.parse_notation(s) for s in note_strings]
+        mode = self.config.midi.input_mode
+        base_notes = map_midi_input_to_strummer_notes(midi_notes, mode)
+        if not base_notes:
+            return
+
+        base_note_strings = [f'{n.notation}{n.octave}' for n in base_notes]
+
         # Update the config's initial_notes
-        self.config.strummer.strumming.initial_notes = note_strings
+        self.config.strummer.strumming.initial_notes = base_note_strings
 
         # Clear the chord so that initial_notes are used instead
         self.config.strummer.strumming.chord = None
@@ -1015,7 +1031,10 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Broadcast config change to all connected clients
         self.broadcast_config()
 
-        print(colored(f'[MIDI Input] Updated notes: {", ".join(note_strings)}', Colors.CYAN))
+        print(colored(
+            f'[MIDI Input {mode}] Held: {", ".join(note_strings)} -> Notes: {", ".join(base_note_strings)}',
+            Colors.CYAN,
+        ))
 
     async def start(self) -> None:
         """Start the reader - required by TabletReaderBase abstract method"""

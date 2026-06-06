@@ -150,11 +150,21 @@ setup_chromium_kiosk() {
     fi
 
     # Append Sketchatone-managed block. Backgrounded with & so labwc continues startup.
+    # The loop polls the kiosk URL before launching Chromium (capped at ~120s) so we
+    # don't land on ERR_CONNECTION_REFUSED when the sketchatone service is slow to bind.
     # --ozone-platform=wayland makes chromium use native Wayland instead of XWayland.
     cat >> "$AUTOSTART_FILE" << AUTOEOF
 
 # >>> Sketchatone Kiosk >>>
-(sleep 5 && $CHROMIUM_BIN --kiosk --ozone-platform=wayland --noerrdialogs --disable-infobars --no-first-run --disable-translate --disable-features=TranslateUI --disk-cache-dir=/dev/null --password-store=basic $KIOSK_URL) &
+(
+  i=0
+  until curl -sf --max-time 1 -o /dev/null $KIOSK_URL; do
+    i=\$((i+1))
+    [ "\$i" -ge 120 ] && break
+    sleep 1
+  done
+  $CHROMIUM_BIN --kiosk --ozone-platform=wayland --noerrdialogs --disable-infobars --no-first-run --disable-translate --disable-features=TranslateUI --disk-cache-dir=/dev/null --password-store=basic $KIOSK_URL
+) &
 # <<< Sketchatone Kiosk <<<
 AUTOEOF
 

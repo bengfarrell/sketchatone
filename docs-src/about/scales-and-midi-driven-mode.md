@@ -7,9 +7,9 @@ description: Use musical scales (instead of chord notes) as the tablet's strings
 
 By default Sketchatone lays out the tablet's "strings" from a chord (e.g. `Am` → A, C, E). You can instead use any scale's notes — major, minor, modes, pentatonic, blues, etc. — as the strings. Scales can be selected in three ways:
 
-1. **At startup**, via a startup action rule (use this when you just want a fixed scale instead of a chord).
-2. **From a button**, via the `set-strum-scale` action (switch scales live while playing).
-3. **From a connected MIDI keyboard**, via [MIDI-Driven Scales](#midi-driven-scales-mode) (the scale follows the notes you hold).
+1. **At startup**, via a startup action rule (use this when you just want a fixed scale instead of a chord). Works everywhere.
+2. **From a button**, via the `set-strum-scale` action (switch scales live while playing). Works everywhere.
+3. **From a connected MIDI keyboard**, via the [MIDI Input Mode](#midi-input-mode) selector (the strings follow the notes you hold, optionally expanded into a major/minor scale).
 
 In all three cases the strings are the scale's notes, expanded by your `upperNoteSpread` / `lowerNoteSpread` settings just like chord notes are.
 
@@ -128,58 +128,87 @@ The action parameters are:
 
 ---
 
-## MIDI-Driven Scales Mode
+## MIDI Input Mode
 
-MIDI-Driven Scales mode automatically changes scales based on notes you hold on a connected MIDI keyboard.
+When a MIDI keyboard is connected, the **MIDI Input Mode** selector controls how the notes you hold are translated into the strummer's strings. The selector lives on the **MIDI Input** panel in both the dashboard and the standalone webapp, and is also available headlessly as `midi.inputMode` in the config. It works in the browser webapp, the Node.js CLI server, and the Python CLI server.
 
-### How It Works
+In every mode, the resulting base notes are then expanded by your `upperNoteSpread` / `lowerNoteSpread` settings, the same as chord notes are.
 
-When enabled, Sketchatone analyzes the notes held on your MIDI keyboard and automatically selects the appropriate scale:
+### Modes
 
-- **1 note held** → Major scale at that root note
-- **2+ notes with minor 3rd** → Minor scale at the root note
-- **2+ notes with major 3rd** → Major scale at the root note
+| Mode | Behavior |
+|---|---|
+| `direct` *(default)* | 1:1 mapping — the held MIDI notes become the strings, sorted by pitch. |
+| `majorScale` | Always builds a major scale rooted at the lowest held note. Additional held notes are ignored. |
+| `minorScale` | Always builds a natural minor scale rooted at the lowest held note. Additional held notes are ignored. |
+| `autoScale` | Picks a scale from what you're holding: see below. |
 
-The lowest note held is always used as the root.
+**Auto Scale logic:**
 
-### Enabling MIDI-Driven Scales
+- **1 note held** → neutral set `[root, 2nd, 4th, 5th]` (no 3rd, no 6th, no 7th — tonality stays ambiguous).
+- **2 notes held** → if the interval is a minor 3rd, build a minor scale from the lower note; otherwise build a major scale from the lower note.
+- **More than 2 notes held** → falls back to `direct` (your chord voicing becomes the strings).
+
+**Common rules across all modes:**
+
+- The **lowest** held note is always treated as the root.
+- When **no** notes are held, the current strings are left in place — nothing changes until you press a new note.
+
+### Enabling
 
 **In the Web UI:**
 
-1. Connect a MIDI keyboard (MIDI input)
-2. In the Strumming Configuration section, find "MIDI-Driven Scales"
-3. Toggle the switch to enable
+1. Connect a MIDI keyboard (MIDI input).
+2. Open the **MIDI Input** panel.
+3. Use the **Input Mode** picker to choose `Direct`, `Major Scale`, `Minor Scale`, or `Auto Scale`.
 
-**In Configuration File:**
+**In a configuration file (TypeScript / browser / Node):**
 
 ```json
 {
-  "strumming": {
-    "midiDrivenScales": true
+  "midi": {
+    "inputMode": "autoScale"
+  }
+}
+```
+
+**In a configuration file (Python CLI):**
+
+```json
+{
+  "midi": {
+    "input_mode": "autoScale"
   }
 }
 ```
 
 ### Usage Examples
 
-**Play C major scale:**
-- Hold down C on your MIDI keyboard
-- Strum the tablet → plays C major scale notes
+**Direct mode — chord voicings as strings:**
+- Hold C, E, G on your MIDI keyboard.
+- Strum the tablet → plays C, E, G (in pitch order).
 
-**Play A minor scale:**
-- Hold down A and C on your MIDI keyboard (A is root, C is the minor 3rd)
-- Strum the tablet → plays A minor scale notes
+**Major Scale mode — fixed quality:**
+- Hold C on your MIDI keyboard.
+- Strum the tablet → plays the C major scale.
+- Move to D → plays the D major scale, regardless of what else you hold.
 
-**Switch scales on the fly:**
-- While strumming, change which notes you hold
-- The scale instantly adapts to your MIDI input
+**Minor Scale mode — fixed quality:**
+- Hold A on your MIDI keyboard.
+- Strum the tablet → plays the A natural minor scale.
+
+**Auto Scale mode — let the interval decide:**
+- Hold C alone → neutral set (C, D, F, G) — works over major or minor backing.
+- Hold A + C (minor 3rd) → A minor scale.
+- Hold C + E (major 3rd) → C major scale.
+- Hold C + E + G → falls back to direct (C, E, G as strings).
 
 ### Tips
 
-- Works great with one hand on MIDI keyboard, one hand strumming the tablet
-- Perfect for improvisation and exploration
-- Combines well with note spread settings to create rich, full scales
-- The MIDI keyboard only controls which scale is active - strumming still happens on the tablet
+- Works great with one hand on the MIDI keyboard and one hand strumming the tablet.
+- `autoScale` is good for exploration; `majorScale` / `minorScale` are good when you've already committed to a key.
+- Combines well with `upperNoteSpread` / `lowerNoteSpread` to build a rich, multi-octave string layout from just one or two held notes.
+- The MIDI keyboard only controls which notes are on the strings — strumming still happens on the tablet.
 
 ---
 
@@ -198,8 +227,10 @@ Example configuration combining features:
 {
   "strumming": {
     "upperNoteSpread": 3,
-    "lowerNoteSpread": 2,
-    "midiDrivenScales": true
+    "lowerNoteSpread": 2
+  },
+  "midi": {
+    "inputMode": "autoScale"
   }
 }
 ```

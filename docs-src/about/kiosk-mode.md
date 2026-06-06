@@ -7,7 +7,7 @@ description: Auto-start the Sketchatone web dashboard in fullscreen Chromium on 
 
 Kiosk mode turns a Raspberry Pi running Sketchatone into a dedicated touchscreen appliance: on boot, Chromium opens the web dashboard fullscreen, with no window chrome, address bar, or notifications. It's intended for permanent installations, live performance setups, and demo stations.
 
-Kiosk mode is configured by the `sketchatone-setup-kiosk` helper, which is installed by the `.deb` package described in [Builds & Installers](/about/builds/).
+Kiosk mode is configured by the `sketchatone-setup-kiosk` helper, which is installed by the `.deb` package described in [Builds & Installers](/about/builds/). The `.deb` ships and runs the **Python** server, so kiosk mode is effectively Python-server + Chromium. (The kiosk is just Chromium pointed at a URL — it doesn't care which server implementation is behind that URL — but `sketchatone-setup-kiosk` itself is only available via the Pi `.deb`.)
 
 ## Requirements
 

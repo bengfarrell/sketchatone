@@ -170,6 +170,20 @@ export interface MidiPassthroughConnection {
 }
 
 /**
+ * MIDI input mode - how incoming MIDI notes drive the strummer strings.
+ *   - 'direct'     : held MIDI notes become the strummer notes (1:1)
+ *   - 'majorScale' : lowest held note is the root of a major scale
+ *   - 'minorScale' : lowest held note is the root of a natural minor scale
+ *   - 'autoScale'  : 1 note  -> neutral scale [1, 2, 4, 5]
+ *                    2 notes -> major or minor scale (minor 3rd interval -> minor)
+ *                    >2 notes -> fall back to direct
+ */
+export type MidiInputMode = 'direct' | 'majorScale' | 'minorScale' | 'autoScale';
+
+export const VALID_MIDI_INPUT_MODES: readonly MidiInputMode[] = ['direct', 'majorScale', 'minorScale', 'autoScale'];
+export const DEFAULT_MIDI_INPUT_MODE: MidiInputMode = 'direct';
+
+/**
  * MIDI configuration data
  */
 export interface MidiConfigData {
@@ -179,6 +193,8 @@ export interface MidiConfigData {
   outputPort: string | number | null;
   /** MIDI input port name or index (for feedback) */
   inputPort: string | number | null;
+  /** How incoming MIDI notes drive the strummer strings */
+  inputMode: MidiInputMode;
   /** Default MIDI channel (0-15 in config files, displayed as 1-16 in CLI) */
   channel: number;
   /** Whether to use virtual MIDI ports */
@@ -218,6 +234,7 @@ export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
   midiOutputBackend: 'rtmidi',
   outputPort: null,
   inputPort: null,
+  inputMode: DEFAULT_MIDI_INPUT_MODE,
   channel: 0,
   useVirtualPorts: false,
   inputExclude: DEFAULT_MIDI_INPUT_EXCLUDE,
@@ -235,6 +252,7 @@ export class MidiConfig implements MidiConfigData {
   midiOutputBackend: 'rtmidi' | 'jack';
   outputPort: string | number | null;
   inputPort: string | number | null;
+  inputMode: MidiInputMode;
   channel: number;
   useVirtualPorts: boolean;
   inputExclude: string[];
@@ -248,6 +266,7 @@ export class MidiConfig implements MidiConfigData {
     this.midiOutputBackend = data.midiOutputBackend ?? DEFAULT_MIDI_CONFIG.midiOutputBackend;
     this.outputPort = data.outputPort ?? DEFAULT_MIDI_CONFIG.outputPort;
     this.inputPort = data.inputPort ?? DEFAULT_MIDI_CONFIG.inputPort;
+    this.inputMode = data.inputMode ?? DEFAULT_MIDI_CONFIG.inputMode;
     this.channel = data.channel ?? DEFAULT_MIDI_CONFIG.channel;
     this.useVirtualPorts = data.useVirtualPorts ?? DEFAULT_MIDI_CONFIG.useVirtualPorts;
     this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
@@ -266,6 +285,10 @@ export class MidiConfig implements MidiConfigData {
       midiOutputBackend: (data.midi_output_backend ?? data.midiOutputBackend ?? 'rtmidi') as 'rtmidi' | 'jack',
       outputPort: (data.output_port ?? data.outputPort ?? data.midi_output_id ?? data.midiOutputId) as string | number | null | undefined,
       inputPort: (data.input_port ?? data.inputPort ?? data.midi_input_id ?? data.midiInputId) as string | number | null | undefined,
+      inputMode: (() => {
+        const raw = (data.input_mode ?? data.inputMode) as string | undefined;
+        return VALID_MIDI_INPUT_MODES.includes(raw as MidiInputMode) ? (raw as MidiInputMode) : undefined;
+      })(),
       channel: data.channel as number | undefined,
       useVirtualPorts: (data.use_virtual_ports ?? data.useVirtualPorts) as boolean | undefined,
       inputExclude: (data.input_exclude ?? data.inputExclude ?? data.midi_input_exclude ?? data.midiInputExclude) as string[] | undefined,
@@ -285,6 +308,7 @@ export class MidiConfig implements MidiConfigData {
       midiOutputBackend: this.midiOutputBackend,
       outputPort: this.outputPort,
       inputPort: this.inputPort,
+      inputMode: this.inputMode,
       channel: this.channel,
       useVirtualPorts: this.useVirtualPorts,
       inputExclude: this.inputExclude,

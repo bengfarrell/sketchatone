@@ -45,8 +45,6 @@ export interface StrummingConfigData {
   lowerNoteSpread: number;
   /** Invert X axis for left-handed use (flips which notes are on which side) */
   invertX: boolean;
-  /** Enable MIDI-driven scale mode (dynamically changes scales based on held MIDI notes) */
-  midiDrivenScales: boolean;
 }
 
 /**
@@ -61,7 +59,6 @@ export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
   upperNoteSpread: 3,
   lowerNoteSpread: 3,
   invertX: false,
-  midiDrivenScales: false,
 };
 
 /**
@@ -76,7 +73,6 @@ export class StrummingConfig implements StrummingConfigData {
   upperNoteSpread: number;
   lowerNoteSpread: number;
   invertX: boolean;
-  midiDrivenScales: boolean;
 
   constructor(data: Partial<StrummingConfigData> = {}) {
     this.pressureThreshold = data.pressureThreshold ?? DEFAULT_STRUMMING_CONFIG.pressureThreshold;
@@ -87,7 +83,6 @@ export class StrummingConfig implements StrummingConfigData {
     this.upperNoteSpread = data.upperNoteSpread ?? DEFAULT_STRUMMING_CONFIG.upperNoteSpread;
     this.lowerNoteSpread = data.lowerNoteSpread ?? DEFAULT_STRUMMING_CONFIG.lowerNoteSpread;
     this.invertX = data.invertX ?? DEFAULT_STRUMMING_CONFIG.invertX;
-    this.midiDrivenScales = data.midiDrivenScales ?? DEFAULT_STRUMMING_CONFIG.midiDrivenScales;
   }
 
   /**
@@ -113,7 +108,6 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: (data.upper_note_spread ?? data.upperNoteSpread) as number | undefined,
       lowerNoteSpread: (data.lower_note_spread ?? data.lowerNoteSpread) as number | undefined,
       invertX: (data.invert_x ?? data.invertX) as boolean | undefined,
-      midiDrivenScales: (data.midi_driven_scales ?? data.midiDrivenScales) as boolean | undefined,
     });
   }
 
@@ -137,7 +131,6 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: this.upperNoteSpread,
       lowerNoteSpread: this.lowerNoteSpread,
       invertX: this.invertX,
-      midiDrivenScales: this.midiDrivenScales,
     };
   }
 }

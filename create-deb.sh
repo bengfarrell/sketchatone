@@ -393,6 +393,10 @@ exit 0
 POSTRMEOF
 chmod +x "$PKG_DIR/DEBIAN/postrm"
 
+# Strip macOS metadata that would otherwise be packaged and surface as
+# binary "._*" files on the Pi (finddevice.py crashes on those).
+find "$PKG_DIR" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
+
 # Build the package
 echo ""
 echo "💿 Building Debian package..."
@@ -421,10 +425,16 @@ else
     # On macOS, create a tarball of the package structure
     echo "  (dpkg-deb not available - creating package structure tarball)"
 
-    # Create tarball of the package directory
+    # Create tarball of the package directory.
+    # COPYFILE_DISABLE / --no-mac-metadata prevent BSD tar from embedding AppleDouble
+    # ("._*") entries from xattrs, which GNU tar on the Pi would extract as literal
+    # binary files into configs/devices/ and break finddevice.py.
     TARBALL="dist/sketchatone-${VERSION}-deb-pkg.tar.gz"
     cd dist
-    tar czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME"
+    COPYFILE_DISABLE=1 tar --no-mac-metadata --exclude='._*' --exclude='.DS_Store' \
+        -czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME" 2>/dev/null \
+        || COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' \
+            -czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME"
     cd ..
 
     # Create a helper script to build the deb on the Pi (before cleanup)

@@ -34,6 +34,7 @@ const DEFAULT_CONFIG_DIR = './public/configs/devices';
 // Version (from package.json)
 const SKETCHATONE_VERSION = '0.2.0';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
+import { Slider, routeSlideEventToMidi, type SlideRoutingState } from '../core/slider.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
 import { ActionRulesConfig, type ButtonId } from '../models/action-rules.js';
@@ -41,6 +42,7 @@ import { StrumReleaseConfig } from '../models/strummer-features.js';
 import { StrummingConfig } from '../models/strummer-config.js';
 import { ParameterMapping } from '../models/parameter-mapping.js';
 import { Note, type NoteObject } from '../models/note.js';
+import { mapMidiInputToStrummerNotes } from '../core/midi-input-mapper.js';
 import { RtMidiBackend } from '../midi/rtmidi-backend.js';
 import { MidiStrummerBridge } from '../midi/bridge.js';
 import type { MidiBackendProtocol } from '../midi/protocol.js';
@@ -165,6 +167,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private httpsPort: number | undefined;
   private config: MidiStrummerConfig;
   private strummer: Strummer;
+  private slider: Slider;
+  // Slide-mode state: currently held note (for routing slide_update/slide_off) and
+  // last aftertouch/CC value sent (for dedup; reset on slide_off / mode switch).
+  private slideState: SlideRoutingState = { activeSlideNote: null, lastModulationValue: null };
   private eventBus: StrummerEventBus;
   private combinedUnsubscribe: (() => void) | null = null;
   private clientCount: number = 0;
@@ -287,6 +293,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
     this.strummer = new Strummer();
     this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
 
+    // Create slider (trombone-style controller); notes are kept in sync with the strummer
+    this.slider = new Slider();
+    this.slider.configure(
+      this.config.strummer.slide.pressureThreshold,
+      this.config.strummer.slide.maxBendSemitones,
+    );
+
     // Set up notes
     this.setupNotes();
 
@@ -392,6 +405,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
     );
 
     this.strummer.notes = notes;
+    this.slider.notes = notes;
   }
 
   /**
@@ -743,13 +757,25 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
-   * Update strummer notes from MIDI input
+   * Update strummer notes from MIDI input.
+   *
+   * Routes the held MIDI notes through the configured `midi.inputMode`
+   * mapper (direct / majorScale / minorScale / autoScale) and assigns the
+   * resulting base notes as the strummer's initialNotes. `setupNotes()`
+   * then applies the upper/lower note spread on top.
    */
   private updateNotesFromMidiInput(noteStrings: string[]): void {
     if (noteStrings.length === 0) return;
 
+    const midiNotes: NoteObject[] = noteStrings.map((s) => Note.parseNotation(s));
+    const mode = this.config.midi.inputMode;
+    const baseNotes = mapMidiInputToStrummerNotes(midiNotes, mode);
+    if (!baseNotes || baseNotes.length === 0) return;
+
+    const baseNoteStrings = baseNotes.map((n) => `${n.notation}${n.octave}`);
+
     // Update the config's initialNotes
-    this.config.strummer.strumming.initialNotes = noteStrings;
+    this.config.strummer.strumming.initialNotes = baseNoteStrings;
 
     // Clear the chord property so setupNotes() uses initialNotes instead
     // This allows MIDI input to override any preset chord
@@ -761,7 +787,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Broadcast config change to all connected clients
     this.broadcastConfig();
 
-    console.log(chalk.cyan(`[MIDI Input] Notes: ${noteStrings.join(', ')}`));
+    console.log(chalk.cyan(`[MIDI Input ${mode}] Held: ${noteStrings.join(', ')} -> Notes: ${baseNoteStrings.join(', ')}`));
   }
 
   /**
@@ -953,12 +979,28 @@ class StrummerWebSocketServer extends TabletReaderBase {
    */
   private handleConfigUpdate(path: string, value: unknown): void {
     try {
+      // Capture old mode so we can detect a strum <-> slide transition
+      const previousMode = this.config.strummer.mode;
+
       // Update the config using the path
       this.setConfigValue(path, value);
 
       // Re-apply strummer settings if relevant
       if (path.startsWith('strummer.strumming.')) {
         this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
+      }
+
+      // Re-apply slider settings if relevant
+      if (path.startsWith('strummer.slide.')) {
+        this.slider.configure(
+          this.config.strummer.slide.pressureThreshold,
+          this.config.strummer.slide.maxBendSemitones,
+        );
+      }
+
+      // Release any held notes and reset controller state when the top-level mode changes
+      if (path === 'strummer.mode' && this.config.strummer.mode !== previousMode) {
+        this.clearControllerState();
       }
 
       // Re-setup notes if chord or note spread changed
@@ -1125,8 +1167,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.strummerConfigPath = configPath;
       this.currentConfigName = configName;
 
-      // Re-apply strummer settings
+      // Re-apply strummer/slider settings; release any held notes from the previous config
+      this.clearControllerState();
       this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
+      this.slider.configure(
+        this.config.strummer.slide.pressureThreshold,
+        this.config.strummer.slide.maxBendSemitones,
+      );
       this.setupNotes();
       this.actions.setActionRulesConfig(this.config.strummer.actionRules);
 
@@ -1284,8 +1331,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.currentConfigName = configName;
       this.config = parsedConfig;
 
-      // Re-apply settings from the new config
+      // Re-apply settings from the new config; release any held notes from the previous config
+      this.clearControllerState();
       this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
+      this.slider.configure(
+        this.config.strummer.slide.pressureThreshold,
+        this.config.strummer.slide.maxBendSemitones,
+      );
       this.setupNotes();
       this.actions.setActionRulesConfig(this.config.strummer.actionRules);
 
@@ -1738,11 +1790,18 @@ class StrummerWebSocketServer extends TabletReaderBase {
       }
       this.eventBus.emitTabletEvent(tabletEventData as unknown as TabletEventData);
 
-      // Update strummer bounds
+      // Update strummer/slider bounds (use normalized 0-1 range)
       this.strummer.updateBounds(1.0, 1.0);
+      this.slider.updateBounds(1.0, 1.0);
 
       // Apply X inversion for left-handed use if configured
       const strumX = this.config.strumming.invertX ? 1.0 - x : x;
+
+      // Branch on top-level mode: 'slide' uses Slider, 'strum' uses Strummer
+      if (this.config.strummer.mode === 'slide') {
+        this.handleSlide(strumX, pressure);
+        return;
+      }
 
       // Process strum
       const event = this.strummer.strum(strumX, pressure);
@@ -1909,6 +1968,86 @@ class StrummerWebSocketServer extends TabletReaderBase {
       console.error(chalk.red(`Error processing packet: ${e}`));
     }
   }
+
+  /**
+   * Process a tablet sample in slide (trombone) mode.
+   *
+   * Routes Slider events to the MIDI backend (note on/off + pitch bend) and
+   * emits a StrumEventData on the event bus so visualizers see activity.
+   */
+  private handleSlide(strumX: number, pressure: number): void {
+    const event = this.slider.slide(strumX, pressure);
+    if (!event) return;
+
+    const slideCfg = this.config.strummer.slide;
+    const mod = slideCfg.pressureModulation;
+
+    if (this.backend) {
+      routeSlideEventToMidi(
+        event,
+        // RtMidiBackend implements sendPitchBend/sendNoteOn/releaseNotes/sendAftertouch/sendCc;
+        // SliderMidiTarget is a structural subset of MidiBackendProtocol.
+        this.backend as unknown as Parameters<typeof routeSlideEventToMidi>[1],
+        this.slideState,
+        slideCfg.maxBendSemitones,
+        {
+          type: mod.type,
+          ccNumber: mod.ccNumber,
+          minValue: mod.minValue,
+          maxValue: mod.maxValue,
+          pressureThreshold: slideCfg.pressureThreshold,
+        },
+        pressure,
+      );
+    }
+
+    if (event.type === 'slide_on') {
+      this.notesPlayed++;
+    }
+
+    // Emit a strum-event-bus message so dashboards / visualizers can show slide activity.
+    const note = event.type === 'slide_off' ? null : event.note;
+    const velocity = event.type === 'slide_on' ? event.velocity : 0;
+    const strumEventData: StrumEventData = {
+      type: event.type,
+      notes: note
+        ? [{
+            note: {
+              notation: note.notation,
+              octave: note.octave,
+              midiNote: Note.noteToMidi(note),
+            },
+            velocity,
+          }]
+        : [],
+      velocity,
+      timestamp: Date.now(),
+    };
+    this.eventBus.emitStrumEvent(strumEventData);
+  }
+
+  /**
+   * Release any held notes and reset transient controller state.
+   * Called when switching modes (strum <-> slide) or reloading config.
+   */
+  private clearControllerState(): void {
+    if (this.backend) {
+      try {
+        this.backend.releaseAll();
+        this.backend.sendPitchBend?.(0.0);
+      } catch {
+        // Ignore backend errors during cleanup
+      }
+    }
+    this.slideState.activeSlideNote = null;
+    this.slideState.lastModulationValue = null;
+    this.slider.clear();
+    this.strummer.clearStrum();
+    this.repeaterState.notes = [];
+    this.repeaterState.isHolding = false;
+    this.strumStartTime = 0;
+  }
+
 
   async start(): Promise<void> {
     console.log(chalk.cyan.bold('\n╔════════════════════════════════════════════════════════════╗'));
