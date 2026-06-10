@@ -11,6 +11,9 @@
 
 import { LitElement, html, PropertyValues, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-button.js';
+import '../../design-system/components/sketch-icon.js';
 import { live } from 'lit/directives/live.js';
 import { cache } from 'lit/directives/cache.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -38,16 +41,7 @@ const ROOT_NOTE_OPTIONS: { value: string; label: string }[] = Note.sharpNotation
 const SCALE_TYPE_OPTIONS: { value: string; label: string }[] = Object.keys(Note.scaleIntervals).map((k) => ({ value: k, label: k }));
 
 // Import Spectrum components
-import '@spectrum-web-components/button/sp-button.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '@spectrum-web-components/picker/sp-picker.js';
-import '@spectrum-web-components/menu/sp-menu-item.js';
-import '@spectrum-web-components/textfield/sp-textfield.js';
-import '@spectrum-web-components/number-field/sp-number-field.js';
-import '@spectrum-web-components/field-label/sp-field-label.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-delete.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-edit.js';
+
 
 /**
  * Parameter definition for actions
@@ -77,7 +71,7 @@ type ActionTargetType = 'button' | 'group' | 'startup';
 
 @customElement('action-rules-config')
 export class ActionRulesConfigComponent extends LitElement {
-  static styles = styles;
+  static styles = [formStyles, styles];
 
   @property({ type: Object })
   config?: ActionRulesConfig;
@@ -118,9 +112,6 @@ export class ActionRulesConfigComponent extends LitElement {
 
   @state()
   private detecting: boolean = false;
-
-  // Track if mousedown started on overlay (for click-outside-to-close)
-  private overlayMouseDownTarget: EventTarget | null = null;
 
   // Unified action form state
   @state()
@@ -235,6 +226,31 @@ export class ActionRulesConfigComponent extends LitElement {
         this.detecting = false;
       }
     }
+
+    // Notify parent when form open/close state or title changes so the
+    // host can swap the panel header (e.g., show back button + form title).
+    if (changedProperties.has('formMode') || changedProperties.has('formTargetType')) {
+      const open = this.formMode !== 'none';
+      this.dispatchEvent(new CustomEvent('form-state-change', {
+        detail: { open, title: open ? this.getFormTitle() : '' },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+  }
+
+  private getFormTitle(): string {
+    const isEdit = this.formMode === 'edit-action';
+    if (this.formMode === 'add-group') return 'Add Group';
+    if (this.formMode === 'edit-group') return 'Edit Group';
+    if (isEdit) {
+      switch (this.formTargetType) {
+        case 'button': return 'Edit Button Action';
+        case 'group': return 'Edit Group Action';
+        case 'startup': return 'Edit Startup Action';
+      }
+    }
+    return 'Add Action';
   }
 
   private getAvailableButtons(): ButtonId[] {
@@ -392,31 +408,10 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formGroupButtons = [...group.buttons];
   }
 
-  private closeForm() {
+  public closeForm() {
     this.formMode = 'none';
     this.editingId = null;
     this.detecting = false;
-  }
-
-  // Track mousedown on overlay to prevent closing when text selection drifts outside
-  private handleOverlayMouseDown(e: MouseEvent) {
-    this.overlayMouseDownTarget = e.target;
-  }
-
-  private handleOverlayMouseUp(e: MouseEvent) {
-    // Only close if BOTH mousedown AND mouseup occurred on the overlay itself
-    // This prevents closing when selecting text and the mouse drifts outside the dialog
-    // Also check that no Spectrum overlay (picker dropdown, etc.) is currently open
-    const spectrumOverlayOpen = document.querySelector('sp-overlay[open]');
-    if (spectrumOverlayOpen) {
-      // Don't close if a Spectrum overlay (like a picker dropdown) is open
-      this.overlayMouseDownTarget = null;
-      return;
-    }
-    if (e.target === e.currentTarget && this.overlayMouseDownTarget === e.currentTarget) {
-      this.closeForm();
-    }
-    this.overlayMouseDownTarget = null;
   }
 
   private startDetecting() {
@@ -621,21 +616,22 @@ export class ActionRulesConfigComponent extends LitElement {
               ${rules.map(
                 (rule) => html`
                   <div class="rule-item">
-                    <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
-                    <span class="rule-type-badge button">Button</span>
-                    <span class="rule-button-id">${rule.button}</span>
-                    <span class="rule-arrow">→</span>
-                    <span class="rule-action">${this.formatAction(rule.action)}</span>
-                    <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
-                    ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
-                    <div class="rule-actions">
-                      <sp-action-button size="s" quiet @click=${() => this.openEditButtonRuleForm(rule)}>
-                        <sp-icon-edit slot="icon"></sp-icon-edit>
-                      </sp-action-button>
-                      <sp-action-button size="s" quiet @click=${() => this.deleteRule(rule.id)}>
-                        <sp-icon-delete slot="icon"></sp-icon-delete>
-                      </sp-action-button>
+                    <div class="rule-top-row">
+                      <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
+                      <span class="rule-type-badge button">Button</span>
+                      <span class="rule-button-id">${rule.button}</span>
+                      <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
+                      <div class="rule-actions">
+                        <sketch-button variant="quiet" size="s" @click=${() => this.openEditButtonRuleForm(rule)}>
+                          <sketch-icon slot="icon" name="edit"></sketch-icon>
+                        </sketch-button>
+                        <sketch-button variant="quiet" size="s" @click=${() => this.deleteRule(rule.id)}>
+                          <sketch-icon slot="icon" name="delete"></sketch-icon>
+                        </sketch-button>
+                      </div>
                     </div>
+                    <span class="rule-action">${this.formatAction(rule.action)}</span>
+                    ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
                   </div>
                 `
               )}
@@ -643,20 +639,22 @@ export class ActionRulesConfigComponent extends LitElement {
                 const group = groups.find((g) => g.id === rule.groupId);
                 return html`
                   <div class="rule-item">
-                    <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
-                    <span class="rule-type-badge group">Group</span>
-                    <span class="rule-button-id">${group?.name ?? 'Unknown Group'}</span>
-                    <span class="rule-arrow">→</span>
+                    <div class="rule-top-row">
+                      <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
+                      <span class="rule-type-badge group">Group</span>
+                      <span class="rule-button-id">${group?.name ?? 'Unknown Group'}</span>
+                      <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
+                      <div class="rule-actions">
+                        <sketch-button variant="quiet" size="s" @click=${() => this.openEditGroupRuleForm(rule)}>
+                          <sketch-icon slot="icon" name="edit"></sketch-icon>
+                        </sketch-button>
+                        <sketch-button variant="quiet" size="s" @click=${() => this.deleteGroupRule(rule.id)}>
+                          <sketch-icon slot="icon" name="delete"></sketch-icon>
+                        </sketch-button>
+                      </div>
+                    </div>
                     <span class="rule-action">${rule.action.type}: ${rule.action.progression} (Oct ${rule.action.octave})</span>
                     ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
-                    <div class="rule-actions">
-                      <sp-action-button size="s" quiet @click=${() => this.openEditGroupRuleForm(rule)}>
-                        <sp-icon-edit slot="icon"></sp-icon-edit>
-                      </sp-action-button>
-                      <sp-action-button size="s" quiet @click=${() => this.deleteGroupRule(rule.id)}>
-                        <sp-icon-delete slot="icon"></sp-icon-delete>
-                      </sp-action-button>
-                    </div>
                   </div>
                 `;
               })}
@@ -668,12 +666,12 @@ export class ActionRulesConfigComponent extends LitElement {
                     <span class="startup-icon">⚡</span>
                     <span class="rule-action">${rule.name}: ${this.formatAction(rule.action)}</span>
                     <div class="rule-actions">
-                      <sp-action-button size="s" quiet @click=${() => this.openEditStartupRuleForm(rule)}>
-                        <sp-icon-edit slot="icon"></sp-icon-edit>
-                      </sp-action-button>
-                      <sp-action-button size="s" quiet @click=${() => this.deleteStartupRule(rule.id)}>
-                        <sp-icon-delete slot="icon"></sp-icon-delete>
-                      </sp-action-button>
+                      <sketch-button variant="quiet" size="s" @click=${() => this.openEditStartupRuleForm(rule)}>
+                        <sketch-icon slot="icon" name="edit"></sketch-icon>
+                      </sketch-button>
+                      <sketch-button variant="quiet" size="s" @click=${() => this.deleteStartupRule(rule.id)}>
+                        <sketch-icon slot="icon" name="delete"></sketch-icon>
+                      </sketch-button>
                     </div>
                   </div>
                 `
@@ -688,10 +686,10 @@ export class ActionRulesConfigComponent extends LitElement {
       <div class="panel">
         <div class="section-header">
           <span class="section-title">Actions</span>
-          <sp-action-button size="s" quiet @click=${() => this.openAddActionForm()}>
-            <sp-icon-add slot="icon"></sp-icon-add>
+          <sketch-button variant="quiet" size="s" @click=${() => this.openAddActionForm()}>
+            <sketch-icon slot="icon" name="add"></sketch-icon>
             Add Action
-          </sp-action-button>
+          </sketch-button>
         </div>
         ${this.renderActionsListContent()}
       </div>
@@ -711,12 +709,12 @@ export class ActionRulesConfigComponent extends LitElement {
                   <div class="group-header">
                     <span class="group-name">${group.name}</span>
                     <div class="rule-actions">
-                      <sp-action-button size="s" quiet @click=${() => this.openEditGroupForm(group)}>
-                        <sp-icon-edit slot="icon"></sp-icon-edit>
-                      </sp-action-button>
-                      <sp-action-button size="s" quiet @click=${() => this.deleteGroup(group.id)}>
-                        <sp-icon-delete slot="icon"></sp-icon-delete>
-                      </sp-action-button>
+                      <sketch-button variant="quiet" size="s" @click=${() => this.openEditGroupForm(group)}>
+                        <sketch-icon slot="icon" name="edit"></sketch-icon>
+                      </sketch-button>
+                      <sketch-button variant="quiet" size="s" @click=${() => this.deleteGroup(group.id)}>
+                        <sketch-icon slot="icon" name="delete"></sketch-icon>
+                      </sketch-button>
                     </div>
                   </div>
                   <div class="group-buttons">
@@ -739,10 +737,10 @@ export class ActionRulesConfigComponent extends LitElement {
       <div class="panel">
         <div class="section-header">
           <span class="section-title">Button Groups</span>
-          <sp-action-button size="s" quiet @click=${this.openAddGroupForm}>
-            <sp-icon-add slot="icon"></sp-icon-add>
+          <sketch-button variant="quiet" size="s" @click=${this.openAddGroupForm}>
+            <sketch-icon slot="icon" name="add"></sketch-icon>
             Add Group
-          </sp-action-button>
+          </sketch-button>
         </div>
         ${this.renderGroupsListContent()}
       </div>
@@ -766,7 +764,7 @@ export class ActionRulesConfigComponent extends LitElement {
         // can disappear when populated with longer option lists (e.g. scale types).
         return html`
           <div class="form-field">
-            <sp-field-label>${param.label}</sp-field-label>
+            <label class="sketch-label">${param.label}</label>
             <select
               class="native-select"
               .value=${live(String(value))}
@@ -781,22 +779,22 @@ export class ActionRulesConfigComponent extends LitElement {
       if (param.type === 'number') {
         return html`
           <div class="form-field">
-            <sp-field-label>${param.label}</sp-field-label>
-            <sp-number-field
-              value="${value}"
+            <label class="sketch-label">${param.label}</label>
+            <input type="number" class="sketch-input"
+              .value=${value}
               min="${param.min}"
               max="${param.max}"
               step="${param.step}"
               @change=${(e: Event) => this.handleParamChange(index, Number((e.target as HTMLInputElement).value))}
-            ></sp-number-field>
+            >
           </div>
         `;
       }
 
       return html`
         <div class="form-field">
-          <sp-field-label>${param.label}</sp-field-label>
-          <sp-textfield value="${value}" @change=${(e: Event) => this.handleParamChange(index, (e.target as HTMLInputElement).value)}></sp-textfield>
+          <label class="sketch-label">${param.label}</label>
+          <input type="text" class="sketch-input" .value=${value} @change=${(e: Event) => this.handleParamChange(index, (e.target as HTMLInputElement).value)}>
         </div>
       `;
     });
@@ -819,86 +817,81 @@ export class ActionRulesConfigComponent extends LitElement {
     const availableButtons = this.getAvailableButtons();
     const groups = this.config?.groups ?? [];
 
-    // Determine title based on target type and mode
-    const getTitle = () => {
-      if (isEdit) {
-        switch (this.formTargetType) {
-          case 'button': return 'Edit Button Action';
-          case 'group': return 'Edit Group Action';
-          case 'startup': return 'Edit Startup Action';
-        }
-      }
-      return 'Add Action';
-    };
-
     return html`
-      <div class="form-overlay" @mousedown=${this.handleOverlayMouseDown} @mouseup=${this.handleOverlayMouseUp}>
-        <div class="form-dialog" @scroll=${(e: Event) => e.stopPropagation()}>
-          <div class="form-title">${getTitle()}</div>
+      <div class="form-view">
+        ${this.mode === 'all' ? html`
+          <div class="form-header">
+            <sketch-button variant="quiet" size="s" @click=${this.closeForm} title="Back">
+              <sketch-icon slot="icon" name="arrow-left"></sketch-icon>
+            </sketch-button>
+            <span class="form-title">${this.getFormTitle()}</span>
+          </div>
+        ` : ''}
+        <div class="form-body">
 
           <!-- Target Type Selector (only show when adding, not editing) -->
           ${!isEdit ? html`
             <div class="form-field">
-              <sp-field-label>Target Type</sp-field-label>
-              <sp-picker value="${this.formTargetType}" @change=${this.handleTargetTypeChange}>
-                <sp-menu-item value="button">Button</sp-menu-item>
-                <sp-menu-item value="group" ?disabled=${groups.length === 0}>Group${groups.length === 0 ? ' (create a group first)' : ''}</sp-menu-item>
-                <sp-menu-item value="startup">Startup</sp-menu-item>
-              </sp-picker>
+              <label class="sketch-label">Target Type</label>
+              <select class="native-select" .value=${live(this.formTargetType)} @change=${this.handleTargetTypeChange}>
+                <option value="button" ?selected=${this.formTargetType === 'button'}>Button</option>
+                <option value="group" ?disabled=${groups.length === 0} ?selected=${this.formTargetType === 'group'}>Group${groups.length === 0 ? ' (create a group first)' : ''}</option>
+                <option value="startup" ?selected=${this.formTargetType === 'startup'}>Startup</option>
+              </select>
             </div>
           ` : ''}
 
           <!-- Button-specific fields -->
           ${this.formTargetType === 'button' ? html`
             <div class="form-field">
-              <sp-field-label>Button</sp-field-label>
+              <label class="sketch-label">Button</label>
               <div class="form-row">
-                <sp-picker value="${this.formButton}" @change=${(e: Event) => (this.formButton = (e.target as HTMLSelectElement).value as ButtonId)}>
-                  ${availableButtons.map((btn) => html`<sp-menu-item value="${btn}">${btn}</sp-menu-item>`)}
-                </sp-picker>
-                <sp-button size="s" variant="secondary" class="${this.detecting ? 'detecting' : ''}" @click=${this.startDetecting}>
-                  ${this.detecting ? 'Press a button...' : 'Detect'}
-                </sp-button>
+                <select class="native-select" .value=${live(this.formButton)} @change=${(e: Event) => (this.formButton = (e.target as HTMLSelectElement).value as ButtonId)}>
+                  ${availableButtons.map((btn) => html`<option value="${btn}" ?selected=${btn === this.formButton}>${btn}</option>`)}
+                </select>
+                <sketch-button variant="quiet" size="s" class="detect-btn ${this.detecting ? 'detecting' : ''}" title="${this.detecting ? 'Press a button on the device...' : 'Detect button'}" @click=${this.startDetecting}>
+                  <sketch-icon slot="icon" name="crosshairs"></sketch-icon>
+                </sketch-button>
               </div>
             </div>
 
             <div class="form-field">
-              <sp-field-label>Action</sp-field-label>
-              <sp-picker value="${this.formAction}" @change=${this.handleActionChange}>
-                ${this.actions.map((action) => html`<sp-menu-item value="${action.value}">${action.label}</sp-menu-item>`)}
-              </sp-picker>
+              <label class="sketch-label">Action</label>
+              <select class="native-select" .value=${live(this.formAction)} @change=${this.handleActionChange}>
+                ${this.actions.map((action) => html`<option value="${action.value}" ?selected=${action.value === this.formAction}>${action.label}</option>`)}
+              </select>
             </div>
 
             ${this.renderParamFields()}
 
             <div class="form-field">
-              <sp-field-label>Trigger</sp-field-label>
-              <sp-picker value="${this.formTrigger}" @change=${(e: Event) => (this.formTrigger = (e.target as HTMLSelectElement).value as TriggerType)}>
-                <sp-menu-item value="release">On Release (default)</sp-menu-item>
-                <sp-menu-item value="press">On Press</sp-menu-item>
-                <sp-menu-item value="hold">While Held</sp-menu-item>
-              </sp-picker>
+              <label class="sketch-label">Trigger</label>
+              <select class="native-select" .value=${live(this.formTrigger)} @change=${(e: Event) => (this.formTrigger = (e.target as HTMLSelectElement).value as TriggerType)}>
+                <option value="release" ?selected=${this.formTrigger === 'release'}>On Release (default)</option>
+                <option value="press" ?selected=${this.formTrigger === 'press'}>On Press</option>
+                <option value="hold" ?selected=${this.formTrigger === 'hold'}>While Held</option>
+              </select>
             </div>
           ` : ''}
 
           <!-- Group-specific fields -->
           ${this.formTargetType === 'group' ? html`
             <div class="form-field">
-              <sp-field-label>Group</sp-field-label>
-              <sp-picker value="${this.formGroupId}" @change=${(e: Event) => (this.formGroupId = (e.target as HTMLSelectElement).value)}>
-                ${groups.map((group) => html`<sp-menu-item value="${group.id}">${group.name}</sp-menu-item>`)}
-              </sp-picker>
+              <label class="sketch-label">Group</label>
+              <select class="native-select" .value=${live(this.formGroupId)} @change=${(e: Event) => (this.formGroupId = (e.target as HTMLSelectElement).value)}>
+                ${groups.map((group) => html`<option value="${group.id}" ?selected=${group.id === this.formGroupId}>${group.name}</option>`)}
+              </select>
             </div>
 
             <div class="form-field">
-              <sp-field-label>Action Type</sp-field-label>
-              <sp-picker value="${this.formGroupActionType}" @change=${(e: Event) => (this.formGroupActionType = (e.target as HTMLSelectElement).value as GroupActionType)}>
-                <sp-menu-item value="chord-progression">Chord Progression</sp-menu-item>
-              </sp-picker>
+              <label class="sketch-label">Action Type</label>
+              <select class="native-select" .value=${live(this.formGroupActionType)} @change=${(e: Event) => (this.formGroupActionType = (e.target as HTMLSelectElement).value as GroupActionType)}>
+                <option value="chord-progression" ?selected=${this.formGroupActionType === 'chord-progression'}>Chord Progression</option>
+              </select>
             </div>
 
             <div class="form-field">
-              <sp-field-label>Chord Progression</sp-field-label>
+              <label class="sketch-label">Chord Progression</label>
               <select
                 class="native-select"
                 .value=${live(this.formGroupProgression)}
@@ -911,27 +904,27 @@ export class ActionRulesConfigComponent extends LitElement {
             </div>
 
             <div class="form-field">
-              <sp-field-label>Octave</sp-field-label>
-              <sp-number-field value="${this.formGroupOctave}" min="0" max="8" step="1" @change=${(e: Event) => (this.formGroupOctave = Number((e.target as HTMLInputElement).value))}></sp-number-field>
+              <label class="sketch-label">Octave</label>
+              <input type="number" class="sketch-input" .value=${this.formGroupOctave} min="0" max="8" step="1" @change=${(e: Event) => (this.formGroupOctave = Number((e.target as HTMLInputElement).value))}>
             </div>
 
             <div class="form-field">
-              <sp-field-label>Trigger</sp-field-label>
-              <sp-picker value="${this.formGroupTrigger}" @change=${(e: Event) => (this.formGroupTrigger = (e.target as HTMLSelectElement).value as TriggerType)}>
-                <sp-menu-item value="release">On Release (default)</sp-menu-item>
-                <sp-menu-item value="press">On Press</sp-menu-item>
-                <sp-menu-item value="hold">While Held</sp-menu-item>
-              </sp-picker>
+              <label class="sketch-label">Trigger</label>
+              <select class="native-select" .value=${live(this.formGroupTrigger)} @change=${(e: Event) => (this.formGroupTrigger = (e.target as HTMLSelectElement).value as TriggerType)}>
+                <option value="release" ?selected=${this.formGroupTrigger === 'release'}>On Release (default)</option>
+                <option value="press" ?selected=${this.formGroupTrigger === 'press'}>On Press</option>
+                <option value="hold" ?selected=${this.formGroupTrigger === 'hold'}>While Held</option>
+              </select>
             </div>
           ` : ''}
 
           <!-- Startup-specific fields -->
           ${this.formTargetType === 'startup' ? html`
             <div class="form-field">
-              <sp-field-label>Action</sp-field-label>
-              <sp-picker value="${this.formAction}" @change=${this.handleActionChange}>
-                ${this.actions.map((action) => html`<sp-menu-item value="${action.value}">${action.label}</sp-menu-item>`)}
-              </sp-picker>
+              <label class="sketch-label">Action</label>
+              <select class="native-select" .value=${live(this.formAction)} @change=${this.handleActionChange}>
+                ${this.actions.map((action) => html`<option value="${action.value}" ?selected=${action.value === this.formAction}>${action.label}</option>`)}
+              </select>
             </div>
 
             ${this.renderParamFields()}
@@ -939,13 +932,13 @@ export class ActionRulesConfigComponent extends LitElement {
 
           <!-- Common name field -->
           <div class="form-field">
-            <sp-field-label>Name (optional)</sp-field-label>
-            <sp-textfield placeholder="e.g., My Action" value="${this.formName}" @input=${(e: Event) => (this.formName = (e.target as HTMLInputElement).value)}></sp-textfield>
+            <label class="sketch-label">Name (optional)</label>
+            <input type="text" class="sketch-input" placeholder="e.g., My Action" .value=${this.formName} @input=${(e: Event) => (this.formName = (e.target as HTMLInputElement).value)}>
           </div>
 
           <div class="form-actions">
-            <sp-button variant="secondary" @click=${this.closeForm}>Cancel</sp-button>
-            <sp-button variant="accent" @click=${this.saveRule}>Save</sp-button>
+            <sketch-button variant="secondary" @click=${this.closeForm}>Cancel</sketch-button>
+            <sketch-button variant="accent" @click=${this.saveRule}>Save</sketch-button>
           </div>
         </div>
       </div>
@@ -953,21 +946,27 @@ export class ActionRulesConfigComponent extends LitElement {
   }
 
   private renderGroupForm() {
-    const isEdit = this.formMode === 'edit-group';
     const availableButtons = this.getAvailableButtons();
 
     return html`
-      <div class="form-overlay" @mousedown=${this.handleOverlayMouseDown} @mouseup=${this.handleOverlayMouseUp}>
-        <div class="form-dialog">
-          <div class="form-title">${isEdit ? 'Edit Group' : 'Add Group'}</div>
+      <div class="form-view">
+        ${this.mode === 'all' ? html`
+          <div class="form-header">
+            <sketch-button variant="quiet" size="s" @click=${this.closeForm} title="Back">
+              <sketch-icon slot="icon" name="arrow-left"></sketch-icon>
+            </sketch-button>
+            <span class="form-title">${this.getFormTitle()}</span>
+          </div>
+        ` : ''}
+        <div class="form-body">
 
           <div class="form-field">
-            <sp-field-label>Group Name</sp-field-label>
-            <sp-textfield placeholder="e.g., Main Chords" value="${this.formGroupName}" @input=${(e: Event) => (this.formGroupName = (e.target as HTMLInputElement).value)}></sp-textfield>
+            <label class="sketch-label">Group Name</label>
+            <input type="text" class="sketch-input" placeholder="e.g., Main Chords" .value=${this.formGroupName} @input=${(e: Event) => (this.formGroupName = (e.target as HTMLInputElement).value)}>
           </div>
 
           <div class="form-field">
-            <sp-field-label>Buttons (click to toggle, or press on device)</sp-field-label>
+            <label class="sketch-label">Buttons (click to toggle, or press on device)</label>
             <div class="group-buttons">
               ${availableButtons.map((btn) => {
                 const isSelected = this.formGroupButtons.includes(btn);
@@ -982,8 +981,8 @@ export class ActionRulesConfigComponent extends LitElement {
           </div>
 
           <div class="form-actions">
-            <sp-button variant="secondary" @click=${this.closeForm}>Cancel</sp-button>
-            <sp-button variant="accent" @click=${this.saveGroup}>Save</sp-button>
+            <sketch-button variant="secondary" @click=${this.closeForm}>Cancel</sketch-button>
+            <sketch-button variant="accent" @click=${this.saveGroup}>Save</sketch-button>
           </div>
         </div>
       </div>
@@ -993,20 +992,24 @@ export class ActionRulesConfigComponent extends LitElement {
   render() {
     const showActions = this.mode === 'all' || this.mode === 'actions';
     const showGroups = this.mode === 'all' || this.mode === 'groups';
+    const showActionForm = this.formMode === 'add-action' || this.formMode === 'edit-action';
+    const showGroupForm = this.formMode === 'add-group' || this.formMode === 'edit-group';
 
     return html`
       <div class="config-section ${this.mode !== 'all' ? 'single-panel' : ''}">
         ${this.mode === 'all' ? html`
           <div class="panels-row">
-            ${this.renderActionsList()}
-            ${this.renderGroupsList()}
+            ${showActionForm
+              ? html`<div class="panel">${this.renderActionForm()}</div>`
+              : this.renderActionsList()}
+            ${showGroupForm
+              ? html`<div class="panel">${this.renderGroupForm()}</div>`
+              : this.renderGroupsList()}
           </div>
         ` : html`
-          ${showActions ? this.renderActionsListContent() : ''}
-          ${showGroups ? this.renderGroupsListContent() : ''}
+          ${showActions ? (showActionForm ? this.renderActionForm() : this.renderActionsListContent()) : ''}
+          ${showGroups ? (showGroupForm ? this.renderGroupForm() : this.renderGroupsListContent()) : ''}
         `}
-        ${this.formMode === 'add-action' || this.formMode === 'edit-action' ? this.renderActionForm() : ''}
-        ${this.formMode === 'add-group' || this.formMode === 'edit-group' ? this.renderGroupForm() : ''}
       </div>
     `;
   }

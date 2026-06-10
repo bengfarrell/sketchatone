@@ -15,14 +15,14 @@ export const styles = [
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      background: var(--spectrum-gray-100);
+      background: var(--sketch-color-gray-100);
     }
 
     .nav-bar {
       padding: 16px 24px;
-      background: var(--spectrum-gray-50);
+      background: var(--sketch-color-gray-50);
       backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--spectrum-gray-300);
+      border-bottom: 1px solid var(--sketch-color-gray-300);
       position: sticky;
       top: 0;
       z-index: 100;
@@ -43,7 +43,7 @@ export const styles = [
       flex-direction: column;
       gap: 12px;
       padding: 16px;
-      background: var(--spectrum-gray-100);
+      background: var(--sketch-color-gray-100);
       border-radius: 8px;
       margin-bottom: 16px;
     }
@@ -67,7 +67,7 @@ export const styles = [
       flex-direction: column;
       gap: 8px;
       padding: 12px;
-      background: var(--spectrum-gray-75);
+      background: var(--sketch-color-gray-75);
       border-radius: 8px;
     }
 
@@ -80,7 +80,7 @@ export const styles = [
     .midi-output-title {
       font-size: 0.875rem;
       font-weight: 600;
-      color: var(--spectrum-gray-800);
+      color: var(--sketch-color-gray-800);
     }
 
     .midi-output-ports {
@@ -91,22 +91,22 @@ export const styles = [
 
     .midi-output-port {
       padding: 6px 10px;
-      background: var(--spectrum-gray-200);
+      background: var(--sketch-color-gray-200);
       border-radius: 4px;
       font-family: monospace;
       font-size: 0.8rem;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
       cursor: pointer;
       transition: background 0.15s ease;
     }
 
     .midi-output-port:hover {
-      background: var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-300);
     }
 
     .midi-output-port.active {
-      background: var(--spectrum-green-200);
-      border-left: 3px solid var(--spectrum-green-700);
+      background: var(--sketch-color-green-200);
+      border-left: 3px solid var(--sketch-color-green-700);
     }
 
     /* Config file selector */
@@ -132,13 +132,13 @@ export const styles = [
       border-radius: 4px;
       font-size: 0.7rem;
       font-weight: 500;
-      background: var(--spectrum-gray-200);
-      color: var(--spectrum-gray-700);
+      background: var(--sketch-color-gray-200);
+      color: var(--sketch-color-gray-700);
     }
 
     .feature-badge.active {
-      background: var(--spectrum-green-100);
-      color: var(--spectrum-green-900);
+      background: var(--sketch-color-green-100);
+      color: var(--sketch-color-green-900);
     }
 
     /* Chord selector */
@@ -162,8 +162,8 @@ export const styles = [
 
     .chord-preset-btn {
       padding: 6px 12px;
-      background: var(--spectrum-gray-200);
-      border: 1px solid var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-200);
+      border: 1px solid var(--sketch-color-gray-300);
       border-radius: 4px;
       font-size: 0.8rem;
       cursor: pointer;
@@ -171,13 +171,13 @@ export const styles = [
     }
 
     .chord-preset-btn:hover {
-      background: var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-300);
     }
 
     .chord-preset-btn.active {
-      background: var(--spectrum-accent-color-100);
-      border-color: var(--spectrum-accent-color-500);
-      color: var(--spectrum-accent-color-900);
+      background: var(--sketch-color-accent-100);
+      border-color: var(--sketch-color-accent-500);
+      color: var(--sketch-color-accent-900);
     }
   `
 ];

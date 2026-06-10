@@ -57,7 +57,7 @@ export class StrumEventsDisplay extends LitElement {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: var(--spectrum-gray-500);
+      color: var(--sketch-color-gray-500);
       text-align: center;
     }
 
@@ -81,13 +81,13 @@ export class StrumEventsDisplay extends LitElement {
     .event-count {
       font-size: 1.25rem;
       font-weight: 700;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
 
     .event-label {
       font-size: 0.75rem;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -108,13 +108,13 @@ export class StrumEventsDisplay extends LitElement {
     }
 
     .source-badge.mock {
-      background: var(--spectrum-gray-300);
-      color: var(--spectrum-gray-800);
+      background: var(--sketch-color-gray-300);
+      color: var(--sketch-color-gray-800);
     }
 
     .source-badge.translated {
-      background: var(--spectrum-notice-background-color-default);
-      color: var(--spectrum-notice-content-color-default);
+      background: var(--sketch-color-notice-bg);
+      color: var(--sketch-color-notice-fg);
     }
 
     .event-grid {
@@ -131,7 +131,7 @@ export class StrumEventsDisplay extends LitElement {
 
     .field-label {
       font-size: 0.65rem;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       font-weight: 500;
@@ -140,7 +140,7 @@ export class StrumEventsDisplay extends LitElement {
     .field-value {
       font-size: 0.85rem;
       font-weight: 600;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
 
@@ -148,7 +148,7 @@ export class StrumEventsDisplay extends LitElement {
       display: flex;
       gap: 8px;
       padding-top: 8px;
-      border-top: 1px solid var(--spectrum-gray-200);
+      border-top: 1px solid var(--sketch-color-gray-200);
     }
 
     .button-indicator {
@@ -158,16 +158,16 @@ export class StrumEventsDisplay extends LitElement {
       justify-content: center;
       padding: 6px;
       border-radius: 6px;
-      background: var(--spectrum-gray-200);
+      background: var(--sketch-color-gray-200);
       transition: all 0.15s ease;
     }
 
     .button-indicator.active {
-      background: var(--spectrum-positive-color-900);
+      background: var(--sketch-color-positive-fg);
     }
 
     .button-indicator.active .button-label {
-      color: var(--spectrum-gray-50);
+      color: var(--sketch-color-gray-50);
     }
 
     .button-label {
@@ -175,14 +175,14 @@ export class StrumEventsDisplay extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--spectrum-gray-700);
+      color: var(--sketch-color-gray-700);
     }
 
     /* Strum-specific styles */
     .strum-section {
       margin-top: 12px;
       padding-top: 12px;
-      border-top: 1px solid var(--spectrum-gray-300);
+      border-top: 1px solid var(--sketch-color-gray-300);
     }
 
     .strum-header {
@@ -197,7 +197,7 @@ export class StrumEventsDisplay extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
     }
 
     .strum-type {
@@ -208,13 +208,13 @@ export class StrumEventsDisplay extends LitElement {
     }
 
     .strum-type.strum {
-      background: var(--spectrum-positive-background-color-default);
-      color: var(--spectrum-positive-content-color-default);
+      background: var(--sketch-color-positive-bg);
+      color: var(--sketch-color-positive-fg);
     }
 
     .strum-type.release {
-      background: var(--spectrum-notice-background-color-default);
-      color: var(--spectrum-notice-content-color-default);
+      background: var(--sketch-color-notice-bg);
+      color: var(--sketch-color-notice-fg);
     }
 
     .strum-notes {
@@ -228,37 +228,37 @@ export class StrumEventsDisplay extends LitElement {
       align-items: center;
       gap: 4px;
       padding: 4px 8px;
-      background: var(--spectrum-gray-100);
-      border: 1px solid var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-100);
+      border: 1px solid var(--sketch-color-gray-300);
       border-radius: 6px;
       font-size: 12px;
     }
 
     .note-name {
       font-weight: 600;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
     }
 
     .note-velocity {
       font-size: 10px;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
     }
 
     .no-strum {
       font-size: 12px;
-      color: var(--spectrum-gray-500);
+      color: var(--sketch-color-gray-500);
       font-style: italic;
     }
 
     .strum-velocity {
       margin-top: 6px;
       font-size: 11px;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
     }
 
     .chord-change-section {
-      background: var(--spectrum-blue-100);
-      border: 1px solid var(--spectrum-blue-300);
+      background: var(--sketch-color-blue-100);
+      border: 1px solid var(--sketch-color-blue-300);
       border-radius: 6px;
       padding: 10px;
       margin-top: 8px;
@@ -267,7 +267,7 @@ export class StrumEventsDisplay extends LitElement {
     .chord-change-label {
       font-size: 0.7rem;
       font-weight: 600;
-      color: var(--spectrum-blue-700);
+      color: var(--sketch-color-blue-700);
       text-transform: uppercase;
       margin-bottom: 4px;
     }
@@ -275,7 +275,7 @@ export class StrumEventsDisplay extends LitElement {
     .chord-change-value {
       font-size: 1.2rem;
       font-weight: 700;
-      color: var(--spectrum-blue-900);
+      color: var(--sketch-color-blue-900);
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
   `;

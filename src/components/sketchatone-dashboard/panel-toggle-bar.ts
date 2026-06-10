@@ -20,9 +20,9 @@ export class PanelToggleBar extends LitElement {
       flex-wrap: wrap;
       gap: 8px;
       padding: 12px 16px;
-      background: var(--spectrum-gray-100);
+      background: var(--sketch-color-gray-100);
       border-radius: 12px;
-      border: 1px solid var(--spectrum-gray-200);
+      border: 1px solid var(--sketch-color-gray-200);
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
       justify-content: center;
     }
@@ -40,13 +40,13 @@ export class PanelToggleBar extends LitElement {
       gap: 6px;
       padding: 6px 12px;
       border-radius: 6px;
-      border: 1px solid var(--spectrum-gray-300);
-      background: var(--spectrum-gray-75);
+      border: 1px solid var(--sketch-color-gray-300);
+      background: var(--sketch-color-gray-75);
       cursor: pointer;
       transition: all 0.15s ease;
       font-size: 0.8rem;
       font-weight: 500;
-      color: var(--spectrum-gray-700);
+      color: var(--sketch-color-gray-700);
       user-select: none;
     }
 
@@ -59,14 +59,14 @@ export class PanelToggleBar extends LitElement {
     }
 
     .toggle-item:hover {
-      background: var(--spectrum-gray-100);
-      border-color: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-100);
+      border-color: var(--sketch-color-gray-400);
     }
 
     .toggle-item.visible {
-      background: var(--spectrum-gray-200);
-      border-color: var(--spectrum-gray-400);
-      color: var(--spectrum-gray-900);
+      background: var(--sketch-color-gray-200);
+      border-color: var(--sketch-color-gray-400);
+      color: var(--sketch-color-gray-900);
     }
 
     .toggle-item:not(.visible) {
@@ -81,12 +81,12 @@ export class PanelToggleBar extends LitElement {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-400);
       transition: background 0.15s ease;
     }
 
     .toggle-item.visible .visibility-indicator {
-      background: var(--spectrum-positive-color-900);
+      background: var(--sketch-color-positive-fg);
     }
   `;
 

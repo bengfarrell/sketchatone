@@ -20,7 +20,9 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 # Default settings
 # Matches the default http_port (80) in public/configs/default.json.
 # Using localhost avoids mDNS/avahi dependencies since the kiosk runs on the same host.
-KIOSK_URL="http://localhost"
+# ?compact=1 switches the dashboard to single-panel navigation optimised for
+# small device displays (e.g. 800x480 Pi touchscreens).
+KIOSK_URL="http://localhost/?compact=1"
 KIOSK_USER="${SUDO_USER:-pi}"
 
 # Kiosk targets labwc (Wayland) on Raspberry Pi OS Bookworm or newer.

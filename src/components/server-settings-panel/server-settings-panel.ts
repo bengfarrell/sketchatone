@@ -1,5 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-button.js';
 
 /**
  * Server Settings Panel
@@ -12,7 +14,7 @@ import { customElement, property } from 'lit/decorators.js';
  */
 @customElement('server-settings-panel')
 export class ServerSettingsPanel extends LitElement {
-  static styles = css`
+  static styles = [formStyles, css`
     :host {
       display: block;
     }
@@ -33,23 +35,23 @@ export class ServerSettingsPanel extends LitElement {
 
     .setting-row label {
       font-size: 13px;
-      color: var(--spectrum-global-color-gray-700);
+      color: var(--sketch-color-gray-700);
       flex: 1;
     }
 
     .restart-warning {
       padding: 12px;
-      background: var(--spectrum-global-color-orange-100);
+      background: var(--sketch-color-orange-100);
       border-radius: 4px;
       font-size: 12px;
-      color: var(--spectrum-global-color-gray-800);
+      color: var(--sketch-color-gray-800);
       margin-bottom: 12px;
     }
 
     .restart-button-container {
       margin-top: 16px;
       padding-top: 16px;
-      border-top: 1px solid var(--spectrum-global-color-gray-300);
+      border-top: 1px solid var(--sketch-color-gray-300);
       display: flex;
       justify-content: flex-end;
     }
@@ -62,15 +64,15 @@ export class ServerSettingsPanel extends LitElement {
     }
 
     .restart-status.success {
-      background: var(--spectrum-global-color-green-100);
-      color: var(--spectrum-global-color-green-700);
+      background: var(--sketch-color-green-100);
+      color: var(--sketch-color-green-700);
     }
 
     .restart-status.error {
-      background: var(--spectrum-global-color-red-100);
-      color: var(--spectrum-global-color-red-700);
+      background: var(--sketch-color-red-100);
+      color: var(--sketch-color-red-700);
     }
-  `;
+  `];
 
   @property({ type: String })
   midiBackend = 'rtmidi';
@@ -102,48 +104,44 @@ export class ServerSettingsPanel extends LitElement {
 
         <div class="setting-row">
           <label>MIDI Backend</label>
-          <sp-picker size="s" value="${this.midiBackend}" @change=${this.handleMidiBackendChange}>
-            <sp-menu-item value="rtmidi">ALSA (rtmidi)</sp-menu-item>
-            <sp-menu-item value="jack">JACK</sp-menu-item>
-          </sp-picker>
+          <select class="sketch-select" size="s" .value=${this.midiBackend} @change=${this.handleMidiBackendChange}>
+            <option value="rtmidi">ALSA (rtmidi)</option>
+            <option value="jack">JACK</option>
+          </select>
         </div>
 
         <div class="setting-row">
           <label>HTTP Port</label>
-          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
-            value="${this.httpPort}" min="1" max="65535" step="1"
+          <input type="number" class="sketch-input" size="s"
+            .value=${this.httpPort} min="1" max="65535" step="1"
             @change=${(e: Event) => this.handlePortChange('http', Number((e.target as HTMLInputElement).value))}>
-          </sp-number-field>
         </div>
 
         <div class="setting-row">
           <label>WebSocket Port</label>
-          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
-            value="${this.wsPort}" min="1" max="65535" step="1"
+          <input type="number" class="sketch-input" size="s"
+            .value=${this.wsPort} min="1" max="65535" step="1"
             @change=${(e: Event) => this.handlePortChange('ws', Number((e.target as HTMLInputElement).value))}>
-          </sp-number-field>
         </div>
 
         <div class="setting-row">
           <label>HTTPS Port</label>
-          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
-            value="${this.httpsPort}" min="1" max="65535" step="1"
+          <input type="number" class="sketch-input" size="s"
+            .value=${this.httpsPort} min="1" max="65535" step="1"
             @change=${(e: Event) => this.handlePortChange('https', Number((e.target as HTMLInputElement).value))}>
-          </sp-number-field>
         </div>
 
         <div class="setting-row">
           <label>Secure WebSocket Port</label>
-          <sp-number-field data-spectrum-pattern="number-field-s" size="s"
-            value="${this.wssPort}" min="1" max="65535" step="1"
+          <input type="number" class="sketch-input" size="s"
+            .value=${this.wssPort} min="1" max="65535" step="1"
             @change=${(e: Event) => this.handlePortChange('wss', Number((e.target as HTMLInputElement).value))}>
-          </sp-number-field>
         </div>
 
         <div class="restart-button-container">
-          <sp-button variant="accent" size="s" @click=${this.handleRestart}>
+          <sketch-button variant="accent" size="s" @click=${this.handleRestart}>
             Restart Service
-          </sp-button>
+          </sketch-button>
         </div>
 
         ${this.restartStatus !== 'idle' ? html`

@@ -1,12 +1,8 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import '../../design-system/tokens.css';
+import '../../design-system/components/sketch-button.js';
 import { styles } from './sketchatone-web-app.styles.js';
-
-// Spectrum theme wrapper and theme definitions
-import '@spectrum-web-components/theme/sp-theme.js';
-import '@spectrum-web-components/theme/src/themes.js';
-import '@spectrum-web-components/button/sp-button.js';
-
 // Import blankslate components
 import 'blankslate/components/hid-dashboard/hid-dashboard.js';
 import 'blankslate/components/hid-data-reader/hid-data-reader.js';
@@ -78,13 +74,13 @@ export class SketchatoneWebApp extends LitElement {
 
   render() {
     return html`
-      <sp-theme system="spectrum" color=${this.themeColor} scale="medium">
+      <div class="sketch-theme">
         <div class="app">
           ${this.currentPage === 'walkthrough' ? html`
             <div class="nav-bar">
-              <sp-button data-spectrum-pattern="button-secondary" variant="secondary" @click=${this._handleBackToDashboard}>
+              <sketch-button variant="secondary" @click=${this._handleBackToDashboard}>
                 ← Back to Dashboard
-              </sp-button>
+              </sketch-button>
             </div>
           ` : ''}
 
@@ -106,7 +102,7 @@ export class SketchatoneWebApp extends LitElement {
             ` : ''}
           </div>
         </div>
-      </sp-theme>
+      </div>
     `;
   }
 }

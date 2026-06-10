@@ -3,6 +3,7 @@
  */
 
 export type PanelId =
+  | 'performance'
   | 'tabletVisualizer'
   | 'stylusVisualizer'
   | 'midiInput'
@@ -25,6 +26,7 @@ export interface PanelInfo {
 }
 
 export const PANELS: PanelInfo[] = [
+  { id: 'performance', label: 'Performance', icon: '🎤' },
   { id: 'tabletVisualizer', label: 'Tablet', icon: '📱' },
   { id: 'stylusVisualizer', label: 'Stylus', icon: '✏️' },
   { id: 'midiInput', label: 'MIDI In', icon: '🎹' },
@@ -46,6 +48,7 @@ export type PanelVisibility = Record<PanelId, boolean>;
 const STORAGE_KEY = 'sketchatone-panel-visibility';
 
 const DEFAULT_VISIBILITY: PanelVisibility = {
+  performance: true,
   tabletVisualizer: true,
   stylusVisualizer: true,
   midiInput: true,

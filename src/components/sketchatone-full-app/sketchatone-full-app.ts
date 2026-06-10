@@ -6,26 +6,15 @@
 
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import '../../design-system/tokens.css';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-button.js';
+import '../../design-system/components/sketch-icon.js';
+import '../../design-system/components/sketch-switch.js';
 import { styles } from './sketchatone-full-app.styles.js';
 
 // Spectrum theme wrapper
-import '@spectrum-web-components/theme/sp-theme.js';
-import '@spectrum-web-components/theme/src/themes.js';
-
 // Spectrum components
-import '@spectrum-web-components/button/sp-button.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '@spectrum-web-components/textfield/sp-textfield.js';
-import '@spectrum-web-components/picker/sp-picker.js';
-import '@spectrum-web-components/menu/sp-menu-item.js';
-import '@spectrum-web-components/number-field/sp-number-field.js';
-import '@spectrum-web-components/switch/sp-switch.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-moon.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-folder-open.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-download.js';
 
 // Blankslate visualizer components
 import 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
@@ -241,7 +230,7 @@ class WebMidiOutput {
  */
 @customElement('sketchatone-full-app')
 export class SketchatoneFullApp extends LitElement {
-  static styles = styles;
+  static styles = [formStyles, styles];
 
   @state()
   private themeColor: 'light' | 'dark' = 'light';
@@ -830,7 +819,7 @@ export class SketchatoneFullApp extends LitElement {
     const hasActiveConnection = this.hidConnected;
 
     return html`
-      <sp-theme system="spectrum" color=${this.themeColor} scale="medium">
+      <div class="sketch-theme">
         <div class="app">
           <div class="page-content">
             <div class="dashboard">
@@ -854,7 +843,7 @@ export class SketchatoneFullApp extends LitElement {
             </div>
           </div>
         </div>
-      </sp-theme>
+      </div>
     `;
   }
 
@@ -889,19 +878,19 @@ export class SketchatoneFullApp extends LitElement {
               ${this.midiInputConnected ? html`<span class="feature-badge active">MIDI In</span>` : ''}
             </div>
             <div class="header-controls">
-              <sp-action-button quiet @click=${this.handleThemeToggle}>
+              <sketch-button variant="quiet" @click=${this.handleThemeToggle}>
                 ${this.themeColor === 'light'
-                  ? html`<sp-icon-moon slot="icon"></sp-icon-moon>`
-                  : html`<sp-icon-light slot="icon"></sp-icon-light>`}
-              </sp-action-button>
+                  ? html`<sketch-icon slot="icon" name="moon"></sketch-icon>`
+                  : html`<sketch-icon slot="icon" name="light"></sketch-icon>`}
+              </sketch-button>
             </div>
           </div>
           <div class="connection-row">
             <div class="save-button-group">
-              <sp-button size="s" variant="secondary" @click=${this.handleExportConfig}>
-                <sp-icon-download slot="icon"></sp-icon-download>
+              <sketch-button size="s" variant="secondary" @click=${this.handleExportConfig}>
+                <sketch-icon slot="icon" name="download"></sketch-icon>
                 Export Config
-              </sp-button>
+              </sketch-button>
             </div>
           </div>
         </div>
@@ -917,20 +906,20 @@ export class SketchatoneFullApp extends LitElement {
           <div class="config-selector">
             <input type="file" accept=".json" class="config-file-input" id="tablet-config-input"
               @change=${this.handleConfigFileSelect}>
-            <sp-button size="s" variant="secondary" @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#tablet-config-input')?.click()}>
-              <sp-icon-folder-open slot="icon"></sp-icon-folder-open>
+            <sketch-button size="s" variant="secondary" @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#tablet-config-input')?.click()}>
+              <sketch-icon slot="icon" name="folder-open"></sketch-icon>
               ${this.tabletConfig ? this.tabletConfig.name : 'Load Tablet Config'}
-            </sp-button>
+            </sketch-button>
           </div>
 
           <!-- Strummer Config -->
           <div class="config-selector">
             <input type="file" accept=".json" class="config-file-input" id="strummer-config-input"
               @change=${this.handleStrummerConfigFileSelect}>
-            <sp-button size="s" variant="secondary" @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#strummer-config-input')?.click()}>
-              <sp-icon-folder-open slot="icon"></sp-icon-folder-open>
+            <sketch-button size="s" variant="secondary" @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#strummer-config-input')?.click()}>
+              <sketch-icon slot="icon" name="folder-open"></sketch-icon>
               Load Strummer Config
-            </sp-button>
+            </sketch-button>
           </div>
 
           <!-- HID Connection -->
@@ -940,14 +929,14 @@ export class SketchatoneFullApp extends LitElement {
                 <span class="status-dot"></span>
                 ${this.hidDeviceName || 'Connected'}
               </div>
-              <sp-button size="s" variant="secondary" @click=${this.handleDisconnectHID}>
+              <sketch-button size="s" variant="secondary" @click=${this.handleDisconnectHID}>
                 Disconnect
-              </sp-button>
+              </sketch-button>
             ` : html`
-              <sp-button size="s" variant="primary" ?disabled=${!this.tabletConfig} @click=${this.handleConnectHID}>
-                <sp-icon-link slot="icon"></sp-icon-link>
+              <sketch-button size="s" variant="primary" ?disabled=${!this.tabletConfig} @click=${this.handleConnectHID}>
+                <sketch-icon slot="icon" name="link"></sketch-icon>
                 Connect Tablet
-              </sp-button>
+              </sketch-button>
             `}
           </div>
         </div>
@@ -977,9 +966,8 @@ export class SketchatoneFullApp extends LitElement {
         <div class="chord-selector">
           <div class="chord-input-row">
             <label>Current Chord:</label>
-            <sp-textfield size="s" value=${this.currentChord}
+            <input type="text" class="sketch-input" size="s" .value=${this.currentChord}
               @change=${(e: Event) => this.handleChordChange((e.target as HTMLInputElement).value)}>
-            </sp-textfield>
           </div>
           <div class="chord-presets">
             ${this.chordPresets.map(chord => html`
@@ -1078,7 +1066,7 @@ export class SketchatoneFullApp extends LitElement {
                 </div>
                 <div class="midi-input-mode-row">
                   <span class="midi-notes-label">Input Mode:</span>
-                  <sp-picker size="s" value="${this.midiInputMode}"
+                  <select class="sketch-select" size="s" .value=${this.midiInputMode}
                     @change=${(e: Event) => {
                       const v = (e.target as HTMLInputElement).value as MidiInputMode;
                       if (VALID_MIDI_INPUT_MODES.includes(v)) {
@@ -1086,11 +1074,11 @@ export class SketchatoneFullApp extends LitElement {
                         this.applyMidiInputMapping();
                       }
                     }}>
-                    <sp-menu-item value="direct" ?selected=${this.midiInputMode === 'direct'}>Direct</sp-menu-item>
-                    <sp-menu-item value="majorScale" ?selected=${this.midiInputMode === 'majorScale'}>Major Scale</sp-menu-item>
-                    <sp-menu-item value="minorScale" ?selected=${this.midiInputMode === 'minorScale'}>Minor Scale</sp-menu-item>
-                    <sp-menu-item value="autoScale" ?selected=${this.midiInputMode === 'autoScale'}>Auto Scale</sp-menu-item>
-                  </sp-picker>
+                    <option value="direct" ?selected=${this.midiInputMode === 'direct'}>Direct</option>
+                    <option value="majorScale" ?selected=${this.midiInputMode === 'majorScale'}>Major Scale</option>
+                    <option value="minorScale" ?selected=${this.midiInputMode === 'minorScale'}>Minor Scale</option>
+                    <option value="autoScale" ?selected=${this.midiInputMode === 'autoScale'}>Auto Scale</option>
+                  </select>
                 </div>
               </div>
 
@@ -1166,97 +1154,97 @@ export class SketchatoneFullApp extends LitElement {
                 <div class="settings-form">
                   <div class="setting-row">
                     <label>Mode</label>
-                    <sp-picker
+                    <select class="sketch-select"
                       size="s"
-                      value=${config.mode}
+                      .value=${config.mode}
                       @change=${(e: Event) => this.updateConfig('mode', (e.target as HTMLSelectElement).value)}>
-                      <sp-menu-item value="strum" ?selected=${config.mode === 'strum'}>Strum</sp-menu-item>
-                      <sp-menu-item value="slide" ?selected=${config.mode === 'slide'}>Slide</sp-menu-item>
-                    </sp-picker>
+                      <option value="strum" ?selected=${config.mode === 'strum'}>Strum</option>
+                      <option value="slide" ?selected=${config.mode === 'slide'}>Slide</option>
+                    </select>
                   </div>
                   ${config.mode === 'slide' ? html`
                     <div class="setting-row">
                       <label>Slide Pressure Threshold</label>
-                      <sp-number-field value="${config.slide.pressureThreshold}" step="0.01" min="0" max="1"
-                        @change=${(e: Event) => this.updateConfig('slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      <input type="number" class="sketch-input" .value=${config.slide.pressureThreshold} step="0.01" min="0" max="1"
+                        @change=${(e: Event) => this.updateConfig('slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}>
                     </div>
                     <div class="setting-row">
                       <label>Max Bend (semitones)</label>
-                      <sp-number-field value="${config.slide.maxBendSemitones}" step="0.5" min="0" max="24"
-                        @change=${(e: Event) => this.updateConfig('slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      <input type="number" class="sketch-input" .value=${config.slide.maxBendSemitones} step="0.5" min="0" max="24"
+                        @change=${(e: Event) => this.updateConfig('slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}>
                     </div>
                     <div class="setting-row">
                       <label>Pressure Modulation</label>
-                      <sp-picker
+                      <select class="sketch-select"
                         size="s"
-                        value=${config.slide.pressureModulation.type}
+                        .value=${config.slide.pressureModulation.type}
                         @change=${(e: Event) => this.updateConfig('slide.pressureModulation.type', (e.target as HTMLSelectElement).value)}>
-                        <sp-menu-item value="none" ?selected=${config.slide.pressureModulation.type === 'none'}>None</sp-menu-item>
-                        <sp-menu-item value="aftertouch" ?selected=${config.slide.pressureModulation.type === 'aftertouch'}>Aftertouch</sp-menu-item>
-                        <sp-menu-item value="cc" ?selected=${config.slide.pressureModulation.type === 'cc'}>Control Change</sp-menu-item>
-                      </sp-picker>
+                        <option value="none" ?selected=${config.slide.pressureModulation.type === 'none'}>None</option>
+                        <option value="aftertouch" ?selected=${config.slide.pressureModulation.type === 'aftertouch'}>Aftertouch</option>
+                        <option value="cc" ?selected=${config.slide.pressureModulation.type === 'cc'}>Control Change</option>
+                      </select>
                     </div>
                     ${config.slide.pressureModulation.type === 'cc' ? html`
                       <div class="setting-row">
                         <label>CC Preset</label>
-                        <sp-picker
+                        <select class="sketch-select"
                           size="s"
-                          value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === config.slide.pressureModulation.ccNumber)?.ccNumber ?? '')}
+                          .value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === config.slide.pressureModulation.ccNumber)?.ccNumber ?? '')}
                           @change=${(e: Event) => {
                             const v = (e.target as HTMLSelectElement).value;
                             if (v !== '') this.updateConfig('slide.pressureModulation.ccNumber', Number(v));
                           }}>
                           ${PRESSURE_MODULATION_CC_PRESETS.map(p => html`
-                            <sp-menu-item value=${String(p.ccNumber)} ?selected=${config.slide.pressureModulation.ccNumber === p.ccNumber}>${p.label}</sp-menu-item>
+                            <option value=${String(p.ccNumber)} ?selected=${config.slide.pressureModulation.ccNumber === p.ccNumber}>${p.label}</option>
                           `)}
-                          <sp-menu-item value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === config.slide.pressureModulation.ccNumber)}>Custom</sp-menu-item>
-                        </sp-picker>
+                          <option value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === config.slide.pressureModulation.ccNumber)}>Custom</option>
+                        </select>
                       </div>
                       <div class="setting-row">
                         <label>CC Number</label>
-                        <sp-number-field value="${config.slide.pressureModulation.ccNumber}" step="1" min="0" max="127"
-                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                        <input type="number" class="sketch-input" .value=${config.slide.pressureModulation.ccNumber} step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}>
                       </div>
                     ` : ''}
                     ${config.slide.pressureModulation.type !== 'none' ? html`
                       <div class="setting-row">
                         <label>Modulation Min</label>
-                        <sp-number-field value="${config.slide.pressureModulation.minValue}" step="1" min="0" max="127"
-                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                        <input type="number" class="sketch-input" .value=${config.slide.pressureModulation.minValue} step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}>
                       </div>
                       <div class="setting-row">
                         <label>Modulation Max</label>
-                        <sp-number-field value="${config.slide.pressureModulation.maxValue}" step="1" min="0" max="127"
-                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                        <input type="number" class="sketch-input" .value=${config.slide.pressureModulation.maxValue} step="1" min="0" max="127"
+                          @change=${(e: Event) => this.updateConfig('slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}>
                       </div>
                     ` : ''}
                   ` : ''}
                   <div class="setting-row">
                     <label>Pressure Threshold</label>
-                    <sp-number-field value="${config.strumming.pressureThreshold}" step="0.01" min="0" max="1"
-                      @change=${(e: Event) => this.updateConfig('strumming.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${config.strumming.pressureThreshold} step="0.01" min="0" max="1"
+                      @change=${(e: Event) => this.updateConfig('strumming.pressureThreshold', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Pressure Buffer Size</label>
-                    <sp-number-field value="${config.strumming.pressureBufferSize}" step="1" min="2" max="40"
-                      @change=${(e: Event) => this.updateConfig('strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${config.strumming.pressureBufferSize} step="1" min="2" max="40"
+                      @change=${(e: Event) => this.updateConfig('strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Upper Note Spread</label>
-                    <sp-number-field value="${config.strumming.upperNoteSpread}" step="1" min="0" max="12"
-                      @change=${(e: Event) => this.updateConfig('strumming.upperNoteSpread', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${config.strumming.upperNoteSpread} step="1" min="0" max="12"
+                      @change=${(e: Event) => this.updateConfig('strumming.upperNoteSpread', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Lower Note Spread</label>
-                    <sp-number-field value="${config.strumming.lowerNoteSpread}" step="1" min="0" max="12"
-                      @change=${(e: Event) => this.updateConfig('strumming.lowerNoteSpread', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${config.strumming.lowerNoteSpread} step="1" min="0" max="12"
+                      @change=${(e: Event) => this.updateConfig('strumming.lowerNoteSpread', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Reverse Direction</label>
-                    <sp-switch
+                    <sketch-switch
                       ?checked=${config.strumming.invertX}
                       @change=${(e: Event) => this.updateConfig('strumming.invertX', (e.target as HTMLInputElement).checked)}>
-                    </sp-switch>
+                    </sketch-switch>
                   </div>
                 </div>
               </dashboard-panel>
@@ -1268,25 +1256,25 @@ export class SketchatoneFullApp extends LitElement {
                 <div class="settings-form">
                   <div class="setting-row">
                     <label>Primary Button</label>
-                    <sp-picker label="Action" value="${(config as any).stylusButtons?.primaryButtonAction}"
+                    <select class="sketch-select" .value=${(config as any).stylusButtons?.primaryButtonAction}
                       @change=${(e: Event) => this.updateConfig('stylusButtons.primaryButtonAction', (e.target as HTMLInputElement).value)}>
-                      <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                      <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                      <sp-menu-item value="octave-up">Octave Up</sp-menu-item>
-                      <sp-menu-item value="octave-down">Octave Down</sp-menu-item>
-                      <sp-menu-item value="none">None</sp-menu-item>
-                    </sp-picker>
+                      <option value="toggle-transpose">Toggle Transpose</option>
+                      <option value="toggle-repeater">Toggle Repeater</option>
+                      <option value="octave-up">Octave Up</option>
+                      <option value="octave-down">Octave Down</option>
+                      <option value="none">None</option>
+                    </select>
                   </div>
                   <div class="setting-row">
                     <label>Secondary Button</label>
-                    <sp-picker label="Action" value="${(config as any).stylusButtons?.secondaryButtonAction}"
+                    <select class="sketch-select" .value=${(config as any).stylusButtons?.secondaryButtonAction}
                       @change=${(e: Event) => this.updateConfig('stylusButtons.secondaryButtonAction', (e.target as HTMLInputElement).value)}>
-                      <sp-menu-item value="toggle-transpose">Toggle Transpose</sp-menu-item>
-                      <sp-menu-item value="toggle-repeater">Toggle Repeater</sp-menu-item>
-                      <sp-menu-item value="octave-up">Octave Up</sp-menu-item>
-                      <sp-menu-item value="octave-down">Octave Down</sp-menu-item>
-                      <sp-menu-item value="none">None</sp-menu-item>
-                    </sp-picker>
+                      <option value="toggle-transpose">Toggle Transpose</option>
+                      <option value="toggle-repeater">Toggle Repeater</option>
+                      <option value="octave-up">Octave Up</option>
+                      <option value="octave-down">Octave Down</option>
+                      <option value="none">None</option>
+                    </select>
                   </div>
                 </div>
               </dashboard-panel>
@@ -1298,8 +1286,8 @@ export class SketchatoneFullApp extends LitElement {
                 <div class="settings-form">
                   <div class="setting-row">
                     <label>Semitones</label>
-                    <sp-number-field value="${(config as any).transpose?.semitones}" step="1" min="-24" max="24"
-                      @change=${(e: Event) => this.updateConfig('transpose.semitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${(config as any).transpose?.semitones} step="1" min="-24" max="24"
+                      @change=${(e: Event) => this.updateConfig('transpose.semitones', Number((e.target as HTMLInputElement).value))}>
                   </div>
                 </div>
               </dashboard-panel>

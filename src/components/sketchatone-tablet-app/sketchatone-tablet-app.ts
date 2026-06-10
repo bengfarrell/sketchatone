@@ -1,11 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import '../../design-system/tokens.css';
 import { styles } from './sketchatone-tablet-app.styles.js';
-
-// Spectrum theme wrapper and theme definitions
-import '@spectrum-web-components/theme/sp-theme.js';
-import '@spectrum-web-components/theme/src/themes.js';
-
 // Import sketchatone dashboard component
 import '../sketchatone-dashboard/sketchatone-dashboard.js';
 
@@ -56,7 +52,7 @@ export class SketchatoneTabletApp extends LitElement {
 
   render() {
     return html`
-      <sp-theme system="spectrum" color=${this.themeColor} scale="medium">
+      <div class="sketch-theme">
         <div class="app">
           <div class="page-content">
             <sketchatone-dashboard
@@ -66,7 +62,7 @@ export class SketchatoneTabletApp extends LitElement {
             </sketchatone-dashboard>
           </div>
         </div>
-      </sp-theme>
+      </div>
     `;
   }
 }

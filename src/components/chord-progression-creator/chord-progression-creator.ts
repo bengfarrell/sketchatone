@@ -6,14 +6,9 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import '@spectrum-web-components/button/sp-button.js';
-import '@spectrum-web-components/textfield/sp-textfield.js';
-import '@spectrum-web-components/field-label/sp-field-label.js';
-import '@spectrum-web-components/divider/sp-divider.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-delete.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-close.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-button.js';
+import '../../design-system/components/sketch-icon.js';
 
 // Root notes
 const ROOTS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -79,7 +74,7 @@ export class ChordProgressionCreator extends LitElement {
   @state()
   private dropdownOpen: boolean = false;
 
-  static styles = css`
+  static styles = [formStyles, css`
     :host {
       display: block;
       padding: 16px;
@@ -92,7 +87,7 @@ export class ChordProgressionCreator extends LitElement {
     }
 
     .progression-selector {
-      background: var(--spectrum-gray-75);
+      background: var(--sketch-color-gray-75);
       border-radius: 8px;
       padding: 16px;
     }
@@ -107,7 +102,7 @@ export class ChordProgressionCreator extends LitElement {
     .selector-label {
       font-size: 11px;
       font-weight: 700;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -142,8 +137,8 @@ export class ChordProgressionCreator extends LitElement {
       height: 32px;
       border-radius: 0;
       padding: 0 8px;
-      background-color: var(--spectrum-gray-75, #ffffff);
-      border: 1px solid var(--spectrum-gray-400, #b3b3b3);
+      background-color: var(--sketch-color-gray-75, #ffffff);
+      border: 1px solid var(--sketch-color-gray-400, #b3b3b3);
       border-left: none;
       cursor: pointer;
       transition: background-color 130ms ease-in-out, border-color 130ms ease-in-out;
@@ -153,18 +148,18 @@ export class ChordProgressionCreator extends LitElement {
     }
 
     .dropdown-button:hover {
-      background-color: var(--spectrum-gray-100, #f5f5f5);
-      border-color: var(--spectrum-gray-500, #959595);
+      background-color: var(--sketch-color-gray-100, #f5f5f5);
+      border-color: var(--sketch-color-gray-500, #959595);
     }
 
     .dropdown-button:active {
-      background-color: var(--spectrum-gray-200, #e0e0e0);
+      background-color: var(--sketch-color-gray-200, #e0e0e0);
     }
 
     .dropdown-button svg {
       width: 10px;
       height: 10px;
-      fill: var(--spectrum-gray-700, #6e6e6e);
+      fill: var(--sketch-color-gray-700, #6e6e6e);
     }
 
     .action-buttons {
@@ -173,19 +168,19 @@ export class ChordProgressionCreator extends LitElement {
       margin-left: 8px;
     }
 
-    .action-buttons sp-action-button {
+    .action-buttons sketch-button {
       height: 32px;
       border-radius: 0;
     }
 
-    .action-buttons sp-action-button:first-child {
-      border-top-left-radius: var(--spectrum-corner-radius-100, 4px);
-      border-bottom-left-radius: var(--spectrum-corner-radius-100, 4px);
+    .action-buttons sketch-button:first-child {
+      border-top-left-radius: var(--sketch-radius-sm, 4px);
+      border-bottom-left-radius: var(--sketch-radius-sm, 4px);
     }
 
-    .action-buttons sp-action-button:last-child {
-      border-top-right-radius: var(--spectrum-corner-radius-100, 4px);
-      border-bottom-right-radius: var(--spectrum-corner-radius-100, 4px);
+    .action-buttons sketch-button:last-child {
+      border-top-right-radius: var(--sketch-radius-sm, 4px);
+      border-bottom-right-radius: var(--sketch-radius-sm, 4px);
     }
 
     /* Dropdown menu */
@@ -196,9 +191,9 @@ export class ChordProgressionCreator extends LitElement {
       min-width: 250px;
       max-height: 300px;
       overflow-y: auto;
-      background: var(--spectrum-gray-75, #ffffff);
-      border: 1px solid var(--spectrum-gray-400, #b3b3b3);
-      border-radius: var(--spectrum-corner-radius-100, 4px);
+      background: var(--sketch-color-gray-75, #ffffff);
+      border: 1px solid var(--sketch-color-gray-400, #b3b3b3);
+      border-radius: var(--sketch-radius-sm, 4px);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       z-index: 10;
       margin: 0;
@@ -209,8 +204,8 @@ export class ChordProgressionCreator extends LitElement {
       padding: 8px 12px;
       cursor: pointer;
       list-style: none;
-      font-size: var(--spectrum-font-size-100, 14px);
-      color: var(--spectrum-gray-800, #4b4b4b);
+      font-size: var(--sketch-font-size-md, 14px);
+      color: var(--sketch-color-gray-800, #4b4b4b);
       transition: background-color 130ms ease-in-out;
       display: flex;
       justify-content: space-between;
@@ -218,23 +213,23 @@ export class ChordProgressionCreator extends LitElement {
     }
 
     .dropdown-menu-item:hover {
-      background-color: var(--spectrum-gray-200, #e0e0e0);
+      background-color: var(--sketch-color-gray-200, #e0e0e0);
     }
 
     .dropdown-menu-item.selected {
-      background-color: var(--spectrum-blue-100, #e8f3ff);
-      color: var(--spectrum-blue-900, #0054b6);
+      background-color: var(--sketch-color-blue-100, #e8f3ff);
+      color: var(--sketch-color-blue-900, #0054b6);
       font-weight: 600;
     }
 
     .dropdown-menu-item .checkmark {
-      color: var(--spectrum-blue-900, #0054b6);
+      color: var(--sketch-color-blue-900, #0054b6);
       font-weight: 700;
       margin-left: 8px;
     }
 
     .chord-builder {
-      background: var(--spectrum-gray-75);
+      background: var(--sketch-color-gray-75);
       border-radius: 8px;
       padding: 16px;
     }
@@ -242,7 +237,7 @@ export class ChordProgressionCreator extends LitElement {
     .builder-label {
       font-size: 11px;
       font-weight: 700;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 12px;
@@ -262,7 +257,7 @@ export class ChordProgressionCreator extends LitElement {
     .section-label {
       font-size: 10px;
       font-weight: 600;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       text-transform: uppercase;
     }
 
@@ -274,24 +269,24 @@ export class ChordProgressionCreator extends LitElement {
 
     .option-button {
       padding: 4px 10px;
-      background: var(--spectrum-gray-200);
-      border: 2px solid var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-200);
+      border: 2px solid var(--sketch-color-gray-300);
       border-radius: 6px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
     }
 
     .option-button:hover {
-      background: var(--spectrum-gray-300);
-      border-color: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-300);
+      border-color: var(--sketch-color-gray-400);
     }
 
     .option-button.selected {
-      background: var(--spectrum-blue-500);
-      border-color: var(--spectrum-blue-600);
+      background: var(--sketch-color-blue-500);
+      border-color: var(--sketch-color-blue-600);
       color: white;
     }
 
@@ -300,27 +295,27 @@ export class ChordProgressionCreator extends LitElement {
     }
 
     .option-button:disabled {
-      background: var(--spectrum-gray-100);
-      border-color: var(--spectrum-gray-200);
-      color: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-100);
+      border-color: var(--sketch-color-gray-200);
+      color: var(--sketch-color-gray-400);
       cursor: not-allowed;
       opacity: 0.5;
     }
 
     .option-button:disabled:hover {
-      background: var(--spectrum-gray-100);
-      border-color: var(--spectrum-gray-200);
+      background: var(--sketch-color-gray-100);
+      border-color: var(--sketch-color-gray-200);
     }
 
     .button-divider {
       width: 1px;
       height: 32px;
-      background: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-400);
       margin: 0 8px;
     }
 
     .progression-preview {
-      background: var(--spectrum-gray-75);
+      background: var(--sketch-color-gray-75);
       border-radius: 8px;
       padding: 16px;
       min-height: 80px;
@@ -329,7 +324,7 @@ export class ChordProgressionCreator extends LitElement {
     .preview-label {
       font-size: 12px;
       font-weight: 600;
-      color: var(--spectrum-gray-700);
+      color: var(--sketch-color-gray-700);
       margin-bottom: 8px;
     }
 
@@ -344,7 +339,7 @@ export class ChordProgressionCreator extends LitElement {
       justify-content: center;
       align-items: center;
       min-height: 48px;
-      color: var(--spectrum-gray-500);
+      color: var(--sketch-color-gray-500);
       font-style: italic;
     }
 
@@ -353,21 +348,21 @@ export class ChordProgressionCreator extends LitElement {
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
-      background: var(--spectrum-blue-100);
-      border: 1px solid var(--spectrum-blue-300);
+      background: var(--sketch-color-blue-100);
+      border: 1px solid var(--sketch-color-blue-300);
       border-radius: 6px;
       font-weight: 600;
-      color: var(--spectrum-blue-900);
+      color: var(--sketch-color-blue-900);
       font-size: 14px;
       cursor: pointer;
       transition: all 0.15s ease;
     }
 
     .chord-chip:hover {
-      background: var(--spectrum-blue-200);
+      background: var(--sketch-color-blue-200);
     }
 
-    .chord-chip sp-action-button {
+    .chord-chip sketch-button {
       margin: -4px -6px -4px 0;
     }
 
@@ -376,24 +371,24 @@ export class ChordProgressionCreator extends LitElement {
       justify-content: flex-end;
       gap: 12px;
       padding-top: 8px;
-      border-top: 1px solid var(--spectrum-gray-200);
+      border-top: 1px solid var(--sketch-color-gray-200);
     }
 
     /* Native select styling to match Spectrum picker */
     .native-select {
       width: 100%;
       box-sizing: border-box;
-      height: var(--spectrum-component-height-100, 32px);
-      padding-inline-start: var(--spectrum-component-edge-to-text-100, 12px);
+      height: var(--sketch-control-height-md, 32px);
+      padding-inline-start: var(--sketch-spacing-2, 12px);
       padding-inline-end: 28px; /* Space for dropdown arrow */
-      font-family: var(--spectrum-sans-font-family-stack, adobe-clean, 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-      font-size: var(--spectrum-font-size-100, 14px);
-      font-weight: var(--spectrum-regular-font-weight, 400);
-      line-height: var(--spectrum-line-height-100, 1.3);
-      border: 1px solid var(--spectrum-gray-400, #b3b3b3);
-      border-radius: var(--spectrum-corner-radius-100, 4px);
-      background-color: var(--spectrum-gray-75, #ffffff);
-      color: var(--spectrum-gray-800, #4b4b4b);
+      font-family: var(--sketch-font-sans, adobe-clean, 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+      font-size: var(--sketch-font-size-md, 14px);
+      font-weight: var(--sketch-font-weight-regular, 400);
+      line-height: var(--sketch-line-height-md, 1.3);
+      border: 1px solid var(--sketch-color-gray-400, #b3b3b3);
+      border-radius: var(--sketch-radius-sm, 4px);
+      background-color: var(--sketch-color-gray-75, #ffffff);
+      color: var(--sketch-color-gray-800, #4b4b4b);
       cursor: pointer;
       appearance: none;
       -webkit-appearance: none;
@@ -405,21 +400,21 @@ export class ChordProgressionCreator extends LitElement {
     }
 
     .native-select:hover {
-      border-color: var(--spectrum-gray-500, #959595);
-      background-color: var(--spectrum-gray-100, #f5f5f5);
+      border-color: var(--sketch-color-gray-500, #959595);
+      background-color: var(--sketch-color-gray-100, #f5f5f5);
     }
 
     .native-select:focus {
       outline: none;
-      border-color: var(--spectrum-blue-900, #0054b6);
-      box-shadow: 0 0 0 1px var(--spectrum-blue-900, #0054b6);
+      border-color: var(--sketch-color-blue-900, #0054b6);
+      box-shadow: 0 0 0 1px var(--sketch-color-blue-900, #0054b6);
     }
 
     .native-select:focus-visible {
-      outline: 2px solid var(--spectrum-focus-indicator-color, #0054b6);
+      outline: 2px solid var(--sketch-color-focus, #0054b6);
       outline-offset: 2px;
     }
-  `;
+  `];
 
   updated(changedProperties: Map<string, any>) {
     super.updated(changedProperties);
@@ -451,12 +446,11 @@ export class ChordProgressionCreator extends LitElement {
         <div class="progression-selector">
           <div class="progression-input-group">
             <!-- Text input for progression name -->
-            <sp-textfield
+            <input type="text" class="sketch-input"
               class="progression-name-input"
               placeholder="Enter progression name..."
               .value=${this.progressionName}
               @input=${(e: Event) => this.progressionName = (e.target as HTMLInputElement).value}>
-            </sp-textfield>
 
             <!-- Dropdown button -->
             <div class="dropdown-container">
@@ -492,21 +486,21 @@ export class ChordProgressionCreator extends LitElement {
 
             <!-- Action buttons (New and Delete) -->
             <div class="action-buttons">
-              <sp-action-button
+              <sketch-button variant="secondary"
                 size="s"
                 @click=${this.createNew}
                 title="Create new progression">
-                <sp-icon-add slot="icon"></sp-icon-add>
+                <sketch-icon slot="icon" name="add"></sketch-icon>
                 New
-              </sp-action-button>
-              <sp-action-button
+              </sketch-button>
+              <sketch-button variant="secondary"
                 size="s"
                 ?disabled=${!this.isEditing}
                 @click=${this.deleteProgression}
                 title=${this.isEditing ? `Delete "${this.selectedProgressionKey}"` : 'Select a progression to delete'}>
-                <sp-icon-delete slot="icon"></sp-icon-delete>
+                <sketch-icon slot="icon" name="delete"></sketch-icon>
                 Delete
-              </sp-action-button>
+              </sketch-button>
             </div>
           </div>
         </div>
@@ -521,12 +515,12 @@ export class ChordProgressionCreator extends LitElement {
                   (chord, index) => html`
                     <div class="chord-chip">
                       ${chord}
-                      <sp-action-button
+                      <sketch-button variant="quiet"
                         size="xs"
                         quiet
                         @click=${() => this.removeChord(index)}>
-                        <sp-icon-close slot="icon"></sp-icon-close>
-                      </sp-action-button>
+                        <sketch-icon slot="icon" name="close"></sketch-icon>
+                      </sketch-button>
                     </div>
                   `
                 )}
@@ -535,19 +529,19 @@ export class ChordProgressionCreator extends LitElement {
 
         <!-- Actions -->
         <div class="actions">
-          <sp-button
+          <sketch-button
             variant="accent"
             ?disabled=${this.isInvalidAccidental()}
             @click=${() => this.addChord(currentChord)}>
             Add ${currentChord}
-          </sp-button>
-          <sp-button variant="secondary" @click=${this.clearAll}>Clear All</sp-button>
-          <sp-button
+          </sketch-button>
+          <sketch-button variant="secondary" @click=${this.clearAll}>Clear All</sketch-button>
+          <sketch-button
             variant="primary"
             ?disabled=${this.progressionName.trim() === '' || this.selectedChords.length === 0}
             @click=${this.saveProgression}>
             ${this.isEditing ? 'Update' : 'Save'} Progression
-          </sp-button>
+          </sketch-button>
         </div>
 
         <!-- Chord Builder -->

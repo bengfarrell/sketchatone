@@ -10,14 +10,14 @@ export const styles = css`
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: var(--spectrum-gray-100);
+    background: var(--sketch-color-gray-100);
   }
 
   .nav-bar {
     padding: 16px 24px;
-    background: var(--spectrum-gray-50);
+    background: var(--sketch-color-gray-50);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--spectrum-gray-300);
+    border-bottom: 1px solid var(--sketch-color-gray-300);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -28,10 +28,10 @@ export const styles = css`
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: var(--spectrum-gray-50);
-    border: 2px solid var(--spectrum-accent-color-900);
+    background: var(--sketch-color-gray-50);
+    border: 2px solid var(--sketch-color-accent-900);
     border-radius: 8px;
-    color: var(--spectrum-accent-color-900);
+    color: var(--sketch-color-accent-900);
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
@@ -39,8 +39,8 @@ export const styles = css`
   }
 
   .back-button:hover {
-    background: var(--spectrum-accent-color-900);
-    color: var(--spectrum-gray-50);
+    background: var(--sketch-color-accent-900);
+    color: var(--sketch-color-gray-50);
   }
 
   .back-arrow {

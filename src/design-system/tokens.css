@@ -1,0 +1,183 @@
+/* Sketchatone design tokens. Light is default; dark overrides via html.dark-theme. */
+
+:root,
+html.light-theme {
+  /* Grayscale */
+  --sketch-color-gray-50: #fafafa;
+  --sketch-color-gray-75: #f5f5f5;
+  --sketch-color-gray-100: #efefef;
+  --sketch-color-gray-200: #e4e4e7;
+  --sketch-color-gray-300: #d4d4d8;
+  --sketch-color-gray-400: #a1a1aa;
+  --sketch-color-gray-500: #71717a;
+  --sketch-color-gray-600: #52525b;
+  --sketch-color-gray-700: #3f3f46;
+  --sketch-color-gray-800: #27272a;
+  --sketch-color-gray-900: #18181b;
+
+  /* Blue (accent) */
+  --sketch-color-blue-100: #dbeafe;
+  --sketch-color-blue-200: #bfdbfe;
+  --sketch-color-blue-300: #93c5fd;
+  --sketch-color-blue-400: #60a5fa;
+  --sketch-color-blue-500: #3b82f6;
+  --sketch-color-blue-600: #2563eb;
+  --sketch-color-blue-700: #1d4ed8;
+  --sketch-color-blue-900: #1e3a8a;
+
+  /* Green (positive) */
+  --sketch-color-green-100: #dcfce7;
+  --sketch-color-green-200: #bbf7d0;
+  --sketch-color-green-500: #22c55e;
+  --sketch-color-green-600: #16a34a;
+  --sketch-color-green-700: #15803d;
+  --sketch-color-green-800: #166534;
+  --sketch-color-green-900: #14532d;
+
+  /* Red (negative) */
+  --sketch-color-red-100: #fee2e2;
+  --sketch-color-red-700: #b91c1c;
+
+  /* Yellow / Orange (notice/warning) */
+  --sketch-color-yellow-100: #fef3c7;
+  --sketch-color-yellow-900: #713f12;
+  --sketch-color-orange-100: #ffedd5;
+  --sketch-color-orange-400: #fb923c;
+
+  /* Indigo, Magenta, Purple (accent variants) */
+  --sketch-color-indigo-200: #c7d2fe;
+  --sketch-color-indigo-900: #312e81;
+  --sketch-color-magenta-200: #fbcfe8;
+  --sketch-color-magenta-900: #831843;
+  --sketch-color-purple-100: #ede9fe;
+  --sketch-color-purple-900: #4c1d95;
+
+  /* Semantic aliases */
+  --sketch-color-focus: var(--sketch-color-blue-500);
+  --sketch-color-accent-100: var(--sketch-color-blue-100);
+  --sketch-color-accent-500: var(--sketch-color-blue-500);
+  --sketch-color-accent-900: var(--sketch-color-blue-900);
+  --sketch-color-notice-bg: var(--sketch-color-yellow-100);
+  --sketch-color-notice-fg: var(--sketch-color-yellow-900);
+  --sketch-color-positive-bg: var(--sketch-color-green-100);
+  --sketch-color-positive-fg: var(--sketch-color-green-900);
+
+  /* Typography */
+  --sketch-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --sketch-font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --sketch-font-size-sm: 12px;
+  --sketch-font-size-md: 14px;
+  --sketch-font-size-lg: 16px;
+  --sketch-font-weight-regular: 400;
+  --sketch-font-weight-medium: 500;
+  --sketch-font-weight-bold: 700;
+  --sketch-line-height-md: 1.5;
+
+  /* Spacing scale */
+  --sketch-spacing-1: 4px;
+  --sketch-spacing-2: 8px;
+  --sketch-spacing-3: 12px;
+  --sketch-spacing-4: 16px;
+  --sketch-spacing-5: 24px;
+  --sketch-spacing-6: 32px;
+
+  /* Radii */
+  --sketch-radius-sm: 4px;
+  --sketch-radius-md: 6px;
+  --sketch-radius-lg: 8px;
+  --sketch-radius-full: 9999px;
+
+  /* Control sizing */
+  --sketch-control-height-sm: 24px;
+  --sketch-control-height-md: 32px;
+  --sketch-control-height-lg: 40px;
+  --sketch-control-edge-padding: 8px;
+
+  /* Spectrum compatibility aliases — required by third-party deps (blankslate) */
+  --spectrum-white: #ffffff;
+  --spectrum-gray-50: var(--sketch-color-gray-50);
+  --spectrum-gray-75: var(--sketch-color-gray-75);
+  --spectrum-gray-100: var(--sketch-color-gray-100);
+  --spectrum-gray-200: var(--sketch-color-gray-200);
+  --spectrum-gray-300: var(--sketch-color-gray-300);
+  --spectrum-gray-400: var(--sketch-color-gray-400);
+  --spectrum-gray-500: var(--sketch-color-gray-500);
+  --spectrum-gray-600: var(--sketch-color-gray-600);
+  --spectrum-gray-700: var(--sketch-color-gray-700);
+  --spectrum-gray-800: var(--sketch-color-gray-800);
+  --spectrum-gray-900: var(--sketch-color-gray-900);
+  --spectrum-orange-200: var(--sketch-color-orange-100);
+  --spectrum-accent-color-900: var(--sketch-color-blue-600);
+  --spectrum-accent-color-1000: var(--sketch-color-blue-700);
+  --spectrum-accent-color-1100: var(--sketch-color-blue-900);
+  --spectrum-positive-color-200: var(--sketch-color-green-200);
+  --spectrum-positive-color-400: var(--sketch-color-green-500);
+  --spectrum-positive-color-900: var(--sketch-color-green-700);
+  --spectrum-positive-color-1000: var(--sketch-color-green-900);
+  --spectrum-positive-background-color-default: var(--sketch-color-green-100);
+  --spectrum-negative-color-400: var(--sketch-color-red-700);
+  --spectrum-negative-color-900: var(--sketch-color-red-700);
+  --spectrum-negative-color-1000: var(--sketch-color-red-700);
+  --spectrum-negative-background-color-default: var(--sketch-color-red-100);
+  --spectrum-notice-color-400: var(--sketch-color-orange-400);
+  --spectrum-notice-color-800: var(--sketch-color-yellow-900);
+  --spectrum-notice-color-900: var(--sketch-color-yellow-900);
+  --spectrum-notice-color-1000: var(--sketch-color-yellow-900);
+  --spectrum-notice-background-color-default: var(--sketch-color-yellow-100);
+  --spectrum-notice-content-color-default: var(--sketch-color-yellow-900);
+  --spectrum-informative-color-900: var(--sketch-color-blue-700);
+  --spectrum-informative-color-1000: var(--sketch-color-blue-900);
+  --spectrum-informative-background-color-default: var(--sketch-color-blue-100);
+}
+
+html.dark-theme {
+  /* Grayscale (inverted) */
+  --sketch-color-gray-50: #18181b;
+  --sketch-color-gray-75: #1f1f23;
+  --sketch-color-gray-100: #27272a;
+  --sketch-color-gray-200: #2e2e33;
+  --sketch-color-gray-300: #3f3f46;
+  --sketch-color-gray-400: #52525b;
+  --sketch-color-gray-500: #71717a;
+  --sketch-color-gray-600: #a1a1aa;
+  --sketch-color-gray-700: #d4d4d8;
+  --sketch-color-gray-800: #e4e4e7;
+  --sketch-color-gray-900: #fafafa;
+
+  /* Blues stay close to brand but slightly muted */
+  --sketch-color-blue-100: #1e3a8a;
+  --sketch-color-blue-200: #1e40af;
+  --sketch-color-blue-300: #1d4ed8;
+  --sketch-color-blue-400: #2563eb;
+  --sketch-color-blue-500: #3b82f6;
+  --sketch-color-blue-600: #60a5fa;
+  --sketch-color-blue-700: #93c5fd;
+  --sketch-color-blue-900: #dbeafe;
+
+  /* Greens */
+  --sketch-color-green-100: #14532d;
+  --sketch-color-green-200: #166534;
+  --sketch-color-green-500: #22c55e;
+  --sketch-color-green-600: #4ade80;
+  --sketch-color-green-700: #86efac;
+  --sketch-color-green-800: #bbf7d0;
+  --sketch-color-green-900: #dcfce7;
+
+  /* Reds */
+  --sketch-color-red-100: #7f1d1d;
+  --sketch-color-red-700: #fca5a5;
+
+  /* Yellows / Oranges */
+  --sketch-color-yellow-100: #713f12;
+  --sketch-color-yellow-900: #fef3c7;
+  --sketch-color-orange-100: #7c2d12;
+  --sketch-color-orange-400: #fb923c;
+
+  /* Indigo, Magenta, Purple */
+  --sketch-color-indigo-200: #3730a3;
+  --sketch-color-indigo-900: #e0e7ff;
+  --sketch-color-magenta-200: #9d174d;
+  --sketch-color-magenta-900: #fce7f3;
+  --sketch-color-purple-100: #4c1d95;
+  --sketch-color-purple-900: #ede9fe;
+}

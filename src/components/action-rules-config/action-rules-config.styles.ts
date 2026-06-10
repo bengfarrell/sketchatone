@@ -32,9 +32,9 @@ export const styles = css`
 
   /* Unified panel container */
   .panel {
-    background: var(--spectrum-gray-100);
+    background: var(--sketch-color-gray-100);
     border-radius: 12px;
-    border: 1px solid var(--spectrum-gray-200);
+    border: 1px solid var(--sketch-color-gray-200);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -43,7 +43,7 @@ export const styles = css`
   }
 
   .panel:hover {
-    border-color: var(--spectrum-gray-300);
+    border-color: var(--sketch-color-gray-300);
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
   }
 
@@ -52,13 +52,13 @@ export const styles = css`
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: var(--spectrum-gray-200);
-    border-bottom: 1px solid var(--spectrum-gray-300);
+    background: var(--sketch-color-gray-200);
+    border-bottom: 1px solid var(--sketch-color-gray-300);
   }
 
   .section-title {
     font-weight: 600;
-    color: var(--spectrum-gray-900);
+    color: var(--sketch-color-gray-900);
     font-size: 0.9em;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -74,10 +74,16 @@ export const styles = css`
 
   .rule-item {
     display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--sketch-color-gray-200);
+  }
+
+  .rule-top-row {
+    display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--spectrum-gray-200);
   }
 
   .rule-item:last-child {
@@ -85,7 +91,7 @@ export const styles = css`
   }
 
   .rule-item:hover {
-    background: var(--spectrum-gray-100);
+    background: var(--sketch-color-gray-100);
   }
 
   /* Status dot for triggered actions */
@@ -93,14 +99,14 @@ export const styles = css`
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--spectrum-gray-300);
+    background: var(--sketch-color-gray-300);
     flex-shrink: 0;
     transition: background-color 0.3s ease, box-shadow 0.3s ease, opacity 1s ease;
   }
 
   .status-dot.active {
-    background: var(--spectrum-green-500);
-    box-shadow: 0 0 6px var(--spectrum-green-500);
+    background: var(--sketch-color-green-500);
+    box-shadow: 0 0 6px var(--sketch-color-green-500);
   }
 
   .status-dot.permanent {
@@ -111,26 +117,37 @@ export const styles = css`
   .rule-button-id {
     min-width: 80px;
     font-weight: 500;
-    color: var(--spectrum-gray-900);
+    color: var(--sketch-color-gray-900);
     font-size: 0.85em;
   }
 
   .rule-arrow {
-    color: var(--spectrum-gray-500);
+    color: var(--sketch-color-gray-500);
   }
 
   .rule-action {
+    color: var(--sketch-color-gray-700);
+    font-size: 0.7em;
+    line-height: 1.2;
+    word-break: break-word;
+    padding-left: 6px;
+  }
+
+  .rule-top-row .rule-actions {
+    margin-left: auto;
+  }
+
+  .rule-top-row .rule-button-id {
     flex: 1;
-    color: var(--spectrum-gray-800);
-    font-size: 0.85em;
+    min-width: 0;
   }
 
   .rule-trigger {
     padding: 2px 8px;
-    background: var(--spectrum-gray-200);
+    background: var(--sketch-color-gray-200);
     border-radius: 4px;
     font-size: 0.75em;
-    color: var(--spectrum-gray-700);
+    color: var(--sketch-color-gray-700);
   }
 
   .rule-type-badge {
@@ -144,24 +161,27 @@ export const styles = css`
   }
 
   .rule-type-badge.button {
-    background: var(--spectrum-blue-100);
-    color: var(--spectrum-blue-900);
+    background: var(--sketch-color-blue-100);
+    color: var(--sketch-color-blue-900);
   }
 
   .rule-type-badge.group {
-    background: var(--spectrum-purple-100);
-    color: var(--spectrum-purple-900);
+    background: var(--sketch-color-purple-100);
+    color: var(--sketch-color-purple-900);
   }
 
   .rule-type-badge.startup {
-    background: var(--spectrum-yellow-100);
-    color: var(--spectrum-yellow-900);
+    background: var(--sketch-color-yellow-100);
+    color: var(--sketch-color-yellow-900);
   }
 
   .rule-name {
-    color: var(--spectrum-gray-600);
-    font-size: 0.8em;
+    color: var(--sketch-color-gray-600);
+    font-size: 0.65em;
+    line-height: 1.2;
     font-style: italic;
+    word-break: break-word;
+    padding-left: 6px;
   }
 
   .rule-actions {
@@ -175,7 +195,7 @@ export const styles = css`
     flex-direction: column;
     gap: 8px;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--spectrum-gray-200);
+    border-bottom: 1px solid var(--sketch-color-gray-200);
   }
 
   .group-item:last-child {
@@ -183,7 +203,7 @@ export const styles = css`
   }
 
   .group-item:hover {
-    background: var(--spectrum-gray-100);
+    background: var(--sketch-color-gray-100);
   }
 
   .group-header {
@@ -194,14 +214,14 @@ export const styles = css`
 
   .group-name {
     font-weight: 600;
-    color: var(--spectrum-gray-900);
+    color: var(--sketch-color-gray-900);
     font-size: 0.9em;
   }
 
   .group-details {
     display: flex;
     gap: 16px;
-    color: var(--spectrum-gray-700);
+    color: var(--sketch-color-gray-700);
     font-size: 0.85em;
   }
 
@@ -213,91 +233,102 @@ export const styles = css`
 
   .button-chip {
     padding: 4px 10px;
-    background: var(--spectrum-gray-200);
+    background: var(--sketch-color-gray-200);
     border-radius: 4px;
     font-size: 0.8em;
-    color: var(--spectrum-gray-800);
+    color: var(--sketch-color-gray-800);
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }
 
   /* Legacy class for backwards compatibility (used in group list display) */
   .button-chip.pressed {
-    background: var(--spectrum-blue-400);
+    background: var(--sketch-color-blue-400);
     color: white;
   }
 
   /* Selected state (button is in the group) */
   .button-chip.selected {
-    background: var(--spectrum-blue-400);
+    background: var(--sketch-color-blue-400);
     color: white;
   }
 
   /* Detected state (button is currently pressed on device) */
   .button-chip.detected {
-    background: var(--spectrum-orange-400);
+    background: var(--sketch-color-orange-400);
     color: white;
-    box-shadow: 0 0 8px var(--spectrum-orange-400);
+    box-shadow: 0 0 8px var(--sketch-color-orange-400);
   }
 
   /* Both selected and detected */
   .button-chip.selected.detected {
-    background: var(--spectrum-green-500);
+    background: var(--sketch-color-green-500);
     color: white;
-    box-shadow: 0 0 8px var(--spectrum-green-500);
+    box-shadow: 0 0 8px var(--sketch-color-green-500);
   }
 
   .startup-icon {
-    color: var(--spectrum-gray-600);
+    color: var(--sketch-color-gray-600);
   }
 
   .empty-state {
     padding: 24px 16px;
     text-align: center;
-    color: var(--spectrum-gray-600);
+    color: var(--sketch-color-gray-600);
     font-style: italic;
     font-size: 0.9em;
   }
 
-  /* Add/Edit Form Styles */
-  .form-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+  /* Add/Edit Form Styles (inline view, not modal) */
+  .form-view {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    /* Use z-index below Spectrum's overlay base (1000) so picker dropdowns appear above */
-    z-index: 999;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
   }
 
-  .form-dialog {
-    background: var(--spectrum-gray-100);
-    border-radius: 12px;
-    padding: 24px;
-    min-width: 400px;
-    max-width: 500px;
-    max-height: 80vh;
+  .form-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--sketch-color-gray-200);
+    flex-shrink: 0;
+  }
+
+  .form-body {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    /* Prevent scroll events from interfering with picker dropdowns */
     overscroll-behavior: contain;
+    padding: 0 16px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 16px;
+    align-content: start;
+  }
+
+  .form-body .form-actions {
+    grid-column: 1 / -1;
   }
 
   .form-title {
-    font-size: 1.1em;
+    font-size: 1em;
     font-weight: 600;
-    margin-bottom: 20px;
-    color: var(--spectrum-gray-900);
+    color: var(--sketch-color-gray-900);
   }
 
   .form-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 16px;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+
+  .form-field label.sketch-label {
+    margin: 0;
+    padding-bottom: 0;
+    line-height: 1.1;
+    min-height: 0;
   }
 
   .form-row {
@@ -331,11 +362,11 @@ export const styles = css`
     50% { opacity: 0.5; }
   }
 
-  sp-picker, sp-textfield, sp-number-field {
+  input.sketch-input, input.sketch-input {
     width: 100%;
   }
 
-  sp-action-button {
+  sketch-button {
     --spectrum-actionbutton-m-min-width: 28px;
   }
 
@@ -343,17 +374,17 @@ export const styles = css`
   .native-select {
     width: 100%;
     box-sizing: border-box;
-    height: var(--spectrum-component-height-100, 32px);
-    padding-inline-start: var(--spectrum-component-edge-to-text-100, 12px);
+    height: var(--sketch-control-height-md, 32px);
+    padding-inline-start: var(--sketch-spacing-2, 12px);
     padding-inline-end: 28px; /* Space for dropdown arrow */
-    font-family: var(--spectrum-sans-font-family-stack, adobe-clean, 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-    font-size: var(--spectrum-font-size-100, 14px);
-    font-weight: var(--spectrum-regular-font-weight, 400);
-    line-height: var(--spectrum-line-height-100, 1.3);
-    border: 1px solid var(--spectrum-gray-400, #b3b3b3);
-    border-radius: var(--spectrum-corner-radius-100, 4px);
-    background-color: var(--spectrum-gray-75, #ffffff);
-    color: var(--spectrum-gray-800, #4b4b4b);
+    font-family: var(--sketch-font-sans, adobe-clean, 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-size: var(--sketch-font-size-md, 14px);
+    font-weight: var(--sketch-font-weight-regular, 400);
+    line-height: var(--sketch-line-height-md, 1.3);
+    border: 1px solid var(--sketch-color-gray-400, #b3b3b3);
+    border-radius: var(--sketch-radius-sm, 4px);
+    background-color: var(--sketch-color-gray-75, #ffffff);
+    color: var(--sketch-color-gray-800, #4b4b4b);
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
@@ -365,33 +396,33 @@ export const styles = css`
   }
 
   .native-select:hover {
-    border-color: var(--spectrum-gray-500, #959595);
-    background-color: var(--spectrum-gray-100, #f5f5f5);
+    border-color: var(--sketch-color-gray-500, #959595);
+    background-color: var(--sketch-color-gray-100, #f5f5f5);
   }
 
   .native-select:focus {
     outline: none;
-    border-color: var(--spectrum-blue-900, #0054b6);
-    box-shadow: 0 0 0 1px var(--spectrum-blue-900, #0054b6);
+    border-color: var(--sketch-color-blue-900, #0054b6);
+    box-shadow: 0 0 0 1px var(--sketch-color-blue-900, #0054b6);
   }
 
   .native-select:focus-visible {
-    outline: 2px solid var(--spectrum-focus-indicator-color, #0054b6);
+    outline: 2px solid var(--sketch-color-focus, #0054b6);
     outline-offset: 2px;
   }
 
   /* Dark mode support */
   @media (prefers-color-scheme: dark) {
     .native-select {
-      background-color: var(--spectrum-gray-100, #323232);
-      border-color: var(--spectrum-gray-400, #5c5c5c);
-      color: var(--spectrum-gray-800, #e1e1e1);
+      background-color: var(--sketch-color-gray-100, #323232);
+      border-color: var(--sketch-color-gray-400, #5c5c5c);
+      color: var(--sketch-color-gray-800, #e1e1e1);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23b3b3b3' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
     }
 
     .native-select:hover {
-      background-color: var(--spectrum-gray-200, #3e3e3e);
-      border-color: var(--spectrum-gray-500, #6e6e6e);
+      background-color: var(--sketch-color-gray-200, #3e3e3e);
+      border-color: var(--sketch-color-gray-500, #6e6e6e);
     }
   }
 `;

@@ -5,24 +5,14 @@
 
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-button.js';
+import '../../design-system/components/sketch-icon.js';
+import '../../design-system/components/sketch-switch.js';
 import { styles } from './sketchatone-dashboard.styles.js';
 
 // Spectrum components
-import '@spectrum-web-components/button/sp-button.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '@spectrum-web-components/textfield/sp-textfield.js';
-import '@spectrum-web-components/picker/sp-picker.js';
-import '@spectrum-web-components/menu/sp-menu-item.js';
-import '@spectrum-web-components/menu/sp-menu-divider.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-link.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-link-off.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-light.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-moon.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-edit.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-folder-open.js';
-import '@spectrum-web-components/switch/sp-switch.js';
-import '@spectrum-web-components/dialog/sp-dialog.js';
-import '@spectrum-web-components/dialog/sp-dialog-wrapper.js';
+import '../../design-system/components/sketch-dialog.js';
 
 // Blankslate visualizer components
 import 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
@@ -38,7 +28,6 @@ import '../strum-visualizers/strum-events-display.js';
 import '../action-rules-config/action-rules-config.js';
 import { ActionRulesConfigComponent } from '../action-rules-config/action-rules-config.js';
 import { ActionRulesConfig, type ButtonId } from '../../models/action-rules.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-add.js';
 
 // MIDI devices config component
 import '../midi-devices-config/midi-devices-config.js';
@@ -52,7 +41,9 @@ import '../chord-progression-creator/chord-progression-creator.js';
 // Panel visibility management
 import './panel-toggle-bar.js';
 import {
+  PANELS,
   type PanelId,
+  type PanelInfo,
   type PanelVisibility,
   loadPanelVisibility,
   savePanelVisibility
@@ -73,6 +64,7 @@ import {
   type ServerMidiDevices,
   type ServerActionEvent,
 } from '../../utils/strummer-websocket-client.js';
+import { MockStrummerClient } from '../../utils/mock-strummer-client.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
@@ -87,7 +79,7 @@ import { sharedTabletInteraction } from '../../controllers/index.js';
  */
 @customElement('sketchatone-dashboard')
 export class SketchatoneDashboard extends LitElement {
-  static styles = styles;
+  static styles = [formStyles, styles];
 
   @property({ type: String, attribute: 'app-title' })
   appTitle = 'Sketchatone Dashboard';
@@ -166,6 +158,16 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private panelVisibility: PanelVisibility = loadPanelVisibility();
 
+  // Compact (single-panel) mode for small screens (e.g. 800x480 Pi displays)
+  private isCompactMode = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('compact') === '1';
+
+  @state()
+  private currentPanelId: PanelId = PANELS[0].id;
+
+  @state()
+  private compactSettingsOpen = false;
+
   // Server MIDI input state (from Node.js server)
   @state()
   private serverMidiConnected = false;
@@ -201,6 +203,13 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private triggeredActions: Map<string, number> = new Map();
 
+  // Form state for the Actions/Groups panels (drives the panel header swap)
+  @state()
+  private actionsFormState: { open: boolean; title: string } = { open: false, title: '' };
+
+  @state()
+  private groupsFormState: { open: boolean; title: string } = { open: false, title: '' };
+
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
 
@@ -215,15 +224,20 @@ export class SketchatoneDashboard extends LitElement {
 
   // WebSocket client instance
   private client: StrummerWebSocketClient;
+  private isMockMode = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('mock') === '1';
 
   constructor() {
     super();
-    this.client = new StrummerWebSocketClient();
+    this.client = this.isMockMode ? new MockStrummerClient() : new StrummerWebSocketClient();
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.setupClient();
+    if (this.isMockMode) {
+      this.client.connect();
+    }
   }
 
   disconnectedCallback() {
@@ -423,15 +437,20 @@ export class SketchatoneDashboard extends LitElement {
   private renderConnectionStatus() {
     if (this.websocketConnected) {
       // Connected state
+      const label = this.isMockMode
+        ? `Mock${this.websocketServerInfo ? ` · ${this.websocketServerInfo}` : ''}`
+        : (this.websocketServerInfo || 'Connected');
       return html`
         <div class="connection-group">
           <div class="status-badge connected">
             <span class="status-dot"></span>
-            ${this.websocketServerInfo || 'Connected'}
+            ${label}
           </div>
-          <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" @click=${this.disconnectWebSocket}>
-            Disconnect
-          </sp-button>
+          ${this.isMockMode ? '' : html`
+            <sketch-button size="s" variant="secondary" @click=${this.disconnectWebSocket}>
+              Disconnect
+            </sketch-button>
+          `}
         </div>
       `;
     }
@@ -439,17 +458,16 @@ export class SketchatoneDashboard extends LitElement {
     // Disconnected state - show URL input and Connect button
     return html`
       <div class="connection-group">
-        <sp-textfield
-          data-spectrum-pattern="textfield-s"
+        <input type="text" class="sketch-input"
+
           size="s"
           placeholder="ws://localhost:8081"
-          value=${this.websocketUrl}
+          .value=${this.websocketUrl}
           @input=${this.handleWebSocketUrlChange}
           style="width: 250px;">
-        </sp-textfield>
-        <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" @click=${this.connectWebSocket}>
+        <sketch-button size="s" variant="primary" @click=${this.connectWebSocket}>
           Connect
-        </sp-button>
+        </sketch-button>
       </div>
     `;
   }
@@ -460,48 +478,42 @@ export class SketchatoneDashboard extends LitElement {
   private renderConfigDialogs() {
     return html`
       ${this.showNewConfigDialog ? html`
-        <sp-dialog-wrapper
+        <sketch-dialog
           headline="New Configuration"
           dismissable
           underlay
-          open
           @close=${() => this.showNewConfigDialog = false}>
           <div style="padding: 16px;">
-            <sp-textfield
-              label="Config Name"
+            <input type="text" class="sketch-input"
               placeholder="my-config"
-              value=${this.newConfigName}
+              .value=${this.newConfigName}
               @input=${(e: Event) => this.newConfigName = (e.target as HTMLInputElement).value}
               @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleCreateConfig(); }}>
-            </sp-textfield>
             <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
-              <sp-button variant="secondary" @click=${() => this.showNewConfigDialog = false}>Cancel</sp-button>
-              <sp-button variant="primary" @click=${this.handleCreateConfig} ?disabled=${!this.newConfigName.trim()}>Create</sp-button>
+              <sketch-button variant="secondary" @click=${() => this.showNewConfigDialog = false}>Cancel</sketch-button>
+              <sketch-button variant="primary" @click=${this.handleCreateConfig} ?disabled=${!this.newConfigName.trim()}>Create</sketch-button>
             </div>
           </div>
-        </sp-dialog-wrapper>
+        </sketch-dialog>
       ` : ''}
       ${this.showRenameConfigDialog ? html`
-        <sp-dialog-wrapper
+        <sketch-dialog
           headline="Rename Configuration"
           dismissable
           underlay
-          open
           @close=${() => this.showRenameConfigDialog = false}>
           <div style="padding: 16px;">
-            <sp-textfield
-              label="New Name"
+            <input type="text" class="sketch-input"
               placeholder="my-config"
-              value=${this.newConfigName}
+              .value=${this.newConfigName}
               @input=${(e: Event) => this.newConfigName = (e.target as HTMLInputElement).value}
               @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleRenameConfig(); }}>
-            </sp-textfield>
             <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
-              <sp-button variant="secondary" @click=${() => this.showRenameConfigDialog = false}>Cancel</sp-button>
-              <sp-button variant="primary" @click=${this.handleRenameConfig} ?disabled=${!this.newConfigName.trim()}>Rename</sp-button>
+              <sketch-button variant="secondary" @click=${() => this.showRenameConfigDialog = false}>Cancel</sketch-button>
+              <sketch-button variant="primary" @click=${this.handleRenameConfig} ?disabled=${!this.newConfigName.trim()}>Rename</sketch-button>
             </div>
           </div>
-        </sp-dialog-wrapper>
+        </sketch-dialog>
       ` : ''}
     `;
   }
@@ -788,6 +800,111 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
+   * Format an ActionDefinition into a short string for display.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private formatActionDef(action: any): string {
+    if (!action || action === 'none') return 'None';
+    if (typeof action === 'string') return action;
+    if (Array.isArray(action)) {
+      const [name, ...params] = action;
+      if (params.length > 0) return `${name}(${params.join(', ')})`;
+      return String(name);
+    }
+    return String(action);
+  }
+
+  /**
+   * Build mappings for the Performance panel, split into stylus buttons
+   * (shown in a row across the top) and numbered tablet buttons (shown in
+   * a 2-column grid). Chord-progression group rules are expanded into one
+   * entry per button so each button-to-chord assignment is visible.
+   */
+  private getConfiguredButtonMappings(): {
+    stylus: Array<{ kind: 'primary' | 'secondary'; action: string; active: boolean }>;
+    buttons: Array<{ buttonNum: number; action: string; active: boolean }>;
+  } {
+    const cfg = this.getActionRulesConfig();
+    const stylus: Array<{ kind: 'primary' | 'secondary'; action: string; active: boolean }> = [];
+    const buttons: Array<{ buttonNum: number; action: string; active: boolean }> = [];
+    if (!cfg) return { stylus, buttons };
+    const pressed = this.getPressedButtonIds();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const progressions: Record<string, string[]> = (this.fullConfig as any)?.strummer?.chordProgressions ?? {};
+
+    const push = (button: ButtonId, action: string) => {
+      const id = button.replace('button:', '');
+      const active = pressed.has(button);
+      if (id === 'primary' || id === 'secondary') {
+        stylus.push({ kind: id, action, active });
+      } else {
+        const num = parseInt(id, 10);
+        if (!isNaN(num)) buttons.push({ buttonNum: num, action, active });
+      }
+    };
+
+    for (const rule of cfg.rules) {
+      push(rule.button, this.formatActionDef(rule.action));
+    }
+
+    for (const groupRule of cfg.groupRules) {
+      const group = cfg.groups.find((g) => g.id === groupRule.groupId);
+      if (!group) continue;
+      if (groupRule.action.type === 'chord-progression') {
+        const chords = progressions[groupRule.action.progression] ?? [];
+        for (let i = 0; i < group.buttons.length; i++) {
+          push(group.buttons[i], chords[i] ?? '–');
+        }
+      } else {
+        for (const btn of group.buttons) {
+          push(btn, groupRule.action.progression);
+        }
+      }
+    }
+
+    buttons.sort((a, b) => a.buttonNum - b.buttonNum);
+    return { stylus, buttons };
+  }
+
+  /**
+   * Render a compact strip of strings for the Performance panel.
+   * Uses CSS positioning (not SVG) so labels and the indicator stay crisp
+   * regardless of panel width. Ignores Y; the pen indicator tracks only X.
+   */
+  private renderPerformanceStrip(hasActiveConnection: boolean) {
+    const notes = this.strummerConfig?.notes ?? [];
+    const stringCount = notes.length;
+    if (stringCount === 0) {
+      return html`<div class="performance-strip-empty">No strings configured</div>`;
+    }
+    const lastPlucked = this.getLastPluckedStringIndex();
+    const penInRange = hasActiveConnection && (this.tabletData.x > 0 || this.tabletData.y > 0);
+    const isContact = this.tabletData.pressure > 0;
+    const dotLeft = `${(this.tabletData.x * 100).toFixed(2)}%`;
+    const dotOpacity = isContact ? Math.max(0.4, this.tabletData.pressure) : 0.6;
+    return html`
+      <div class="ps-container">
+        ${Array.from({ length: stringCount }, (_, i) => {
+          const leftPct = ((i + 1) / (stringCount + 1)) * 100;
+          const note = notes[i];
+          const label = note ? `${note.notation}${note.octave}` : '';
+          const plucked = lastPlucked === i;
+          return html`
+            <div class="ps-string ${plucked ? 'plucked' : ''}" style="left: ${leftPct}%"></div>
+            ${label ? html`
+              <div class="ps-label ${plucked ? 'plucked' : ''}" style="left: ${leftPct}%">${label}</div>
+            ` : ''}
+          `;
+        })}
+        ${penInRange ? html`
+          <div class="ps-indicator ${isContact ? 'contact' : 'hover'}"
+            style="left: ${dotLeft}; opacity: ${dotOpacity}"></div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  /**
    * Convert pressed buttons (Set<number>) to ButtonId format (Set<ButtonId>)
    */
   private getPressedButtonIds(): Set<ButtonId> {
@@ -824,11 +941,63 @@ export class SketchatoneDashboard extends LitElement {
 
 
 
+  /**
+   * Compute the list of panels eligible for compact-mode navigation
+   * (only ones the user has left visible in the toggle bar).
+   */
+  private getVisiblePanels(): PanelInfo[] {
+    return PANELS.filter(p => this.panelVisibility[p.id]);
+  }
+
+  private handlePrevPanel() {
+    const visible = this.getVisiblePanels();
+    if (visible.length === 0) return;
+    const idx = visible.findIndex(p => p.id === this.currentPanelId);
+    const prev = visible[(idx - 1 + visible.length) % visible.length];
+    this.currentPanelId = prev.id;
+  }
+
+  private handleNextPanel() {
+    const visible = this.getVisiblePanels();
+    if (visible.length === 0) return;
+    const idx = visible.findIndex(p => p.id === this.currentPanelId);
+    const next = visible[(idx + 1) % visible.length];
+    this.currentPanelId = next.id;
+  }
+
+  private handleSelectPanel(id: PanelId) {
+    this.currentPanelId = id;
+  }
+
+  private toggleCompactSettings() {
+    this.compactSettingsOpen = !this.compactSettingsOpen;
+  }
+
+  private handleCompactPanelToggle(panelId: PanelId, visible: boolean) {
+    this.panelVisibility = { ...this.panelVisibility, [panelId]: visible };
+    savePanelVisibility(this.panelVisibility);
+  }
+
   render() {
     const hasActiveConnection = this.websocketConnected;
+    const compact = this.isCompactMode;
+    // In compact mode, render only the current panel; otherwise honor user toggles.
+    const visiblePanels = this.getVisiblePanels();
+    if (compact && visiblePanels.length > 0 && !visiblePanels.some(p => p.id === this.currentPanelId)) {
+      this.currentPanelId = visiblePanels[0].id;
+    }
+    const vis: PanelVisibility = compact
+      ? PANELS.reduce((acc, p) => {
+          acc[p.id] = this.panelVisibility[p.id] && p.id === this.currentPanelId;
+          return acc;
+        }, {} as PanelVisibility)
+      : this.panelVisibility;
+    // Hide the full header in compact mode once connected, to free vertical space.
+    const showHeader = !compact || !hasActiveConnection;
 
     return html`
-      <div class="dashboard">
+      <div class="dashboard ${compact ? 'compact' : ''}">
+        ${showHeader ? html`
         <!-- Header -->
         <div class="dashboard-header">
           <div class="header-logo-container">
@@ -881,15 +1050,15 @@ export class SketchatoneDashboard extends LitElement {
           <div class="header-content">
             <div class="header-row">
               <div class="header-controls">
-                <sp-action-button
-                  data-spectrum-pattern="action-button-quiet"
+                <sketch-button variant="quiet"
+
                   quiet
                   @click=${this.handleThemeToggle}
                   aria-label=${this.themeColor === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
                   ${this.themeColor === 'light'
-                    ? html`<sp-icon-moon slot="icon"></sp-icon-moon>`
-                    : html`<sp-icon-light slot="icon"></sp-icon-light>`}
-                </sp-action-button>
+                    ? html`<sketch-icon slot="icon" name="moon"></sketch-icon>`
+                    : html`<sketch-icon slot="icon" name="light"></sketch-icon>`}
+                </sketch-button>
               </div>
             </div>
             <div class="connection-row">
@@ -902,33 +1071,32 @@ export class SketchatoneDashboard extends LitElement {
             <div class="config-row">
               <div class="config-management-group">
                 ${this.availableConfigs.length > 0 ? html`
-                  <sp-picker
+                  <select class="sketch-select"
                     size="s"
-                    label="Config"
-                    value=${this.currentConfigName ?? ''}
+                    .value=${this.currentConfigName ?? ''}
                     ?disabled=${!this.websocketConnected}
                     @change=${(e: Event) => this.handleLoadConfig((e.target as HTMLSelectElement).value)}>
                     ${this.availableConfigs.map(config => html`
-                      <sp-menu-item value=${config} ?selected=${config === this.currentConfigName}>${config}</sp-menu-item>
+                      <option value=${config} ?selected=${config === this.currentConfigName}>${config}</option>
                     `)}
-                  </sp-picker>
+                  </select>
                 ` : ''}
-                <sp-button data-spectrum-pattern="button-primary-s" size="s" variant="primary" ?disabled=${!this.websocketConnected || !this.hasUnsavedChanges} @click=${this.handleSaveConfig}>
+                <sketch-button size="s" variant="primary" ?disabled=${!this.websocketConnected || !this.hasUnsavedChanges} @click=${this.handleSaveConfig}>
                   Save
-                </sp-button>
-                <sp-action-button size="s" quiet ?disabled=${!this.websocketConnected} @click=${() => { this.newConfigName = ''; this.showNewConfigDialog = true; }} title="New Config">
-                  <sp-icon-add slot="icon"></sp-icon-add>
-                </sp-action-button>
-                <sp-action-button size="s" quiet ?disabled=${!this.websocketConnected || !this.currentConfigName} @click=${() => { this.newConfigName = this.currentConfigName?.replace(/\.json$/i, '') ?? ''; this.showRenameConfigDialog = true; }} title="Rename Config">
-                  <sp-icon-edit slot="icon"></sp-icon-edit>
-                </sp-action-button>
+                </sketch-button>
+                <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected} @click=${() => { this.newConfigName = ''; this.showNewConfigDialog = true; }} title="New Config">
+                  <sketch-icon slot="icon" name="add"></sketch-icon>
+                </sketch-button>
+                <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected || !this.currentConfigName} @click=${() => { this.newConfigName = this.currentConfigName?.replace(/\.json$/i, '') ?? ''; this.showRenameConfigDialog = true; }} title="Rename Config">
+                  <sketch-icon slot="icon" name="edit"></sketch-icon>
+                </sketch-button>
                 <input type="file" accept=".json" id="config-upload-input" style="display: none" @change=${this.handleConfigUpload}>
-                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.websocketConnected} @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#config-upload-input')?.click()}>
+                <sketch-button size="s" variant="secondary" ?disabled=${!this.websocketConnected} @click=${() => this.shadowRoot?.querySelector<HTMLInputElement>('#config-upload-input')?.click()}>
                   Import
-                </sp-button>
-                <sp-button data-spectrum-pattern="button-secondary-s" size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleExportConfig}>
+                </sketch-button>
+                <sketch-button size="s" variant="secondary" ?disabled=${!this.fullConfig} @click=${this.handleExportConfig}>
                   Export
-                </sp-button>
+                </sketch-button>
               </div>
             </div>
             ${this.renderConfigDialogs()}
@@ -938,22 +1106,107 @@ export class SketchatoneDashboard extends LitElement {
             </div>
           </div>
         </div>
+        ` : ''}
 
         ${!hasActiveConnection ? html`
           <div class="disconnected-message">
             <p>Connect to a WebSocket server to view strummer data</p>
           </div>
         ` : html`
-        <!-- Panel Toggle Bar -->
-        <panel-toggle-bar
-          .visibility=${this.panelVisibility}
-          @panel-toggle=${this.handlePanelToggle}>
-        </panel-toggle-bar>
+        ${compact ? html`
+          <!-- Compact panel navigation -->
+          <div class="compact-nav-row">
+            <nav class="compact-nav" aria-label="Panel navigation">
+              ${visiblePanels.map(p => html`
+                <button
+                  class="compact-nav-item ${p.id === this.currentPanelId ? 'active' : ''}"
+                  @click=${() => this.handleSelectPanel(p.id)}
+                  title=${p.label}>
+                  <span class="compact-nav-label">${p.label}</span>
+                </button>
+              `)}
+            </nav>
+            <button class="compact-settings-btn ${this.compactSettingsOpen ? 'active' : ''}"
+              aria-label="Panel settings"
+              aria-expanded=${this.compactSettingsOpen}
+              @click=${this.toggleCompactSettings}>⚙</button>
+            ${this.compactSettingsOpen ? html`
+              <div class="compact-settings-backdrop" @click=${this.toggleCompactSettings}></div>
+              <div class="compact-settings-popover" role="menu">
+                <div class="compact-settings-header">Show panels</div>
+                ${PANELS.map(p => html`
+                  <label class="compact-settings-item">
+                    <input type="checkbox"
+                      .checked=${this.panelVisibility[p.id]}
+                      @change=${(e: Event) => this.handleCompactPanelToggle(p.id, (e.target as HTMLInputElement).checked)}>
+                    <span>${p.label}</span>
+                  </label>
+                `)}
+              </div>
+            ` : ''}
+          </div>
+        ` : html`
+          <!-- Panel Toggle Bar -->
+          <panel-toggle-bar
+            .visibility=${this.panelVisibility}
+            @panel-toggle=${this.handlePanelToggle}>
+          </panel-toggle-bar>
+        `}
 
         <!-- All Panels Grid -->
-        <div class="panels-grid">
+        <div class="panels-grid ${compact ? 'compact' : ''}">
+          ${compact ? html`
+            <button class="compact-caret prev" aria-label="Previous panel"
+              ?disabled=${visiblePanels.length < 2}
+              @click=${this.handlePrevPanel}>‹</button>
+            <button class="compact-caret next" aria-label="Next panel"
+              ?disabled=${visiblePanels.length < 2}
+              @click=${this.handleNextPanel}>›</button>
+          ` : ''}
+          <!-- Performance Panel -->
+          ${vis.performance ? html`
+            <dashboard-panel title="Performance" panelId="performance" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('performance')}>
+              <div class="performance-layout">
+                <div class="active-mappings">
+                  ${(() => {
+                    const { stylus, buttons } = this.getConfiguredButtonMappings();
+                    if (stylus.length === 0 && buttons.length === 0) {
+                      return html`<div class="active-mappings-empty">No button mappings configured</div>`;
+                    }
+                    return html`
+                      ${stylus.length > 0 ? html`
+                        <div class="stylus-row">
+                          ${stylus.map((s) => html`
+                            <div class="mapping-chip stylus ${s.active ? 'active' : ''}">
+                              <span class="mc-badge stylus ${s.kind}">${s.kind === 'primary' ? 'P' : 'S'}</span>
+                              <span class="mc-action">${s.action}</span>
+                            </div>
+                          `)}
+                        </div>
+                      ` : ''}
+                      ${buttons.length > 0 ? html`
+                        <div class="buttons-grid">
+                          ${buttons.map((b) => html`
+                            <div class="mapping-chip ${b.active ? 'active' : ''}">
+                              <span class="mc-badge">${b.buttonNum}</span>
+                              <span class="mc-action">${b.action}</span>
+                            </div>
+                          `)}
+                        </div>
+                      ` : ''}
+                    `;
+                  })()}
+                </div>
+                <div class="performance-strip">
+                  ${this.renderPerformanceStrip(hasActiveConnection)}
+                </div>
+              </div>
+            </dashboard-panel>
+          ` : ''}
+
           <!-- Tablet Visualizer Panel -->
-          ${this.panelVisibility.tabletVisualizer ? html`
+          ${vis.tabletVisualizer ? html`
             <dashboard-panel title="Tablet Visualizer" panelId="tabletVisualizer" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('tabletVisualizer')}>
               <div class="visualizer-wrapper">
@@ -986,7 +1239,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Stylus Visualizer Panel -->
-          ${this.panelVisibility.stylusVisualizer ? html`
+          ${vis.stylusVisualizer ? html`
             <dashboard-panel title="Stylus Visualizer" panelId="stylusVisualizer" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('stylusVisualizer')}>
               <div class="visualizer-wrapper">
@@ -1016,7 +1269,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Events Panel -->
-          ${this.panelVisibility.events ? html`
+          ${vis.events ? html`
             <dashboard-panel title="Events" panelId="events" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('events')}>
               <strum-events-display
@@ -1030,7 +1283,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Note Velocity Panel -->
-          ${this.panelVisibility.noteVelocity ? html`
+          ${vis.noteVelocity ? html`
             <dashboard-panel title="Note Velocity" panelId="noteVelocity" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('noteVelocity')}>
               <curve-visualizer
@@ -1039,6 +1292,7 @@ export class SketchatoneDashboard extends LitElement {
                 control="${this.fullConfig?.strummer?.noteVelocity?.control ?? 'pressure'}"
                 outputLabel="Velocity"
                 color="#51cf66"
+                ?compact=${compact}
                 .config=${this.fullConfig?.strummer?.noteVelocity ?? { min: 0, max: 127, curve: 4, spread: 'direct', multiplier: 1 }}
                 @config-change=${this.handleCurveConfigChange}
                 @control-change=${this.handleCurveControlChange}>
@@ -1047,7 +1301,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Note Duration Panel -->
-          ${this.panelVisibility.noteDuration ? html`
+          ${vis.noteDuration ? html`
             <dashboard-panel title="Note Duration" panelId="noteDuration" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('noteDuration')}>
               <curve-visualizer
@@ -1056,6 +1310,7 @@ export class SketchatoneDashboard extends LitElement {
                 control="${this.fullConfig?.strummer?.noteDuration?.control ?? 'tiltXY'}"
                 outputLabel="Duration"
                 color="#f59f00"
+                ?compact=${compact}
                 .config=${this.fullConfig?.strummer?.noteDuration ?? { min: 0.15, max: 1.5, curve: 1, spread: 'inverse', multiplier: 1 }}
                 @config-change=${this.handleCurveConfigChange}
                 @control-change=${this.handleCurveControlChange}>
@@ -1064,7 +1319,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Pitch Bend Panel -->
-          ${this.panelVisibility.pitchBend ? html`
+          ${vis.pitchBend ? html`
             <dashboard-panel title="Pitch Bend" panelId="pitchBend" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('pitchBend')}>
               <curve-visualizer
@@ -1073,6 +1328,7 @@ export class SketchatoneDashboard extends LitElement {
                 control="${this.fullConfig?.strummer?.pitchBend?.control ?? 'yaxis'}"
                 outputLabel="Bend"
                 color="#339af0"
+                ?compact=${compact}
                 .config=${this.fullConfig?.strummer?.pitchBend ?? { min: -1, max: 1, curve: 4, spread: 'central', multiplier: 1 }}
                 @config-change=${this.handleCurveConfigChange}
                 @control-change=${this.handleCurveControlChange}>
@@ -1081,116 +1337,116 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Strumming Settings Panel -->
-          ${this.panelVisibility.strummingSettings ? html`
+          ${vis.strummingSettings ? html`
             <dashboard-panel title="Strumming Settings" panelId="strummingSettings" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('strummingSettings')}>
               <div class="settings-form">
                 <div class="setting-row">
                   <label>Mode</label>
-                  <sp-picker
+                  <select class="sketch-select"
                     size="s"
-                    value=${this.fullConfig?.strummer?.mode ?? 'strum'}
+                    .value=${this.fullConfig?.strummer?.mode ?? 'strum'}
                     @change=${(e: Event) => this.updateConfig('strummer.mode', (e.target as HTMLSelectElement).value)}>
-                    <sp-menu-item value="strum" ?selected=${(this.fullConfig?.strummer?.mode ?? 'strum') === 'strum'}>Strum</sp-menu-item>
-                    <sp-menu-item value="slide" ?selected=${this.fullConfig?.strummer?.mode === 'slide'}>Slide</sp-menu-item>
-                  </sp-picker>
+                    <option value="strum" ?selected=${(this.fullConfig?.strummer?.mode ?? 'strum') === 'strum'}>Strum</option>
+                    <option value="slide" ?selected=${this.fullConfig?.strummer?.mode === 'slide'}>Slide</option>
+                  </select>
                 </div>
                 ${(this.fullConfig?.strummer?.mode ?? 'strum') === 'slide' ? html`
                   <div class="setting-row">
                     <label>Slide Pressure Threshold</label>
-                    <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
-                      @change=${(e: Event) => this.updateConfig('strummer.slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.slide?.pressureThreshold ?? 0.1} step="0.01" min="0" max="1"
+                      @change=${(e: Event) => this.updateConfig('strummer.slide.pressureThreshold', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Max Bend (semitones)</label>
-                    <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.maxBendSemitones ?? 2}" step="0.5" min="0" max="24"
-                      @change=${(e: Event) => this.updateConfig('strummer.slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                    <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.slide?.maxBendSemitones ?? 2} step="0.5" min="0" max="24"
+                      @change=${(e: Event) => this.updateConfig('strummer.slide.maxBendSemitones', Number((e.target as HTMLInputElement).value))}>
                   </div>
                   <div class="setting-row">
                     <label>Pressure Modulation</label>
-                    <sp-picker
+                    <select class="sketch-select"
                       size="s"
-                      value=${this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch'}
+                      .value=${this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch'}
                       @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.type', (e.target as HTMLSelectElement).value)}>
-                      <sp-menu-item value="none" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'none'}>None</sp-menu-item>
-                      <sp-menu-item value="aftertouch" ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch') === 'aftertouch'}>Aftertouch</sp-menu-item>
-                      <sp-menu-item value="cc" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'cc'}>Control Change</sp-menu-item>
-                    </sp-picker>
+                      <option value="none" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'none'}>None</option>
+                      <option value="aftertouch" ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch') === 'aftertouch'}>Aftertouch</option>
+                      <option value="cc" ?selected=${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'cc'}>Control Change</option>
+                    </select>
                   </div>
                   ${this.fullConfig?.strummer?.slide?.pressureModulation?.type === 'cc' ? html`
                     <div class="setting-row">
                       <label>CC Preset</label>
-                      <sp-picker
+                      <select class="sketch-select"
                         size="s"
-                        value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))?.ccNumber ?? '')}
+                        .value=${String(PRESSURE_MODULATION_CC_PRESETS.find(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))?.ccNumber ?? '')}
                         @change=${(e: Event) => {
                           const v = (e.target as HTMLSelectElement).value;
                           if (v !== '') this.updateConfig('strummer.slide.pressureModulation.ccNumber', Number(v));
                         }}>
                         ${PRESSURE_MODULATION_CC_PRESETS.map(p => html`
-                          <sp-menu-item value=${String(p.ccNumber)} ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11) === p.ccNumber}>${p.label}</sp-menu-item>
+                          <option value=${String(p.ccNumber)} ?selected=${(this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11) === p.ccNumber}>${p.label}</option>
                         `)}
-                        <sp-menu-item value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))}>Custom</sp-menu-item>
-                      </sp-picker>
+                        <option value="" ?selected=${!PRESSURE_MODULATION_CC_PRESETS.some(p => p.ccNumber === (this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11))}>Custom</option>
+                      </select>
                     </div>
                     <div class="setting-row">
                       <label>CC Number</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11}" step="1" min="0" max="127"
-                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.slide?.pressureModulation?.ccNumber ?? 11} step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.ccNumber', Number((e.target as HTMLInputElement).value))}>
                     </div>
                   ` : ''}
                   ${(this.fullConfig?.strummer?.slide?.pressureModulation?.type ?? 'aftertouch') !== 'none' ? html`
                     <div class="setting-row">
                       <label>Modulation Min</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.minValue ?? 0}" step="1" min="0" max="127"
-                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.slide?.pressureModulation?.minValue ?? 0} step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.minValue', Number((e.target as HTMLInputElement).value))}>
                     </div>
                     <div class="setting-row">
                       <label>Modulation Max</label>
-                      <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.slide?.pressureModulation?.maxValue ?? 127}" step="1" min="0" max="127"
-                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                      <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.slide?.pressureModulation?.maxValue ?? 127} step="1" min="0" max="127"
+                        @change=${(e: Event) => this.updateConfig('strummer.slide.pressureModulation.maxValue', Number((e.target as HTMLInputElement).value))}>
                     </div>
                   ` : ''}
                 ` : ''}
                 <div class="setting-row">
                   <label>Pressure Threshold</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1}" step="0.01" min="0" max="1"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1} step="0.01" min="0" max="1"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}>
                 </div>
                 <div class="setting-row">
                   <label>Pressure Buffer Size</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.pressureBufferSize ?? 10}" step="1" min="2" max="40"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.pressureBufferSize ?? 10} step="1" min="2" max="40"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureBufferSize', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>MIDI Channel</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.midiChannel ?? 1}" step="1" min="1" max="16"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.midiChannel ?? 1} step="1" min="1" max="16"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.midiChannel', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Upper Note Spread</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3}" step="1" min="0" max="12"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3} step="1" min="0" max="12"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}>
                 </div>
                 <div class="setting-row">
                   <label>Lower Note Spread</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3}" step="1" min="0" max="12"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3} step="1" min="0" max="12"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}>
                 </div>
                 <div class="setting-row">
                   <label>Reverse Direction</label>
-                  <sp-switch
-                    data-spectrum-pattern="switch-s"
+                  <sketch-switch
+
                     ?checked=${this.fullConfig?.strummer?.strumming?.invertX ?? false}
                     @change=${(e: Event) => this.updateConfig('strummer.strumming.invertX', (e.target as HTMLInputElement).checked)}>
-                  </sp-switch>
+                  </sketch-switch>
                 </div>
               </div>
             </dashboard-panel>
           ` : ''}
 
           <!-- Strum Release Panel -->
-          ${this.panelVisibility.strumRelease ? html`
+          ${vis.strumRelease ? html`
             <dashboard-panel title="Strum Release" panelId="strumRelease" .closable=${true} .draggable=${false} .minimizable=${false}
               .hasActiveControl=${true}
               .active=${this.fullConfig?.strummer?.strumRelease?.active ?? false}
@@ -1199,35 +1455,44 @@ export class SketchatoneDashboard extends LitElement {
               <div class="settings-form">
                 <div class="setting-row">
                   <label>MIDI Note</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38}" step="1" min="0" max="127"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38} step="1" min="0" max="127"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}>
                 </div>
                 <div class="setting-row">
                   <label>MIDI Channel</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 10}" step="1" min="1" max="16"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value))}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.midiChannel ?? 10} step="1" min="1" max="16"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiChannel', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Max Duration</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25}" step="0.05" min="0.05" max="2"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25} step="0.05" min="0.05" max="2"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}>
                 </div>
                 <div class="setting-row">
                   <label>Velocity Multiplier</label>
-                  <sp-number-field data-spectrum-pattern="number-field-s" value="${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0}" step="0.1" min="0.1" max="2"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}></sp-number-field>
+                  <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0} step="0.1" min="0.1" max="2"
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}>
                 </div>
               </div>
             </dashboard-panel>
           ` : ''}
 
           <!-- Actions Panel -->
-          ${this.panelVisibility.actions ? html`
+          ${vis.actions ? html`
             <dashboard-panel title="Actions" panelId="actions" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('actions')}>
-              <sp-action-button slot="header-actions" size="s" quiet @click=${() => this.actionsConfigRef?.openAddAction()}>
-                <sp-icon-add slot="icon"></sp-icon-add>
-              </sp-action-button>
+              ${this.actionsFormState.open ? html`
+                <div slot="title" class="panel-form-title">
+                  <sketch-button variant="quiet" size="s" @click=${() => this.actionsConfigRef?.closeForm()} title="Back">
+                    <sketch-icon slot="icon" name="arrow-left"></sketch-icon>
+                  </sketch-button>
+                  <h3 class="panel-title">${this.actionsFormState.title}</h3>
+                </div>
+              ` : html`
+                <sketch-button variant="quiet" slot="header-actions" size="s" @click=${() => this.actionsConfigRef?.openAddAction()}>
+                  <sketch-icon slot="icon" name="add"></sketch-icon>
+                </sketch-button>
+              `}
               <action-rules-config
                 id="actions-config"
                 mode="actions"
@@ -1239,17 +1504,27 @@ export class SketchatoneDashboard extends LitElement {
                 .hasPrimaryButton=${true}
                 .hasSecondaryButton=${true}
                 @config-change=${this.handleActionRulesConfigChange}
+                @form-state-change=${(e: CustomEvent) => (this.actionsFormState = e.detail)}
               ></action-rules-config>
             </dashboard-panel>
           ` : ''}
 
           <!-- Groups Panel -->
-          ${this.panelVisibility.groups ? html`
+          ${vis.groups ? html`
             <dashboard-panel title="Groups" panelId="groups" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('groups')}>
-              <sp-action-button slot="header-actions" size="s" quiet @click=${() => this.groupsConfigRef?.openAddGroup()}>
-                <sp-icon-add slot="icon"></sp-icon-add>
-              </sp-action-button>
+              ${this.groupsFormState.open ? html`
+                <div slot="title" class="panel-form-title">
+                  <sketch-button variant="quiet" size="s" @click=${() => this.groupsConfigRef?.closeForm()} title="Back">
+                    <sketch-icon slot="icon" name="arrow-left"></sketch-icon>
+                  </sketch-button>
+                  <h3 class="panel-title">${this.groupsFormState.title}</h3>
+                </div>
+              ` : html`
+                <sketch-button variant="quiet" slot="header-actions" size="s" @click=${() => this.groupsConfigRef?.openAddGroup()}>
+                  <sketch-icon slot="icon" name="add"></sketch-icon>
+                </sketch-button>
+              `}
               <action-rules-config
                 id="groups-config"
                 mode="groups"
@@ -1260,12 +1535,13 @@ export class SketchatoneDashboard extends LitElement {
                 .hasPrimaryButton=${true}
                 .hasSecondaryButton=${true}
                 @config-change=${this.handleActionRulesConfigChange}
+                @form-state-change=${(e: CustomEvent) => (this.groupsFormState = e.detail)}
               ></action-rules-config>
             </dashboard-panel>
           ` : ''}
 
           <!-- MIDI Input Panel -->
-          ${this.panelVisibility.midiInput ? html`
+          ${vis.midiInput ? html`
             <dashboard-panel title="MIDI Input" panelId="midiInput" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('midiInput')}>
               <div class="midi-panel-content">
@@ -1283,13 +1559,13 @@ export class SketchatoneDashboard extends LitElement {
                 </div>
                 <div class="midi-input-mode-row">
                   <span class="midi-notes-label">Input Mode:</span>
-                  <sp-picker size="s" value="${this.fullConfig?.midi?.inputMode ?? 'direct'}"
+                  <select class="sketch-select" size="s" .value=${this.fullConfig?.midi?.inputMode ?? 'direct'}
                     @change=${(e: Event) => this.updateConfig('midi.inputMode', (e.target as HTMLInputElement).value)}>
-                    <sp-menu-item value="direct" ?selected=${(this.fullConfig?.midi?.inputMode ?? 'direct') === 'direct'}>Direct</sp-menu-item>
-                    <sp-menu-item value="majorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'majorScale'}>Major Scale</sp-menu-item>
-                    <sp-menu-item value="minorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'minorScale'}>Minor Scale</sp-menu-item>
-                    <sp-menu-item value="autoScale" ?selected=${this.fullConfig?.midi?.inputMode === 'autoScale'}>Auto Scale</sp-menu-item>
-                  </sp-picker>
+                    <option value="direct" ?selected=${(this.fullConfig?.midi?.inputMode ?? 'direct') === 'direct'}>Direct</option>
+                    <option value="majorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'majorScale'}>Major Scale</option>
+                    <option value="minorScale" ?selected=${this.fullConfig?.midi?.inputMode === 'minorScale'}>Minor Scale</option>
+                    <option value="autoScale" ?selected=${this.fullConfig?.midi?.inputMode === 'autoScale'}>Auto Scale</option>
+                  </select>
                 </div>
                 ${this.lastMidiPortName ? html`
                   <div class="midi-source">from: ${this.lastMidiPortName}</div>
@@ -1299,7 +1575,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- MIDI Devices Panel -->
-          ${this.panelVisibility.midiDevices ? html`
+          ${vis.midiDevices ? html`
             <dashboard-panel title="MIDI Devices" panelId="midiDevices" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('midiDevices')}>
               <midi-devices-config
@@ -1315,7 +1591,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Chord Progressions Panel -->
-          ${this.panelVisibility.chordProgressions ? html`
+          ${vis.chordProgressions ? html`
             <dashboard-panel title="Chord Progressions" panelId="chordProgressions" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('chordProgressions')}>
               <chord-progression-creator
@@ -1326,7 +1602,7 @@ export class SketchatoneDashboard extends LitElement {
           ` : ''}
 
           <!-- Server Settings Panel -->
-          ${this.panelVisibility.serverSettings ? html`
+          ${vis.serverSettings ? html`
             <dashboard-panel title="Server Settings" panelId="serverSettings" .closable=${true} .draggable=${false} .minimizable=${false}
               @panel-close=${() => this.handlePanelClose('serverSettings')}>
               <server-settings-panel

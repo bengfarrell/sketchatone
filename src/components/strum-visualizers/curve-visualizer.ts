@@ -6,12 +6,10 @@
 
 import { LitElement, html, svg } from 'lit';
 import { property } from 'lit/decorators.js';
+import { formStyles } from '../../design-system/form-styles.js';
 import { styles } from './curve-visualizer.styles.js';
 import { sharedTabletInteraction } from '../../controllers/index.js';
 
-import '@spectrum-web-components/picker/sp-picker.js';
-import '@spectrum-web-components/menu/sp-menu-item.js';
-import '@spectrum-web-components/number-field/sp-number-field.js';
 
 export interface CurveConfig {
     min: number;
@@ -22,7 +20,7 @@ export interface CurveConfig {
 }
 
 export class CurveVisualizer extends LitElement {
-    static styles = styles;
+    static styles = [formStyles, styles];
 
     @property({ type: String })
     label = '';
@@ -50,6 +48,9 @@ export class CurveVisualizer extends LitElement {
 
     @property({ type: Number, hasChanged: () => true })
     hoverPosition: number | null = null;
+
+    @property({ type: Boolean, reflect: true })
+    compact = false;
 
     constructor() {
         super();
@@ -162,24 +163,24 @@ export class CurveVisualizer extends LitElement {
         const outputValue = hoverPosition !== null ? this.calculateOutputValue(this.config, hoverPosition) : null;
 
         return html`
-                    <svg viewBox="0 0 ${graphWidth} ${graphHeight}" style="width: 100%; height: auto; display: block;">
+                    <svg class="curve-svg" viewBox="0 0 ${graphWidth} ${graphHeight}">
                         <rect x="${padding}" y="${padding}"
                               width="${innerWidth}" height="${innerHeight}"
-                              fill="var(--spectrum-gray-100)" stroke="var(--spectrum-gray-300)" stroke-width="1" />
+                              fill="var(--sketch-color-gray-100)" stroke="var(--sketch-color-gray-300)" stroke-width="1" />
 
                         <line x1="${padding}" y1="${padding}"
                               x2="${padding}" y2="${graphHeight - padding}"
-                              stroke="var(--spectrum-gray-600)" stroke-width="1.5" />
+                              stroke="var(--sketch-color-gray-600)" stroke-width="1.5" />
                         <line x1="${padding}" y1="${graphHeight - padding}"
                               x2="${graphWidth - padding}" y2="${graphHeight - padding}"
-                              stroke="var(--spectrum-gray-600)" stroke-width="1.5" />
+                              stroke="var(--sketch-color-gray-600)" stroke-width="1.5" />
 
                         <text x="${padding - 8}" y="${graphHeight - padding + 4}"
-                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="end">${this.config.min.toFixed(1)}</text>
+                              font-size="10" fill="var(--sketch-color-gray-800)" text-anchor="end">${this.config.min.toFixed(1)}</text>
                         <text x="${padding - 8}" y="${padding + 4}"
-                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="end">${this.config.max.toFixed(1)}</text>
+                              font-size="10" fill="var(--sketch-color-gray-800)" text-anchor="end">${this.config.max.toFixed(1)}</text>
                         <text x="${padding - 12}" y="${padding + innerHeight / 2}"
-                              font-size="10" fill="var(--spectrum-gray-800)" text-anchor="middle"
+                              font-size="10" fill="var(--sketch-color-gray-800)" text-anchor="middle"
                               transform="rotate(-90, ${padding - 12}, ${padding + innerHeight / 2})">${this.outputLabel}</text>
 
                         <!-- Center line for central spread -->
@@ -188,7 +189,7 @@ export class CurveVisualizer extends LitElement {
                                   y1="${padding}"
                                   x2="${padding + strokeInset + curveWidth / 2}"
                                   y2="${graphHeight - padding}"
-                                  stroke="var(--spectrum-notice-color-900)"
+                                  stroke="var(--sketch-color-notice-fg)"
                                   stroke-width="1"
                                   stroke-dasharray="3,3"
                                   opacity="0.5" />
@@ -204,7 +205,7 @@ export class CurveVisualizer extends LitElement {
                                   y1="${padding}"
                                   x2="${padding + strokeInset + (hoverPosition * curveWidth)}"
                                   y2="${graphHeight - padding}"
-                                  stroke="var(--spectrum-positive-color-900)"
+                                  stroke="var(--sketch-color-positive-fg)"
                                   stroke-width="2"
                                   opacity="0.6"
                                   stroke-dasharray="4,4" />
@@ -214,62 +215,58 @@ export class CurveVisualizer extends LitElement {
                                   y="${padding - 8}"
                                   text-anchor="middle"
                                   font-size="11"
-                                  fill="var(--spectrum-positive-color-900)"
+                                  fill="var(--sketch-color-positive-fg)"
                                   font-weight="600">
                                 ${outputValue.toFixed(3)}
                             </text>
                         ` : ''}
                     </svg>
-                <p style="font-size: 12px; color: var(--spectrum-gray-700);">Label: ${this.label} | Control: ${this.control}</p>
+                <p class="curve-meta">Label: ${this.label} | Control: ${this.control}</p>
                 
                 <div class="controls-grid">
                     <div class="control-selector-top">
                         <label class="control-selector-label">Controlled by:</label>
-                        <sp-picker data-spectrum-pattern="picker-s" size="s" value="${this.control}" @change=${this.handleControlChange}>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="yaxis">Y-Axis Position</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="pressure">Stylus Pressure</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltX">Tilt X</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltY">Tilt Y</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="tiltXY">Tilt X+Y</sp-menu-item>
-                        </sp-picker>
+                        <select class="sketch-select" size="s" .value=${this.control} @change=${this.handleControlChange}>
+                            <option value="yaxis">Y-Axis Position</option>
+                            <option value="pressure">Stylus Pressure</option>
+                            <option value="tiltX">Tilt X</option>
+                            <option value="tiltY">Tilt Y</option>
+                            <option value="tiltXY">Tilt X+Y</option>
+                        </select>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Spread</label>
-                        <sp-picker data-spectrum-pattern="picker-s" size="s" value="${this.config.spread}"
+                        <select class="sketch-select" size="s" .value=${this.config.spread}
                             @change=${(e: Event) => this.handleConfigChange('spread', (e.target as any).value)}>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="direct">Direct</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="inverse">Inverse</sp-menu-item>
-                            <sp-menu-item data-spectrum-pattern="menu-item" value="central">Central</sp-menu-item>
-                        </sp-picker>
+                            <option value="direct">Direct</option>
+                            <option value="inverse">Inverse</option>
+                            <option value="central">Central</option>
+                        </select>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Min</label>
-                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.min}" step="0.1"
+                        <input type="number" class="sketch-input" size="s" .value=${this.config.min} step="0.1"
                             @change=${(e: Event) => this.handleConfigChange('min', parseFloat((e.target as any).value))}>
-                        </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Max</label>
-                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.max}" step="0.1"
+                        <input type="number" class="sketch-input" size="s" .value=${this.config.max} step="0.1"
                             @change=${(e: Event) => this.handleConfigChange('max', parseFloat((e.target as any).value))}>
-                        </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Curve</label>
-                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.curve}" step="0.1" min="0.1"
+                        <input type="number" class="sketch-input" size="s" .value=${this.config.curve} step="0.1" min="0.1"
                             @change=${(e: Event) => this.handleConfigChange('curve', parseFloat((e.target as any).value))}>
-                        </sp-number-field>
                     </div>
                     
                     <div class="range-field">
                         <label class="range-label">Multiplier</label>
-                        <sp-number-field data-spectrum-pattern="number-field-s" size="s" value="${this.config.multiplier}" step="0.1" min="0" max="2"
+                        <input type="number" class="sketch-input" size="s" .value=${this.config.multiplier} step="0.1" min="0" max="2"
                             @change=${(e: Event) => this.handleConfigChange('multiplier', parseFloat((e.target as any).value))}>
-                        </sp-number-field>
                     </div>
                 </div>
         `;

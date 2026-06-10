@@ -14,7 +14,7 @@ export class MidiDevicesConfig extends LitElement {
   static styles = css`
     :host {
       display: block;
-      font-family: var(--spectrum-font-family, system-ui, -apple-system, sans-serif);
+      font-family: var(--sketch-font-sans, system-ui, -apple-system, sans-serif);
     }
 
     .devices-container {
@@ -34,13 +34,13 @@ export class MidiDevicesConfig extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding-bottom: 8px;
-      border-bottom: 1px solid var(--spectrum-gray-300);
+      border-bottom: 1px solid var(--sketch-color-gray-300);
     }
 
     .section-title {
       font-size: 1rem;
       font-weight: 600;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
     }
 
     .refresh-icon-button {
@@ -48,7 +48,7 @@ export class MidiDevicesConfig extends LitElement {
       border: none;
       padding: 4px;
       cursor: pointer;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -57,12 +57,12 @@ export class MidiDevicesConfig extends LitElement {
     }
 
     .refresh-icon-button:hover {
-      background: var(--spectrum-gray-200);
-      color: var(--spectrum-gray-900);
+      background: var(--sketch-color-gray-200);
+      color: var(--sketch-color-gray-900);
     }
 
     .refresh-icon-button:active {
-      background: var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-300);
     }
 
     .refresh-icon-button svg {
@@ -80,8 +80,8 @@ export class MidiDevicesConfig extends LitElement {
 
     .device-item {
       padding: 10px 12px;
-      background: var(--spectrum-gray-100);
-      border: 2px solid var(--spectrum-gray-300);
+      background: var(--sketch-color-gray-100);
+      border: 2px solid var(--sketch-color-gray-300);
       border-radius: 6px;
       transition: all 0.15s ease;
       display: flex;
@@ -90,13 +90,13 @@ export class MidiDevicesConfig extends LitElement {
     }
 
     .device-item:hover {
-      background: var(--spectrum-gray-200);
-      border-color: var(--spectrum-gray-400);
+      background: var(--sketch-color-gray-200);
+      border-color: var(--sketch-color-gray-400);
     }
 
     .device-item.connected {
-      background: var(--spectrum-green-100);
-      border-color: var(--spectrum-green-500);
+      background: var(--sketch-color-green-100);
+      border-color: var(--sketch-color-green-500);
     }
 
     /* Toggle Switch Styles */
@@ -120,7 +120,7 @@ export class MidiDevicesConfig extends LitElement {
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: var(--spectrum-gray-400);
+      background-color: var(--sketch-color-gray-400);
       border-radius: 22px;
       transition: 0.2s;
     }
@@ -138,7 +138,7 @@ export class MidiDevicesConfig extends LitElement {
     }
 
     .device-toggle input:checked + .toggle-slider {
-      background-color: var(--spectrum-green-600);
+      background-color: var(--sketch-color-green-600);
     }
 
     .device-toggle input:checked + .toggle-slider:before {
@@ -146,11 +146,11 @@ export class MidiDevicesConfig extends LitElement {
     }
 
     .device-toggle:hover .toggle-slider {
-      background-color: var(--spectrum-gray-500);
+      background-color: var(--sketch-color-gray-500);
     }
 
     .device-toggle input:checked:hover + .toggle-slider {
-      background-color: var(--spectrum-green-700);
+      background-color: var(--sketch-color-green-700);
     }
 
     .device-info {
@@ -162,18 +162,18 @@ export class MidiDevicesConfig extends LitElement {
 
     .device-name {
       font-size: 0.875rem;
-      color: var(--spectrum-gray-900);
+      color: var(--sketch-color-gray-900);
     }
 
     .device-index {
       font-size: 0.75rem;
-      color: var(--spectrum-gray-600);
+      color: var(--sketch-color-gray-600);
       font-family: monospace;
     }
 
     .passthrough-label {
       font-size: 0.75rem;
-      color: var(--spectrum-gray-700);
+      color: var(--sketch-color-gray-700);
       margin-left: 4px;
     }
 
@@ -187,7 +187,7 @@ export class MidiDevicesConfig extends LitElement {
     .empty-message {
       padding: 20px;
       text-align: center;
-      color: var(--spectrum-gray-700);
+      color: var(--sketch-color-gray-700);
       font-style: italic;
     }
   `;

@@ -1,9 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import '@spectrum-web-components/theme/sp-theme.js';
-import '@spectrum-web-components/theme/src/themes.js';
-import '@spectrum-web-components/button/sp-button.js';
-
+import '../../design-system/components/sketch-button.js';
 /**
  * Main application component for Sketchatone
  */
@@ -16,20 +13,20 @@ export class SketchatoneApp extends LitElement {
     }
 
     .container {
-      padding: var(--spectrum-global-dimension-size-400);
+      padding: var(--sketch-spacing-4);
       max-width: 1200px;
       margin: 0 auto;
     }
 
     h1 {
-      color: var(--spectrum-global-color-gray-900);
-      margin-bottom: var(--spectrum-global-dimension-size-300);
+      color: var(--sketch-color-gray-900);
+      margin-bottom: var(--sketch-spacing-3);
     }
 
     .content {
-      background: var(--spectrum-global-color-gray-50);
-      border-radius: var(--spectrum-global-dimension-size-100);
-      padding: var(--spectrum-global-dimension-size-300);
+      background: var(--sketch-color-gray-50);
+      border-radius: var(--sketch-spacing-2);
+      padding: var(--sketch-spacing-3);
     }
   `;
 
@@ -38,17 +35,17 @@ export class SketchatoneApp extends LitElement {
 
   render() {
     return html`
-      <sp-theme theme="spectrum" color="light" scale="medium">
+      <div class="sketch-theme">
         <div class="container">
           <h1>${this.message}</h1>
           <div class="content">
             <p>Application is ready.</p>
-            <sp-button data-spectrum-pattern="button-primary" variant="primary" @click=${this._handleClick}>
+            <sketch-button variant="primary" @click=${this._handleClick}>
               Get Started
-            </sp-button>
+            </sketch-button>
           </div>
         </div>
-      </sp-theme>
+      </div>
     `;
   }
 
