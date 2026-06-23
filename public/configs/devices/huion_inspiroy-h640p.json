@@ -1,0 +1,175 @@
+{
+  "name": "Huion Inspiroy h640p",
+  "manufacturer": "Huion",
+  "model": "h640p",
+  "description": "Huion Inspiroy h640p",
+  "vendorId": "0x256c",
+  "productId": "0x0064",
+  "deviceInfo": {
+    "vendor_id": 9580,
+    "product_id": 100,
+    "product_string": "Huion Tablet_H640P",
+    "interfaces": [
+      1,
+      13
+    ]
+  },
+  "modes": [
+    {
+      "reportId": 10,
+      "digitizerUsagePage": 65280,
+      "capabilities": {
+        "hasButtons": true,
+        "buttonCount": 6,
+        "hasPressure": true,
+        "pressureLevels": 8191,
+        "hasTilt": true,
+        "resolution": {
+          "x": 32000,
+          "y": 20000
+        }
+      },
+      "byteCodeMappings": {
+        "status": {
+          "byteIndex": [
+            1
+          ],
+          "type": "code",
+          "values": {
+            "192": {
+              "state": "hover"
+            },
+            "193": {
+              "state": "contact"
+            },
+            "0": {
+              "state": "none"
+            },
+            "196": {
+              "state": "hover",
+              "primaryButtonPressed": true
+            },
+            "197": {
+              "state": "contact",
+              "primaryButtonPressed": true
+            },
+            "194": {
+              "state": "hover",
+              "secondaryButtonPressed": true
+            },
+            "195": {
+              "state": "contact",
+              "secondaryButtonPressed": true
+            },
+            "3": {
+              "state": "buttons"
+            },
+            "1": {
+              "state": "buttons"
+            },
+            "6": {
+              "state": "buttons"
+            },
+            "240": {
+              "state": "buttons"
+            }
+          }
+        },
+        "x": {
+          "byteIndex": [
+            2,
+            3
+          ],
+          "max": 32000,
+          "type": "multi-byte-range"
+        },
+        "y": {
+          "byteIndex": [
+            4,
+            5
+          ],
+          "max": 20000,
+          "type": "multi-byte-range"
+        },
+        "pressure": {
+          "byteIndex": [
+            6,
+            7
+          ],
+          "max": 8191,
+          "type": "multi-byte-range"
+        },
+        "tiltX": {
+          "byteIndex": [
+            8
+          ],
+          "positiveMax": 60,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "tiltY": {
+          "byteIndex": [
+            9
+          ],
+          "positiveMax": 54,
+          "negativeMin": 196,
+          "negativeMax": 255,
+          "type": "bipolar-range"
+        },
+        "keyboardButtons": {
+          "description": "Buttons from keyboard HID interface (requires sudo on macOS)",
+          "usagePage": 1,
+          "usage": 6,
+          "buttonCount": 6,
+          "buttons": [
+            {
+              "button": 1,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 22
+            },
+            {
+              "button": 2,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 48
+            },
+            {
+              "button": 3,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 0,
+              "keycode": 47
+            },
+            {
+              "button": 4,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 87
+            },
+            {
+              "button": 5,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 1,
+              "keycode": 86
+            },
+            {
+              "button": 6,
+              "reportId": 3,
+              "type": "keyboard",
+              "modifier": 5,
+              "keycode": 29
+            }
+          ]
+        }
+      },
+      "stylusModeStatusByte": 192,
+      "buttonInterfaceReportId": 3
+    }
+  ]
+}
