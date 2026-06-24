@@ -155,10 +155,14 @@ setup_chromium_kiosk() {
     # The loop polls the kiosk URL before launching Chromium (capped at ~120s) so we
     # don't land on ERR_CONNECTION_REFUSED when the sketchatone service is slow to bind.
     # --ozone-platform=wayland makes chromium use native Wayland instead of XWayland.
+    # Singleton* lock files are removed up-front: a previous unclean chromium exit
+    # (power loss, OOM) leaves these behind and silently aborts the next launch,
+    # which manifests as a blank screen after reboot.
     cat >> "$AUTOSTART_FILE" << AUTOEOF
 
 # >>> Sketchatone Kiosk >>>
 (
+  rm -f /home/$KIOSK_USER/.config/chromium/Singleton* 2>/dev/null || true
   i=0
   until curl -sf --max-time 1 -o /dev/null $KIOSK_URL; do
     i=\$((i+1))

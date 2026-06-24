@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sketchatone"
-version = "0.3.0.dev9"
+version = "0.3.0.dev20"
 description = "Sketchatone - Python implementation"
 requires-python = ">=3.8"
 license = {text = "CC-BY-NC-SA-4.0"}
@@ -42,6 +42,13 @@ dependencies = [
 jack = [
     "JACK-Client>=0.5.4",
 ]
+ui = [
+    "kivy>=2.3.0",
+]
+hotreload = [
+    "kaki>=0.1.9",
+    "watchdog>=2.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -58,13 +65,15 @@ Documentation = "https://github.com/bengfarrell/sketchatone#readme"
 Issues = "https://github.com/bengfarrell/sketchatone/issues"
 
 [project.scripts]
-# Add CLI entry points here as needed
-# sketchatone-cli = "sketchatone.cli.main:main"
+sketchatone-ui = "sketchatone.cli.ui:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["sketchatone*"]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+"sketchatone.ui" = ["assets/*.png"]
 
 [tool.black]
 line-length = 100

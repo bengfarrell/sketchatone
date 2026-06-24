@@ -1,11 +1,41 @@
 #!/bin/bash
 # Package Sketchatone for Raspberry Pi / Zynthian
 # Creates a ready-to-install .deb package (no build needed on Pi)
+#
+# Usage:
+#   ./package-for-pi.sh                  # default web variant (current behavior)
+#   ./package-for-pi.sh --variant web    # explicit web variant
+#   ./package-for-pi.sh --variant ui     # Kivy UI variant (no webapp, no kiosk)
 
 set -e
 
+VARIANT="web"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --variant)
+            VARIANT="${2:-}"
+            shift 2
+            ;;
+        --variant=*)
+            VARIANT="${1#--variant=}"
+            shift
+            ;;
+        *)
+            echo "❌ Unknown argument: $1"
+            echo "Usage: $0 [--variant web|ui]"
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$VARIANT" != "web" ] && [ "$VARIANT" != "ui" ]; then
+    echo "❌ Invalid variant: '$VARIANT' (expected 'web' or 'ui')"
+    exit 1
+fi
+
 echo "=========================================="
 echo "Sketchatone - Package for Raspberry Pi"
+echo "Variant: $VARIANT"
 echo "=========================================="
 echo ""
 
@@ -19,8 +49,8 @@ fi
 VERSION=$(grep '^version = ' python/pyproject.toml 2>/dev/null | head -1 | sed 's/version = "\(.*\)"/\1/' || echo "1.0.0")
 echo "📦 Version: $VERSION"
 
-# Check if webapp needs to be built
-if [ ! -d "dist/public" ]; then
+# Webapp build is only needed for the web variant.
+if [ "$VARIANT" = "web" ] && [ ! -d "dist/public" ]; then
     echo ""
     echo "🔨 Building webapp..."
     npm run build
@@ -77,17 +107,25 @@ find "$BLANKSLATE_DEST" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/nul
 # Create dist directory if needed
 mkdir -p dist
 
-# Run create-deb.sh to build the package
+# Run the appropriate create-deb script for the chosen variant
 echo ""
-./create-deb.sh
+if [ "$VARIANT" = "ui" ]; then
+    ./create-deb-ui.sh
+    PKG_BASE="sketchatone-ui"
+    INSTALLER_SCRIPT="install-sketchatone-ui.sh"
+else
+    ./create-deb.sh
+    PKG_BASE="sketchatone"
+    INSTALLER_SCRIPT="install-sketchatone.sh"
+fi
 
 # Clean up temporary blankslate directory
 echo "🧹 Cleaning up temporary files..."
 rm -rf "$BLANKSLATE_DEST"
 
 # Show final package info based on what was created
-DEB_FILE="dist/sketchatone-${VERSION}.deb"
-TARBALL="dist/sketchatone-${VERSION}-deb-pkg.tar.gz"
+DEB_FILE="dist/${PKG_BASE}-${VERSION}.deb"
+TARBALL="dist/${PKG_BASE}-${VERSION}-deb-pkg.tar.gz"
 
 if [ -f "$DEB_FILE" ]; then
     # Direct .deb was created (Linux)
@@ -106,7 +144,7 @@ if [ -f "$DEB_FILE" ]; then
     echo "  scp $DEB_FILE root@synth.local:~/"
     echo ""
     echo "  # On the Pi (that's it!):"
-    echo "  apt install ./sketchatone-${VERSION}.deb"
+    echo "  apt install ./${PKG_BASE}-${VERSION}.deb"
     echo ""
 elif [ -f "$TARBALL" ]; then
     # Tarball was created (macOS)
@@ -117,14 +155,14 @@ elif [ -f "$TARBALL" ]; then
     echo "=========================================="
     echo ""
     echo "Package: $TARBALL ($SIZE)"
-    echo "Installer: dist/install-sketchatone.sh"
+    echo "Installer: dist/${INSTALLER_SCRIPT}"
     echo ""
     echo "To install on Raspberry Pi / Zynthian:"
     echo ""
     echo "  # Copy files to Pi"
-    echo "  scp $TARBALL dist/install-sketchatone.sh root@synth.local:~/"
+    echo "  scp $TARBALL dist/${INSTALLER_SCRIPT} root@synth.local:~/"
     echo ""
     echo "  # On the Pi:"
-    echo "  ./install-sketchatone.sh"
+    echo "  ./${INSTALLER_SCRIPT}"
     echo ""
 fi

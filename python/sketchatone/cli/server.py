@@ -1246,9 +1246,17 @@ class StrummerWebSocketServer(TabletReaderBase):
         for client in clients_to_remove:
             self.clients.discard(client)
 
+    def _resolve_device_name(self, device_name: Optional[str] = None) -> Optional[str]:
+        """Best-effort tablet name, falling back to the loaded config's name."""
+        if device_name:
+            return device_name
+        cfg = getattr(self, 'config_data', None)
+        return getattr(cfg, 'name', None) if cfg is not None else None
+
     def broadcast_status(self, connected: bool, device_name: Optional[str] = None) -> None:
         """Broadcast device status to all clients"""
         import time
+        device_name = self._resolve_device_name(device_name)
         status_str = 'connected' if connected else 'disconnected'
         message_text = f'Tablet {"connected" if connected else "disconnected"}'
         if device_name:
@@ -1439,7 +1447,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         
         # Send initial status (matching Node.js format)
         import time
-        device_name = self.device_name if hasattr(self, 'device_name') else None
+        device_name = self._resolve_device_name()
         connected = self.is_running
         status_str = 'connected' if connected else 'disconnected'
         message_text = 'Tablet connected' if connected else 'Waiting for tablet...'

@@ -54,6 +54,27 @@ Converts tablet input to MIDI output. This is the main tool for using a graphics
 python -m sketchatone.cli.midi_strummer [options]
 ```
 
+to start the Kivy app:
+```bash
+sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
+    -s public/configs/default.json
+```
+
+To enable hot reload of the UI while editing (rebuilds the widget tree in place on save via [Kaki](https://github.com/tito/kaki), keeping the bridge/WebSocket/HID reader alive across reloads), first install the optional extra:
+
+```bash
+pip install -e ".[hotreload]"
+```
+
+then pass `--hot-reload`:
+
+```bash
+sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
+    -s public/configs/default.json --hot-reload
+```
+
+Edits under `python/sketchatone/ui/` trigger a soft rebuild. Edits to `app.py` or `hotreload.py` itself trigger a full process restart (re-execs the same argv). `bridge.py` and anything under `cli/` are intentionally not watched — change those and restart manually.
+
 ### Optional Arguments
 
 | Argument | Short | Type | Description |

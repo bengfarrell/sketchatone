@@ -1,6 +1,6 @@
 {
   "name": "sketchatone",
-  "version": "0.3.0.dev9",
+  "version": "0.3.0.dev20",
   "description": "Sketchatone - Node.js, Python, and Web implementation",
   "main": "dist/cli/index.js",
   "type": "module",
@@ -73,7 +73,8 @@
     "docs:watch": "npx @11ty/eleventy --watch",
     "docs:deploy": "npm run docs && gh-pages -d docs",
     "package:pi": "npm run build && ./package-for-pi.sh",
-    "package:macos": "npm run build && ./create-macos-app.sh"
+    "package:macos": "npm run build && ./create-macos-app.sh",
+    "package:pi-ui": "./package-for-pi.sh --variant ui"
   },
   "dependencies": {
     "@futpib/node-global-key-listener": "^1.0.3",

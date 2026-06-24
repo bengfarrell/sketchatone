@@ -14,6 +14,7 @@ export type PanelId =
   | 'pitchBend'
   | 'strummingSettings'
   | 'strumRelease'
+  | 'slide'
   | 'actions'
   | 'groups'
   | 'chordProgressions'
@@ -37,6 +38,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'pitchBend', label: 'Pitch', icon: '🎵' },
   { id: 'strummingSettings', label: 'Strumming', icon: '🎸' },
   { id: 'strumRelease', label: 'Release', icon: '🔔' },
+  { id: 'slide', label: 'Slide', icon: '🎚️' },
   { id: 'actions', label: 'Actions', icon: '⚡' },
   { id: 'groups', label: 'Groups', icon: '📦' },
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
@@ -59,6 +61,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   pitchBend: true,
   strummingSettings: true,
   strumRelease: true,
+  slide: true,
   actions: true,
   groups: true,
   chordProgressions: true,
