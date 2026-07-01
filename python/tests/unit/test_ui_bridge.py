@@ -27,7 +27,7 @@ class TestUIBridgeSubscription:
     def test_event_names_are_documented(self):
         assert set(EVENT_NAMES) == {
             'device-status', 'tablet', 'strum', 'combined', 'config',
-            'midi-devices',
+            'midi-devices', 'midi-input',
         }
 
     def test_on_unknown_event_raises(self):

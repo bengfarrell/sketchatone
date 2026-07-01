@@ -190,6 +190,19 @@ export class MidiDevicesConfig extends LitElement {
       color: var(--sketch-color-gray-700);
       font-style: italic;
     }
+
+    .virtual-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--sketch-color-green-100);
+      color: var(--sketch-color-green-700);
+      border: 1px solid var(--sketch-color-green-300);
+    }
   `;
 
   @property({ type: Array })
@@ -360,6 +373,16 @@ export class MidiDevicesConfig extends LitElement {
               <div class="empty-message">No MIDI output devices found</div>
             ` : this.outputPorts.map(port => {
               const isConnected = this.currentOutputPort === port.id;
+              if (port.virtual) {
+                return html`
+                  <div class="device-item connected">
+                    <div class="device-info">
+                      <span class="device-name">${port.name}</span>
+                      <span class="device-index"><span class="virtual-badge">Virtual</span></span>
+                    </div>
+                  </div>
+                `;
+              }
               return html`
                 <div class="device-item ${isConnected ? 'connected' : ''}">
                   <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>

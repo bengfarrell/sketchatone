@@ -165,6 +165,7 @@ export interface StatusMessage {
 export interface MidiDevicePort {
   id: string | number;
   name: string;
+  virtual?: boolean;
 }
 
 /**

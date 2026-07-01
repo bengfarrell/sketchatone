@@ -29,6 +29,27 @@ os.environ.setdefault('KIVY_NO_ARGS', '1')
 os.environ.setdefault('SDL_TOUCH_MOUSE_EVENTS', '0')
 os.environ.setdefault('SDL_MOUSE_TOUCH_EVENTS', '0')
 
+# On macOS, SDL2 enables Retina HiDPI by default, giving Kivy a framebuffer
+# (Window.size) that is the requested window size times the backing scale
+# (typically 2×). We ask SDL to disable it for a 1:1 framebuffer, but recent
+# macOS/SDL builds ignore this, so it's best-effort only — _ScaledContainer
+# (app.py) scales the 800×480 dashboard to fit whatever framebuffer results,
+# making the preview faithful whether HiDPI ends up on or off.
+if sys.platform == 'darwin':
+    os.environ.setdefault('SDL_ALLOW_HIDPI', '0')
+
+# Pin density to the Pi screen's natural value (133 PPI / 96 reference ≈ 1.4)
+# so sp/dp font sizes render at the same Kivy-pixel count on both platforms.
+# On Mac without this, Kivy auto-detects a much higher density (Retina) and
+# makes fonts enormous; on the Pi it would be ~1.39 anyway, so 1.4 is a
+# faithful approximation of the target device.
+os.environ.setdefault('KIVY_METRICS_DENSITY', '1.4')
+
+# Force SDL2's FreeType text renderer on both platforms. macOS would otherwise
+# fall back to CoreText for some glyphs, producing different character-width
+# measurements than Pi's FreeType path — causing text to lay out differently.
+os.environ.setdefault('KIVY_TEXT', 'sdl2')
+
 # Add parent directory to path for imports (matches sibling CLI modules)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -180,8 +201,16 @@ def run_app(
     # (macOS, Windows, Linux desktop) the cursor needs to be visible and
     # the window resizable so the dashboard can actually be inspected.
     is_appliance = sys.platform.startswith('linux')
-    KivyConfig.set('graphics', 'width', '800')
-    KivyConfig.set('graphics', 'height', '480')
+    # On macOS the 800×480 logical dashboard is scaled-to-fit inside its
+    # window by _ScaledContainer (app.py), which derives the scale factor
+    # from the real framebuffer at runtime — so this size just controls the
+    # physical preview window, not the layout. We request 1600×960 (points)
+    # for a comfortably large preview; Retina then backs it at 2× and the
+    # container fills whatever framebuffer results. The Pi runs the
+    # dashboard unscaled at its native 800×480.
+    _win_w, _win_h = ('1600', '960') if sys.platform == 'darwin' else ('800', '480')
+    KivyConfig.set('graphics', 'width', _win_w)
+    KivyConfig.set('graphics', 'height', _win_h)
     KivyConfig.set('graphics', 'resizable', '0' if is_appliance else '1')
     KivyConfig.set('graphics', 'position', 'custom')
     KivyConfig.set('graphics', 'left', '0')
@@ -197,6 +226,23 @@ def run_app(
     # mouse provider already covers dev use.
     if is_appliance:
         KivyConfig.set('input', 'probesysfs', 'probesysfs,provider=mtdev')
+
+    # Pin Kivy's bundled Roboto as the explicit default font on both platforms.
+    # Without this, macOS can substitute system fonts for missing glyphs via
+    # CoreText, producing different glyph metrics than Pi's FreeType path.
+    try:
+        import kivy as _kivy
+        from kivy.core.text import LabelBase
+        _fonts = os.path.join(os.path.dirname(_kivy.__file__), 'data', 'fonts')
+        LabelBase.register(
+            name='Roboto',
+            fn_regular=os.path.join(_fonts, 'Roboto-Regular.ttf'),
+            fn_bold=os.path.join(_fonts, 'Roboto-Bold.ttf'),
+            fn_italic=os.path.join(_fonts, 'Roboto-Italic.ttf'),
+            fn_bolditalic=os.path.join(_fonts, 'Roboto-BoldItalic.ttf'),
+        )
+    except Exception:
+        pass  # non-fatal: falls back to Kivy's default registration
 
     try:
         from sketchatone.ui.app import run_app as _ui_run_app

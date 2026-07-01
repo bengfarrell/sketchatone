@@ -26,6 +26,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
+from kivy.uix.stacklayout import StackLayout
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 
@@ -98,14 +99,14 @@ class EventRateTracker:
 # ---- Widgets -------------------------------------------------------------
 
 def _field_label(text: str) -> Label:
-    lbl = Label(text=text, color=theme.TEXT_MUTED, font_size='11sp',
+    lbl = Label(text=text, color=theme.TEXT_MUTED, font_size='7.5sp',
                 halign='left', valign='middle')
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
     return lbl
 
 
 def _value_label() -> Label:
-    lbl = Label(text='—', color=theme.TEXT_PRIMARY, font_size='14sp',
+    lbl = Label(text='—', color=theme.TEXT_PRIMARY, font_size='9.5sp',
                 halign='left', valign='middle')
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
     return lbl
@@ -118,7 +119,7 @@ class PlaceholderPanel(BoxLayout):
         super().__init__(orientation='vertical', spacing=theme.SPACE_3, **kwargs)
         msg = Label(
             text=f'Panel "{label}" not implemented yet.',
-            color=theme.TEXT_MUTED, font_size='14sp',
+            color=theme.TEXT_MUTED, font_size='9.5sp',
             halign='center', valign='middle',
         )
         msg.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -126,136 +127,778 @@ class PlaceholderPanel(BoxLayout):
 
 
 class EventsPanel(BoxLayout):
-    """Latest tablet event fields, button states, and last strum."""
+    """Latest tablet event fields, button states, and last strum.
+
+    Mirrors the web ``strum-events-display`` layout: a header with the
+    big event count + small ``EVENTS`` caption, a three-column field
+    grid (X / Y / Pressure / Tilt X / Tilt Y), a row of full-width
+    rounded status chips (Primary / Secondary / Tablet N) that turn
+    green when active, and a strum section with a type pill and the
+    most recent notes rendered as name+velocity chips.
+    """
 
     _FIELDS = (('X', 'x'), ('Y', 'y'), ('Pressure', 'pressure'),
                ('Tilt X', 'tiltX'), ('Tilt Y', 'tiltY'))
 
     def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
-        super().__init__(orientation='vertical', spacing=theme.SPACE_3, **kwargs)
+        super().__init__(orientation='vertical', spacing=theme.SPACE_4, **kwargs)
         self._count = 0
         self._last_strum: Any = None
 
-        self._header = Label(
-            text='0 events', color=theme.TEXT_SECONDARY, font_size='13sp',
-            size_hint_y=None, height=20, halign='left', valign='middle',
-        )
-        self._header.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        self.add_widget(self._header)
+        self.add_widget(self._build_header_row())
+        self.add_widget(self._build_event_grid())
+        self.add_widget(self._build_button_row())
+        self.add_widget(self._build_strum_section())
+        # Anchor everything to the top; soak up any extra vertical space.
+        self.add_widget(Widget())
 
-        grid = GridLayout(cols=2, size_hint_y=None, row_default_height=26,
-                          row_force_default=True, spacing=(theme.SPACE_3, 2))
-        grid.bind(minimum_height=grid.setter('height'))
-        self._values: dict = {}
-        for label_text, key in self._FIELDS:
-            grid.add_widget(_field_label(label_text))
-            v = _value_label()
-            grid.add_widget(v)
-            self._values[key] = v
-        self.add_widget(grid)
+        # Backing labels — kept in sync with the visible widgets so
+        # callers (and tests) that read the plain-text mirror keep
+        # working even though the visible composition uses many
+        # smaller pieces.
+        self._header = Label(text='0 events')
+        self._buttons = Label(text='Primary: \u2014   Secondary: \u2014')
+        self._strum = Label(text='Strum: (none)')
 
-        self._buttons = Label(
-            text='Primary: —   Secondary: —', color=theme.TEXT_SECONDARY,
-            font_size='12sp', size_hint_y=None, height=22,
-            halign='left', valign='middle',
-        )
-        self._buttons.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        self.add_widget(self._buttons)
-
-        self._strum = Label(
-            text='Strum: (none)', color=theme.TEXT_PRIMARY, font_size='13sp',
-            halign='left', valign='top',
-        )
-        self._strum.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        self.add_widget(self._strum)
+        self._render_strum_body(None)
 
         if bridge is not None:
             bridge.on('tablet', self._on_tablet)
             bridge.on('strum', self._on_strum)
 
+    # ---- Section builders --------------------------------------------
+
+    def _build_header_row(self) -> BoxLayout:
+        # Big count baselined next to a small uppercase "EVENTS" caption.
+        # Height matches the standard input row so it sits in the same
+        # vertical rhythm as the form panels' headers.
+        row = BoxLayout(orientation='horizontal', spacing=theme.SPACE_3,
+                        size_hint_y=None, height=44)
+        self._count_label = Label(
+            text='0', color=theme.TEXT_PRIMARY, font_size='18.5sp', bold=True,
+            size_hint=(None, 1), halign='left', valign='middle',
+        )
+        # Let the label auto-size from its texture. Do NOT bind a
+        # ``text_size`` constraint on this label: ``text_size`` clips
+        # the rendering area, so when the digit count grows (e.g. 9 -> 10)
+        # the new glyph would wrap inside the stale, narrower box before
+        # the width binding could catch up.
+        def _sync_count(w, ts):
+            w.width = max(28, int(ts[0]))
+        self._count_label.bind(texture_size=_sync_count)
+        caption = Label(
+            text='EVENTS', color=theme.TEXT_SECONDARY, font_size='8.5sp', bold=True,
+            halign='left', valign='middle',
+        )
+        caption.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        row.add_widget(self._count_label)
+        row.add_widget(caption)
+        return row
+
+    def _build_event_grid(self) -> GridLayout:
+        # Cell geometry mirrors ``_setting_row``: ``_form_field_label``
+        # (13sp bold, height ``FIELD_LABEL_HEIGHT``) sits above the
+        # value with the same ``SPACE_1 + 5`` gap form panels use, so
+        # the events grid reads as part of the same field family.
+        grid = GridLayout(cols=3, size_hint_y=None,
+                          spacing=(theme.SPACE_4, theme.SPACE_3))
+        grid.bind(minimum_height=grid.setter('height'))
+        self._values: dict = {}
+        label_gap = theme.SPACE_1 + 5
+        cell_h = theme.FIELD_LABEL_HEIGHT + label_gap + 30
+        for label_text, key in self._FIELDS:
+            cell = BoxLayout(orientation='vertical', size_hint_y=None,
+                             height=cell_h, spacing=label_gap)
+            cell.add_widget(self._make_field_label(label_text))
+            v = self._make_field_value()
+            cell.add_widget(v)
+            grid.add_widget(cell)
+            self._values[key] = v
+        for _ in range((-len(self._FIELDS)) % 3):
+            grid.add_widget(Widget(size_hint_y=None, height=cell_h))
+        return grid
+
+    def _build_button_row(self) -> BoxLayout:
+        # Mirrors the web's ``.button-status`` row: hairline border-top
+        # plus three flex chips. Chip height matches ``CONTROL_HEIGHT``
+        # so the row reads at the same scale as other tappable controls.
+        row = BoxLayout(orientation='horizontal', spacing=theme.SPACE_3,
+                        size_hint_y=None, height=theme.CONTROL_HEIGHT + theme.SPACE_3,
+                        padding=(0, theme.SPACE_3, 0, 0))
+        with row.canvas.before:
+            self._btn_sep_color = Color(*theme.BORDER)
+            self._btn_sep = Line(points=[0, 0, 0, 0], width=1.0)
+        row.bind(pos=self._sync_btn_sep, size=self._sync_btn_sep)
+        self._button_chips: dict = {}
+        for key, label_text in (('primary', 'PRIMARY'),
+                                ('secondary', 'SECONDARY'),
+                                ('tablet', 'TABLET \u2014')):
+            chip = self._make_status_chip(label_text)
+            self._button_chips[key] = chip
+            row.add_widget(chip)
+        return row
+
+    def _build_strum_section(self) -> BoxLayout:
+        section = BoxLayout(orientation='vertical', spacing=theme.SPACE_3,
+                            size_hint_y=None,
+                            padding=(0, theme.SPACE_3, 0, 0))
+        section.bind(minimum_height=section.setter('height'))
+        with section.canvas.before:
+            self._strum_sep_color = Color(*theme.BORDER)
+            self._strum_sep = Line(points=[0, 0, 0, 0], width=1.0)
+        section.bind(pos=self._sync_strum_sep, size=self._sync_strum_sep)
+
+        header = BoxLayout(orientation='horizontal', spacing=theme.SPACE_3,
+                           size_hint_y=None, height=theme.FIELD_LABEL_HEIGHT)
+        label = Label(text='STRUM', color=theme.TEXT_SECONDARY,
+                      font_size='8.5sp', bold=True,
+                      size_hint=(None, 1),
+                      halign='left', valign='middle')
+        # Auto-size width from texture so the label can never wrap into
+        # a narrow box during layout. ``text_size`` is intentionally NOT
+        # bound to ``size`` here -- doing so creates a clipping box and
+        # the label can flash as wrapped/garbled glyphs while the layout
+        # pass settles.
+        def _sync_label_w(w, ts):
+            w.width = int(ts[0])
+        label.bind(texture_size=_sync_label_w)
+        label.texture_update(); label.width = int(label.texture_size[0])
+        header.add_widget(label)
+        self._strum_type_pill = self._make_type_pill('')
+        header.add_widget(self._strum_type_pill)
+        # Spacer so the label + pill stay flush-left like the web UI.
+        header.add_widget(Widget())
+        section.add_widget(header)
+
+        self._strum_body = BoxLayout(orientation='vertical',
+                                     spacing=theme.SPACE_2,
+                                     size_hint_y=None)
+        self._strum_body.bind(minimum_height=self._strum_body.setter('height'))
+        section.add_widget(self._strum_body)
+        return section
+
+    # ---- Small widget factories --------------------------------------
+
+    def _make_field_label(self, text: str) -> Label:
+        # Field-grid labels use the shared ``_form_field_label`` style
+        # (13sp bold ``TEXT_SECONDARY``, height ``FIELD_LABEL_HEIGHT``)
+        # so they match the labelling on every other panel. Text is
+        # uppercased to preserve the data-display distinction the web
+        # build uses.
+        lbl = _form_field_label(text.upper())
+        return lbl
+
+    def _make_field_value(self) -> Label:
+        lbl = Label(
+            text='\u2014', color=theme.TEXT_PRIMARY, font_size='10.5sp',
+            bold=True, size_hint_y=None, height=30,
+            halign='left', valign='middle',
+        )
+        lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        return lbl
+
+    def _make_status_chip(self, text: str) -> Label:
+        chip = Label(
+            text=text, color=theme.TEXT_SECONDARY, font_size='8.5sp',
+            bold=True, halign='center', valign='middle',
+        )
+        chip.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        with chip.canvas.before:
+            chip._bg_color = Color(*theme.BG_SURFACE_ALT)
+            chip._bg_rect = RoundedRectangle(pos=chip.pos, size=chip.size,
+                                             radius=[8])
+        def _sync(w, *_):
+            w._bg_rect.pos = w.pos
+            w._bg_rect.size = w.size
+        chip.bind(pos=_sync, size=_sync)
+        chip._active = False
+        return chip
+
+    def _set_chip_active(self, chip: Label, active: bool) -> None:
+        if getattr(chip, '_active', None) == active:
+            return
+        chip._active = active
+        chip._bg_color.rgba = (theme.STATUS_CONNECTED if active
+                               else theme.BG_SURFACE_ALT)
+        chip.color = ((1, 1, 1, 1) if active else theme.TEXT_SECONDARY)
+
+    def _make_type_pill(self, text: str) -> Label:
+        # Width auto-tracks ``texture_size`` plus horizontal padding so
+        # the pill hugs its text exactly. ``text_size`` is intentionally
+        # NOT bound to ``size``: doing so creates a feedback loop with
+        # ``texture_size`` and clips the glyphs while the layout pass
+        # settles. The background rect's height collapses with the pill
+        # height when text is empty so no stray bar paints on init.
+        pill = Label(
+            text=text, color=theme.TEXT_SECONDARY, font_size='8sp',
+            bold=True, size_hint=(None, None),
+            size=(0, theme.FIELD_LABEL_HEIGHT),
+            halign='center', valign='middle',
+        )
+        with pill.canvas.before:
+            pill._bg_color = Color(0, 0, 0, 0)
+            pill._bg_rect = RoundedRectangle(pos=pill.pos, size=(0, 0),
+                                             radius=[6])
+        def _sync_rect(w, *_):
+            w._bg_rect.pos = w.pos
+            w._bg_rect.size = (w.width, w.height) if w.text else (0, 0)
+        def _sync_w(w, ts):
+            w.width = (int(ts[0]) + 2 * theme.SPACE_3) if w.text else 0
+        pill.bind(pos=_sync_rect, size=_sync_rect)
+        pill.bind(texture_size=_sync_w)
+        return pill
+
+    def _set_type_pill(self, kind: str) -> None:
+        pill = self._strum_type_pill
+        pill.text = kind.upper() if kind else ''
+        if kind == 'strum':
+            pill._bg_color.rgba = theme.STATUS_CONNECTED
+            pill.color = (1, 1, 1, 1)
+        elif kind == 'release':
+            pill._bg_color.rgba = theme.BLUE_100
+            pill.color = theme.BLUE_900
+        else:
+            pill._bg_color.rgba = (0, 0, 0, 0)
+            pill.color = theme.TEXT_SECONDARY
+        pill.texture_update()
+        pill.width = ((int(pill.texture_size[0]) + 2 * theme.SPACE_3)
+                      if pill.text else 0)
+        # Force a rect refresh so collapse-to-zero happens immediately
+        # when text is cleared (the size-binding fires on the line above
+        # only if the width actually changed).
+        pill._bg_rect.pos = pill.pos
+        pill._bg_rect.size = ((pill.width, pill.height) if pill.text
+                              else (0, 0))
+
+    def _make_note_chip(self, name_text: str, velocity_text: str) -> BoxLayout:
+        row = BoxLayout(orientation='horizontal', size_hint=(None, None),
+                        spacing=theme.SPACE_2,
+                        padding=(theme.SPACE_3, 0),
+                        height=34)
+        with row.canvas.before:
+            row._bg_color = Color(*theme.BG_SURFACE_ALT)
+            row._bg_rect = RoundedRectangle(pos=row.pos, size=row.size,
+                                            radius=[8])
+        def _sync(w, *_):
+            w._bg_rect.pos = w.pos
+            w._bg_rect.size = w.size
+        row.bind(pos=_sync, size=_sync)
+        name = Label(text=name_text, color=theme.TEXT_PRIMARY,
+                     font_size='9.5sp', bold=True, size_hint=(None, 1),
+                     halign='left', valign='middle')
+        def _sync_label_w(w, ts):
+            w.width = int(ts[0])
+            w.text_size = w.size
+        name.bind(texture_size=_sync_label_w)
+        name.texture_update(); name.width = int(name.texture_size[0])
+        row.add_widget(name)
+        vel: Optional[Label] = None
+        if velocity_text:
+            vel = Label(text=velocity_text, color=theme.TEXT_SECONDARY,
+                        font_size='7.5sp', size_hint=(None, 1),
+                        halign='left', valign='middle')
+            vel.bind(texture_size=_sync_label_w)
+            vel.texture_update(); vel.width = int(vel.texture_size[0])
+            row.add_widget(vel)
+        def _sync_row(*_):
+            inner = name.width + (vel.width + theme.SPACE_2 if vel else 0)
+            row.width = inner + 2 * theme.SPACE_3
+        name.bind(width=_sync_row)
+        if vel is not None:
+            vel.bind(width=_sync_row)
+        _sync_row()
+        return row
+
+    def _muted_message(self, text: str) -> Label:
+        lbl = Label(text=text, color=theme.TEXT_MUTED, font_size='8.5sp',
+                    italic=True, size_hint_y=None, height=24,
+                    halign='left', valign='middle')
+        lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        return lbl
+
+    def _render_strum_body(self, info: Optional[dict]) -> None:
+        self._strum_body.clear_widgets()
+        if info is None or not info.get('type'):
+            self._strum_body.add_widget(self._muted_message('No strum'))
+            return
+        if info['type'] == 'release':
+            self._strum_body.add_widget(self._muted_message('Released'))
+            return
+        notes = info.get('notes') or []
+        if notes:
+            wrap = StackLayout(size_hint_y=None,
+                               spacing=(theme.SPACE_2, theme.SPACE_2))
+            wrap.bind(minimum_height=wrap.setter('height'))
+            for entry in notes:
+                # Per-note velocity is omitted from the chip because the
+                # aggregate "Velocity: N" line below already shows it.
+                name_part = entry.rsplit(' v', 1)[0] if ' v' in entry else entry
+                wrap.add_widget(self._make_note_chip(name_part, ''))
+            self._strum_body.add_widget(wrap)
+        vel_lbl = Label(
+            text=f"Velocity: {info.get('velocity', 0)}",
+            color=theme.TEXT_SECONDARY, font_size='8sp',
+            size_hint_y=None, height=22,
+            halign='left', valign='middle',
+        )
+        vel_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self._strum_body.add_widget(vel_lbl)
+
+    # ---- Separator painters ------------------------------------------
+
+    def _sync_btn_sep(self, w, *_):
+        y = w.y + w.height - 0.5
+        self._btn_sep.points = [w.x, y, w.x + w.width, y]
+
+    def _sync_strum_sep(self, w, *_):
+        y = w.y + w.height - 0.5
+        self._strum_sep.points = [w.x, y, w.x + w.width, y]
+
+    # ---- Bridge handlers ---------------------------------------------
+
     def _on_tablet(self, ev: Any) -> None:
         self._count += 1
         self._header.text = f'{self._count} events'
+        self._count_label.text = str(self._count)
         for key, lbl in self._values.items():
             lbl.text = format_value(getattr(ev, key, None))
-        prim = '●' if getattr(ev, 'primaryButtonPressed', False) else '○'
-        sec = '●' if getattr(ev, 'secondaryButtonPressed', False) else '○'
-        self._buttons.text = f'Primary: {prim}   Secondary: {sec}'
+        prim = bool(getattr(ev, 'primaryButtonPressed', False))
+        sec = bool(getattr(ev, 'secondaryButtonPressed', False))
+        self._set_chip_active(self._button_chips['primary'], prim)
+        self._set_chip_active(self._button_chips['secondary'], sec)
+        buttons = getattr(ev, 'buttons', None) or {}
+        pressed_n: Optional[int] = None
+        for i in range(1, 9):
+            if buttons.get(f'button{i}'):
+                pressed_n = i
+                break
+        tablet_chip = self._button_chips['tablet']
+        dash = '\u2014'
+        tablet_chip.text = f'TABLET {pressed_n if pressed_n else dash}'
+        self._set_chip_active(tablet_chip, pressed_n is not None)
+        on, off = '\u25cf', '\u25cb'
+        self._buttons.text = (
+            f'Primary: {on if prim else off}   '
+            f'Secondary: {on if sec else off}'
+        )
 
     def _on_strum(self, strum: Any) -> None:
         self._last_strum = strum
         info = format_strum(strum)
         if not info['type']:
             self._strum.text = 'Strum: (none)'
+            self._set_type_pill('')
+            self._render_strum_body(None)
             return
+        kind = info['type']
         if info['notes']:
-            notes = '  '.join(info['notes'])
-            self._strum.text = f"Strum [{info['type']}] v{info['velocity']}: {notes}"
+            notes_text = '  '.join(info['notes'])
+            self._strum.text = f"Strum [{kind}] v{info['velocity']}: {notes_text}"
         else:
-            self._strum.text = f"Strum [{info['type']}]"
+            self._strum.text = f"Strum [{kind}]"
+        self._set_type_pill(kind)
+        self._render_strum_body(info)
+
+
+_STYLUS_BADGE_PALETTE: Dict[str, Tuple[Any, Any]] = {
+    # (background, foreground) — primary uses the standard accent; secondary
+    # borrows a magenta-ish tint since there's no dedicated theme token.
+    'primary':   (None,                       None),
+    'secondary': ((0.96, 0.66, 0.85, 1.0),    (0.42, 0.07, 0.28, 1.0)),
+}
+
+
+class _MappingChip(BoxLayout):
+    """Pill row: colored badge + monospace action label.
+
+    Mirrors the web ``.mapping-chip`` ``<badge>`` ``<action>`` pair.
+    ``kind`` selects the badge palette (``'button'`` numeric, ``'primary'``
+    or ``'secondary'`` stylus). ``set_active(bool)`` highlights the chip
+    without rebuilding it so the panel can flick pressed buttons on/off
+    from the tablet event stream.
+    """
+
+    HEIGHT = 40
+    BADGE_W = 36
+    BADGE_H = 24
+
+    def __init__(self, badge_text: str, action_text: str,
+                 kind: str = 'button', **kwargs) -> None:
+        super().__init__(orientation='horizontal', spacing=theme.SPACE_3,
+                         padding=(theme.SPACE_3, theme.SPACE_2),
+                         size_hint_y=None, height=self.HEIGHT, **kwargs)
+        self._kind = kind
+        self._active = False
+
+        with self.canvas.before:
+            self._bg_color = Color(*theme.BG_SURFACE_ALT)
+            self._bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[12])
+        self.bind(pos=self._sync_bg, size=self._sync_bg)
+
+        badge = Label(
+            text=badge_text, font_size='14sp', bold=True,
+            color=theme.TEXT_PRIMARY,
+            size_hint=(None, None), size=(self.BADGE_W, self.BADGE_H),
+            halign='center', valign='middle',
+        )
+        badge.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        with badge.canvas.before:
+            self._badge_bg_color = Color(*self._badge_palette()[0])
+            self._badge_bg = RoundedRectangle(
+                pos=badge.pos, size=badge.size, radius=[self.BADGE_H // 2])
+        def _sync_badge(_w, *_):
+            self._badge_bg.pos = _w.pos
+            self._badge_bg.size = _w.size
+        badge.bind(pos=_sync_badge, size=_sync_badge)
+        badge.color = self._badge_palette()[1]
+        self._badge = badge
+        # Vertically centre the badge within the taller chip row.
+        badge_wrap = AnchorLayout(anchor_x='center', anchor_y='center',
+                                  size_hint=(None, 1), width=self.BADGE_W)
+        badge_wrap.add_widget(badge)
+        self.add_widget(badge_wrap)
+
+        action = Label(
+            text=action_text, font_size='12sp', color=theme.TEXT_PRIMARY,
+            halign='left', valign='middle', shorten=True,
+            shorten_from='right',
+        )
+        action.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self._action = action
+        self.add_widget(action)
+
+    def _badge_palette(self) -> Tuple[Any, Any]:
+        if self._active:
+            return (theme.ACCENT, (1, 1, 1, 1))
+        if self._kind == 'primary':
+            return (theme.ACCENT_BG, theme.BLUE_900)
+        if self._kind == 'secondary':
+            return _STYLUS_BADGE_PALETTE['secondary']
+        return (theme.GRAY_300, theme.TEXT_PRIMARY)
+
+    def _sync_bg(self, *_args) -> None:
+        self._bg.pos = self.pos
+        self._bg.size = self.size
+
+    def set_active(self, active: bool) -> None:
+        if active == self._active:
+            return
+        self._active = active
+        if active:
+            self._bg_color.rgba = theme.ACCENT_BG
+        else:
+            self._bg_color.rgba = theme.BG_SURFACE_ALT
+        bg, fg = self._badge_palette()
+        self._badge_bg_color.rgba = bg
+        self._badge.color = fg
+
+
+class _StringStripWidget(Widget):
+    """Mini horizontal string visualizer for the Performance panel.
+
+    Vertical lines for each configured string (evenly spaced across the
+    width), note labels along the bottom, and a pen-position dot that
+    tracks the tablet's ``x`` (turns red on contact). Mirrors the web's
+    ``.ps-container`` block.
+    """
+
+    LINE_TOP_MARGIN = 6
+    LINE_BOTTOM_MARGIN = 28
+    LABEL_HEIGHT = 18
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._notes: list = []
+        self._labels: list = []
+        self._plucked: int = -1
+        self._pen_x: float = 0.0
+        self._pen_pressure: float = 0.0
+        self._pen_in_range: bool = False
+
+        with self.canvas:
+            self._baseline_color = Color(*theme.GRAY_300)
+            self._baseline = Line(points=[0, 0, 0, 0], width=1.0)
+        self._string_color = None
+        self._string_lines: list = []
+        with self.canvas:
+            self._pen_color = Color(0.45, 0.75, 1.0, 0.0)
+            self._pen_dot = Ellipse(pos=(0, 0), size=(0, 0))
+
+        self.bind(pos=self._redraw, size=self._redraw)
+
+    def set_notes(self, notes: list) -> None:
+        self._notes = list(notes or [])
+        self._redraw()
+
+    def set_plucked(self, idx: int) -> None:
+        self._plucked = int(idx) if idx is not None else -1
+        self._redraw()
+
+    def update_pen(self, x: float, pressure: float, in_range: bool) -> None:
+        self._pen_x = max(0.0, min(1.0, float(x or 0.0)))
+        self._pen_pressure = max(0.0, min(1.0, float(pressure or 0.0)))
+        self._pen_in_range = bool(in_range)
+        self._update_pen_only()
+
+    def _redraw(self, *_args) -> None:
+        for line in self._string_lines:
+            self.canvas.remove(line)
+        # Sweep every Label child rather than just the tracked ones so
+        # a stale label from a previous note set (chord change,
+        # progression step, etc.) can't survive the redraw and stack
+        # on top of the freshly drawn ones.
+        for child in list(self.children):
+            if isinstance(child, Label):
+                self.remove_widget(child)
+        self._string_lines.clear()
+        self._labels.clear()
+
+        x0, y0, w, h = self.x, self.y, self.width, self.height
+        baseline_y = y0 + self.LABEL_HEIGHT + 4
+        self._baseline.points = [x0, baseline_y, x0 + w, baseline_y]
+
+        n = len(self._notes)
+        if n == 0 or w <= 0 or h <= 0:
+            self._update_pen_only()
+            return
+
+        top = y0 + h - self.LINE_TOP_MARGIN
+        bot = y0 + self.LINE_BOTTOM_MARGIN
+        for i, note in enumerate(self._notes):
+            sx = x0 + ((i + 1) / (n + 1)) * w
+            plucked = (i == self._plucked)
+            with self.canvas:
+                Color(*(theme.STATUS_CONNECTED if plucked else theme.GRAY_500))
+                line = Line(points=[sx, bot, sx, top],
+                            width=1.6 if plucked else 1.0)
+            self._string_lines.append(line)
+
+            label_text = f"{note.get('notation', '')}{note.get('octave', '')}"
+            lbl = Label(
+                text=label_text, font_size='12sp', bold=plucked,
+                color=(theme.STATUS_CONNECTED if plucked else theme.TEXT_MUTED),
+                size_hint=(None, None), size=(72, self.LABEL_HEIGHT),
+                pos=(sx - 36, y0 + 2), halign='center', valign='middle',
+            )
+            lbl.bind(size=lambda w_, *_: setattr(w_, 'text_size', w_.size))
+            self._labels.append(lbl)
+            self.add_widget(lbl)
+
+        self._update_pen_only()
+
+    def _update_pen_only(self) -> None:
+        x0, y0, w, h = self.x, self.y, self.width, self.height
+        if not self._pen_in_range or w <= 0 or h <= 0:
+            self._pen_color.a = 0.0
+            return
+        cx = x0 + self._pen_x * w
+        cy = y0 + self.LABEL_HEIGHT + 4
+        is_contact = self._pen_pressure > 0.0
+        r = 8.0 if is_contact else 6.0
+        if is_contact:
+            self._pen_color.rgba = (1.0, 0.42, 0.42,
+                                    max(0.4, self._pen_pressure))
+        else:
+            self._pen_color.rgba = (0.45, 0.75, 1.0, 0.6)
+        self._pen_dot.pos = (cx - r, cy - r)
+        self._pen_dot.size = (r * 2, r * 2)
 
 
 class PerformancePanel(BoxLayout):
-    """Throughput metrics: events/sec, total counts, last-event age."""
+    """Active button-mappings list above a mini string strip.
+
+    Mirrors the web Performance panel: an "active mappings" region
+    listing each configured stylus / numeric-button -> action with
+    live highlight when the button is pressed, and a horizontal
+    string strip showing the configured tuning with a pen indicator
+    tracking ``tabletData.x``.
+    """
+
+    _BUTTON_COLUMNS = 3
 
     def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
         super().__init__(orientation='vertical', spacing=theme.SPACE_3, **kwargs)
-        self.tablet_rate = EventRateTracker()
-        self.strum_rate = EventRateTracker()
+        self._bridge = bridge
+        self._notes: list = []
+        self._stylus: list = []
+        self._buttons: list = []
+        self._pressed: set = set()
+        self._stylus_chips: dict = {}
+        self._button_chips: dict = {}
 
-        grid = GridLayout(cols=2, size_hint_y=None, row_default_height=28,
-                          row_force_default=True, spacing=(theme.SPACE_3, 2))
-        grid.bind(minimum_height=grid.setter('height'))
-        self._values: dict = {}
-        for label_text, key in (('Tablet events/s', 'tablet_rate'),
-                                ('Strum events/s', 'strum_rate'),
-                                ('Tablet total',   'tablet_total'),
-                                ('Strum total',    'strum_total'),
-                                ('Last tablet',    'tablet_age'),
-                                ('Last strum',     'strum_age')):
-            grid.add_widget(_field_label(label_text))
-            v = _value_label()
-            grid.add_widget(v)
-            self._values[key] = v
-        self.add_widget(grid)
+        self._mappings_scroll = ScrollView(do_scroll_x=False, bar_width=4)
+        self._mappings_container = BoxLayout(
+            orientation='vertical', size_hint_y=None,
+            spacing=theme.SPACE_1, padding=(0, theme.SPACE_1),
+        )
+        self._mappings_container.bind(
+            minimum_height=self._mappings_container.setter('height'))
+        self._mappings_scroll.add_widget(self._mappings_container)
+        # Re-pack columns when the viewport height changes so column 1
+        # absorbs as many chips as fits before spilling to column 2/3.
+        self._mappings_scroll.bind(height=self._relayout_buttons)
+        self.add_widget(self._mappings_scroll)
+
+        self._strip = _StringStripWidget(size_hint_y=None, height=64)
+        self.add_widget(self._strip)
+
+        self._render_mappings()
 
         if bridge is not None:
+            bridge.on('config', self._on_config)
             bridge.on('tablet', self._on_tablet)
             bridge.on('strum', self._on_strum)
 
-        from kivy.clock import Clock
-        self._tick_event = Clock.schedule_interval(lambda _dt: self._refresh(), 0.5)
+    def _on_config(self, payload: Any) -> None:
+        mappings = extract_button_mappings(payload)
+        self._stylus = mappings['stylus']
+        self._buttons = mappings['buttons']
+        self._notes = extract_notes(payload)
+        self._render_mappings()
+        self._strip.set_notes(self._notes)
 
-    def _on_tablet(self, _ev: Any) -> None:
-        self.tablet_rate.record()
+    def _on_tablet(self, ev: Any) -> None:
+        pressed: set = set()
+        if getattr(ev, 'primaryButtonPressed', False):
+            pressed.add('primary')
+        if getattr(ev, 'secondaryButtonPressed', False):
+            pressed.add('secondary')
+        for key, val in (getattr(ev, 'buttons', {}) or {}).items():
+            if val and isinstance(key, str) and key.startswith('button'):
+                try:
+                    pressed.add(int(key[len('button'):]))
+                except ValueError:
+                    continue
+        if pressed != self._pressed:
+            self._pressed = pressed
+            self._refresh_active_states()
 
-    def _on_strum(self, _strum: Any) -> None:
-        self.strum_rate.record()
+        x = float(getattr(ev, 'x', 0.0) or 0.0)
+        y = float(getattr(ev, 'y', 0.0) or 0.0)
+        pressure = float(getattr(ev, 'pressure', 0.0) or 0.0)
+        self._strip.update_pen(x, pressure, in_range=(x > 0 or y > 0))
 
-    def _refresh(self) -> None:
-        self._values['tablet_rate'].text = f'{self.tablet_rate.rate():.1f}'
-        self._values['strum_rate'].text = f'{self.strum_rate.rate():.1f}'
-        self._values['tablet_total'].text = str(self.tablet_rate.total)
-        self._values['strum_total'].text = str(self.strum_rate.total)
-        self._values['tablet_age'].text = _format_age(self.tablet_rate.age())
-        self._values['strum_age'].text = _format_age(self.strum_rate.age())
+    def _on_strum(self, strum: Any) -> None:
+        notes = list(getattr(strum, 'notes', []) or [])
+        if not notes or not self._notes:
+            return
+        first = notes[0]
+        name = getattr(first, 'name', None)
+        octave = getattr(first, 'octave', None)
+        for i, n in enumerate(self._notes):
+            if n.get('notation') == name and n.get('octave') == octave:
+                self._strip.set_plucked(i)
+                return
 
+    def _render_mappings(self) -> None:
+        self._mappings_container.clear_widgets()
+        self._stylus_chips.clear()
+        self._button_chips.clear()
 
-def _format_age(age: Optional[float]) -> str:
-    if age is None:
-        return '—'
-    if age < 1.0:
-        return f'{int(age * 1000)} ms ago'
-    return f'{age:.1f} s ago'
+        if not self._stylus and not self._buttons:
+            empty = Label(
+                text='No button mappings configured',
+                color=theme.TEXT_MUTED, font_size='8.5sp', italic=True,
+                size_hint_y=None, height=32,
+                halign='center', valign='middle',
+            )
+            empty.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+            self._mappings_container.add_widget(empty)
+            return
+
+        if self._stylus:
+            row = BoxLayout(orientation='horizontal', spacing=theme.SPACE_2,
+                            size_hint_y=None, height=_MappingChip.HEIGHT)
+            for s in self._stylus:
+                kind = s['kind']
+                badge_text = 'P' if kind == 'primary' else 'S'
+                chip = _MappingChip(badge_text, s['action'], kind=kind)
+                chip.size_hint_x = 1
+                row.add_widget(chip)
+                self._stylus_chips[kind] = chip
+            self._mappings_container.add_widget(row)
+
+        if self._buttons:
+            # Column-major holder. Columns are added lazily by
+            # ``_relayout_buttons``: we fill column 1 to capacity before
+            # spilling into column 2, then column 3 — small sets stay
+            # readable as a single top-to-bottom list.
+            self._buttons_holder = BoxLayout(
+                orientation='horizontal', spacing=theme.SPACE_2,
+                size_hint_y=None,
+            )
+            self._mappings_container.add_widget(self._buttons_holder)
+            self._relayout_buttons()
+        else:
+            self._buttons_holder = None
+
+        self._refresh_active_states()
+
+    def _relayout_buttons(self, *_args) -> None:
+        """Re-pack button chips column-major from the current viewport.
+
+        ``rows_per_col`` is derived from the visible scroll height so the
+        first column fills before spilling into the next; capped at
+        :pyattr:`_BUTTON_COLUMNS` columns total.
+        """
+        holder = getattr(self, '_buttons_holder', None)
+        if holder is None or not self._buttons:
+            return
+        holder.clear_widgets()
+        self._button_chips.clear()
+
+        row_height = _MappingChip.HEIGHT + theme.SPACE_2
+        stylus_row = (_MappingChip.HEIGHT + theme.SPACE_1) if self._stylus else 0
+        available = max(row_height,
+                        int(self._mappings_scroll.height) - stylus_row
+                        - 2 * theme.SPACE_1)
+        rows_per_col = max(1, available // row_height)
+        cols_needed = min(self._BUTTON_COLUMNS,
+                          (len(self._buttons) + rows_per_col - 1) // rows_per_col)
+        # Recompute rows-per-col after capping the column count so the
+        # last column doesn't get a disproportionate share when the set
+        # exceeds 3 * rows_per_col.
+        rows_per_col = max(rows_per_col,
+                           (len(self._buttons) + cols_needed - 1) // cols_needed)
+        holder.height = rows_per_col * row_height
+
+        for c in range(cols_needed):
+            col = BoxLayout(orientation='vertical', spacing=theme.SPACE_2,
+                            size_hint_x=1)
+            chunk = self._buttons[c * rows_per_col:(c + 1) * rows_per_col]
+            for b in chunk:
+                chip = _MappingChip(str(b['buttonNum']), b['action'],
+                                    kind='button')
+                col.add_widget(chip)
+                self._button_chips[b['buttonNum']] = chip
+            for _ in range(rows_per_col - len(chunk)):
+                col.add_widget(Widget(size_hint_y=None,
+                                      height=_MappingChip.HEIGHT))
+            holder.add_widget(col)
+        self._refresh_active_states()
+
+    def _refresh_active_states(self) -> None:
+        for kind, chip in self._stylus_chips.items():
+            chip.set_active(kind in self._pressed)
+        for num, chip in self._button_chips.items():
+            chip.set_active(num in self._pressed)
 
 
 # ---- Visualizer helpers --------------------------------------------------
 
 def fit_tablet_rect(
     container: tuple, aspect: float = 16.0 / 10.0, margin: int = 8,
+    align: str = 'center',
 ) -> tuple:
     """Return ``(x, y, w, h)`` for a tablet body that preserves ``aspect``
-    inside ``container = (cx, cy, cw, ch)``, with ``margin`` padding."""
+    inside ``container = (cx, cy, cw, ch)``, with ``margin`` padding.
+
+    ``align`` controls horizontal placement when the fitted width is
+    less than the container width: ``'center'`` (default) splits the
+    leftover space evenly, ``'left'`` anchors the body to the container's
+    left edge (used by the combined Tablet/Stylus panel to keep the
+    strings flush-left so the stylus visualizer can claim the
+    horizontal remainder)."""
     cx, cy, cw, ch = container
     cw = max(0, cw - 2 * margin)
     ch = max(0, ch - 2 * margin)
@@ -267,7 +910,10 @@ def fit_tablet_rect(
     else:
         w = cw
         h = w / aspect
-    x = cx + margin + (cw - w) / 2.0
+    if align == 'left':
+        x = cx + margin
+    else:
+        x = cx + margin + (cw - w) / 2.0
     y = cy + margin + (ch - h) / 2.0
     return (x, y, w, h)
 
@@ -292,8 +938,9 @@ class _TabletCanvas(Widget):
     pen position dot. Instructions are persistent and mutated in place so
     high-frequency tablet events don't trigger canvas rebuilds."""
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, align: str = 'center', **kwargs) -> None:
         super().__init__(**kwargs)
+        self._align = align
         self._notes: list = []
         self._last_event: Any = None
         self._area: tuple = (0, 0, 0, 0)
@@ -321,7 +968,8 @@ class _TabletCanvas(Widget):
         self._update_pen()
 
     def _redraw_static(self, *_args) -> None:
-        body = fit_tablet_rect((self.x, self.y, self.width, self.height), margin=8)
+        body = fit_tablet_rect((self.x, self.y, self.width, self.height),
+                               margin=8, align=self._align)
         bx, by, bw, bh = body
         self._body_rect.pos = (bx, by)
         self._body_rect.size = (bw, bh)
@@ -337,30 +985,55 @@ class _TabletCanvas(Widget):
 
         for line in self._string_lines:
             self.canvas.remove(line)
-        for lbl in self._string_labels:
-            self.remove_widget(lbl)
+        # Sweep every Label child rather than just the tracked ones so
+        # an orphan from a pre-layout _redraw_static pass (when the
+        # canvas was still at its default (0,0,100,100) size and the
+        # first ``config`` event arrived) can't survive a later redraw
+        # and leave a stack of ghost note labels in the bottom-left.
+        for child in list(self.children):
+            if isinstance(child, Label):
+                self.remove_widget(child)
         self._string_lines.clear()
         self._string_labels.clear()
 
         n = len(self._notes)
         if n > 0 and aw > 0 and ah > 0:
             spacing = aw / (n + 1)
+            label_w = 80
+            label_h = 28
+            label_y = ay + 4
+            line_bottom = label_y + label_h + 12
+            line_top = ay + ah - 16
+            # Snap x to an integer so every string lands on the same
+            # pixel column and Kivy's GL line antialiasing renders them
+            # at a consistent shade \u2014 fractional coords cause adjacent
+            # strings to read as slightly different greys.
+            xs = [int(round(ax + spacing * (i + 1))) + 0.5 for i in range(n)]
             with self.canvas:
                 Color(*theme.GRAY_500)
-                for i, note in enumerate(self._notes):
-                    sx = ax + spacing * (i + 1)
-                    line = Line(points=[sx, ay + 6, sx, ay + ah - 18], width=1.0)
+                for sx in xs:
+                    line = Line(points=[sx, line_bottom, sx, line_top], width=1.0)
                     self._string_lines.append(line)
-                    name = str(note.get('notation', '?')) if isinstance(note, dict) else getattr(note, 'notation', '?')
-                    octave = note.get('octave', '') if isinstance(note, dict) else getattr(note, 'octave', '')
-                    lbl = Label(
-                        text=f'{name}{octave}', font_size='10sp',
-                        color=theme.TEXT_MUTED,
-                        size_hint=(None, None), size=(40, 14),
-                        pos=(sx - 20, ay + 2),
-                    )
-                    self._string_labels.append(lbl)
-                    self.add_widget(lbl)
+            # Label widgets are constructed and parented OUTSIDE the
+            # ``with self.canvas:`` block. Inside that block, any canvas
+            # instructions emitted as a side effect of ``add_widget`` /
+            # the Label's first ``texture_update`` (Color + Rectangle for
+            # the rendered glyphs) would be routed into ``self.canvas``
+            # instead of ``lbl.canvas`` \u2014 ``remove_widget`` then cannot
+            # clean them up, and every chord change leaves an extra
+            # ghost-text rendering behind on the canvas.
+            for i, note in enumerate(self._notes):
+                sx = xs[i]
+                name = str(note.get('notation', '?')) if isinstance(note, dict) else getattr(note, 'notation', '?')
+                octave = note.get('octave', '') if isinstance(note, dict) else getattr(note, 'octave', '')
+                lbl = Label(
+                    text=f'{name}{octave}', font_size='13.5sp',
+                    color=theme.TEXT_MUTED,
+                    size_hint=(None, None), size=(label_w, label_h),
+                    pos=(sx - label_w / 2, label_y),
+                )
+                self._string_labels.append(lbl)
+                self.add_widget(lbl)
 
         self._update_pen()
 
@@ -386,42 +1059,6 @@ class _TabletCanvas(Widget):
             self._pen_color.rgba = (0.45, 0.75, 1.0, 0.6)
         self._pen_dot.pos = (px - r, py - r)
         self._pen_dot.size = (r * 2, r * 2)
-
-
-class TabletVisualizerPanel(BoxLayout):
-    """Top-down tablet view with pen position and (when available) the
-    configured note strings overlaid on the active surface."""
-
-    def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
-        super().__init__(orientation='vertical', spacing=theme.SPACE_2, **kwargs)
-        self._canvas_widget = _TabletCanvas()
-        self.add_widget(self._canvas_widget)
-
-        self._readout = Label(
-            text='X —   Y —   P —', color=theme.TEXT_SECONDARY,
-            font_size='12sp', size_hint_y=None, height=20,
-            halign='center', valign='middle',
-        )
-        self._readout.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        self.add_widget(self._readout)
-
-        if bridge is not None:
-            bridge.on('tablet', self._on_tablet)
-            bridge.on('config', self._on_config)
-
-    def _on_tablet(self, ev: Any) -> None:
-        self._canvas_widget.update_event(ev)
-        self._readout.text = (
-            f'X {format_value(getattr(ev, "x", None))}   '
-            f'Y {format_value(getattr(ev, "y", None))}   '
-            f'P {format_value(getattr(ev, "pressure", None))}'
-        )
-
-    def _on_config(self, config: Any) -> None:
-        notes = []
-        if isinstance(config, dict):
-            notes = config.get('notes') or []
-        self._canvas_widget.set_notes(notes)
 
 
 class _StylusCanvas(Widget):
@@ -489,18 +1126,29 @@ class _StylusCanvas(Widget):
         self._tip.pos = (cx - 4, cy - 4)
 
 
-class StylusVisualizerPanel(BoxLayout):
-    """Top-down pen indicator: pressure ring + tilt vector."""
+class TabletVisualizerPanel(BoxLayout):
+    """Top-down tablet view (strings + pen) flanked by the stylus
+    pressure / tilt visualizer.
+
+    Combines what used to be two separate panels: the tablet body
+    sits flush-left so the string layout matches the physical tablet,
+    and the stylus pad claims the horizontal remainder. A single
+    readout row below carries ``X / Y / P / TX / TY``."""
 
     def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
         super().__init__(orientation='vertical', spacing=theme.SPACE_2, **kwargs)
-        self._canvas_widget = _StylusCanvas()
-        self.add_widget(self._canvas_widget)
+
+        row = BoxLayout(orientation='horizontal', spacing=theme.SPACE_3)
+        self._canvas_widget = _TabletCanvas(align='left', size_hint_x=3)
+        row.add_widget(self._canvas_widget)
+        self._stylus_widget = _StylusCanvas(size_hint_x=1)
+        row.add_widget(self._stylus_widget)
+        self.add_widget(row)
 
         self._readout = Label(
-            text='Pressure —   Tilt X —   Tilt Y —',
-            color=theme.TEXT_SECONDARY, font_size='12sp',
-            size_hint_y=None, height=20,
+            text='X —   Y —   P —   TX —   TY —',
+            color=theme.TEXT_SECONDARY,
+            font_size='8sp', size_hint_y=None, height=20,
             halign='center', valign='middle',
         )
         self._readout.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -508,14 +1156,24 @@ class StylusVisualizerPanel(BoxLayout):
 
         if bridge is not None:
             bridge.on('tablet', self._on_tablet)
+            bridge.on('config', self._on_config)
 
     def _on_tablet(self, ev: Any) -> None:
         self._canvas_widget.update_event(ev)
+        self._stylus_widget.update_event(ev)
         self._readout.text = (
-            f'Pressure {format_value(getattr(ev, "pressure", None))}   '
-            f'Tilt X {format_value(getattr(ev, "tiltX", None))}   '
-            f'Tilt Y {format_value(getattr(ev, "tiltY", None))}'
+            f'X {format_value(getattr(ev, "x", None))}   '
+            f'Y {format_value(getattr(ev, "y", None))}   '
+            f'P {format_value(getattr(ev, "pressure", None))}   '
+            f'TX {format_value(getattr(ev, "tiltX", None))}   '
+            f'TY {format_value(getattr(ev, "tiltY", None))}'
         )
+
+    def _on_config(self, config: Any) -> None:
+        notes = []
+        if isinstance(config, dict):
+            notes = config.get('notes') or []
+        self._canvas_widget.set_notes(notes)
 
 
 class MidiDevicesPanel(BoxLayout):
@@ -527,31 +1185,39 @@ class MidiDevicesPanel(BoxLayout):
         super().__init__(orientation='vertical', spacing=theme.SPACE_3, **kwargs)
         self._bridge = bridge
         self._current_output: Optional[str] = None
+        self._current_output_id: Any = None
         self._current_inputs: set = set()
+        self._passthrough: list = []
 
         header = BoxLayout(orientation='horizontal', size_hint_y=None,
-                           height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
+                           height=theme.INPUT_HEIGHT, spacing=theme.SPACE_2)
         self._status = Label(
             text='Loading MIDI devices…', color=theme.TEXT_SECONDARY,
-            font_size='13sp', halign='left', valign='middle',
+            font_size='8.5sp', halign='left', valign='middle',
         )
         self._status.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         header.add_widget(self._status)
-        refresh = Button(
-            text='Refresh', size_hint=(None, None), size=(96, theme.CONTROL_HEIGHT),
-            background_normal='', background_down='',
-            background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_PRIMARY, font_size='14sp',
-        )
-        refresh.bind(on_release=lambda *_: self._refresh())
-        header.add_widget(refresh)
+        header.add_widget(_accent_button(
+            'Refresh', self._refresh,
+            width=theme.INPUT_HEIGHT, height=theme.INPUT_HEIGHT,
+            radius=theme.INPUT_HEIGHT // 2,
+            painter=_draw_refresh))
         self.add_widget(header)
 
-        body = BoxLayout(orientation='horizontal', spacing=theme.SPACE_3)
-        self._outputs_box = self._make_section('Outputs')
+        body = BoxLayout(orientation='horizontal', spacing=theme.SPACE_5)
         self._inputs_box = self._make_section('Inputs')
-        body.add_widget(self._outputs_box['root'])
+        self._outputs_box = self._make_section('Outputs')
         body.add_widget(self._inputs_box['root'])
+        # Stretch-height rule clipped at the top so it starts at the top
+        # of the lists rather than the section headers. ``top_inset``
+        # equals the header height plus the header-to-list gap used by
+        # ``_make_section``.
+        body.add_widget(_vdivider(
+            width=theme.SPACE_2,
+            top_inset=theme.FIELD_LABEL_HEIGHT + theme.SPACE_4,
+            bottom_inset=0,
+        ))
+        body.add_widget(self._outputs_box['root'])
         self.add_widget(body)
 
         if bridge is not None:
@@ -559,17 +1225,18 @@ class MidiDevicesPanel(BoxLayout):
             bridge.request_midi_devices()
 
     def _make_section(self, title: str) -> dict:
-        root = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        root = BoxLayout(orientation='vertical', spacing=theme.SPACE_4)
         header = Label(
             text=f'[b]{title}[/b]', markup=True, color=theme.TEXT_PRIMARY,
-            font_size='14sp', size_hint_y=None, height=22,
+            font_size='10.5sp', size_hint_y=None,
+            height=theme.FIELD_LABEL_HEIGHT,
             halign='left', valign='middle',
         )
         header.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         root.add_widget(header)
         scroll = ScrollView(do_scroll_x=False, bar_width=4)
         items = BoxLayout(orientation='vertical', size_hint_y=None,
-                          spacing=theme.SPACE_1, padding=(0, 0))
+                          spacing=theme.SPACE_2, padding=(0, 0))
         items.bind(minimum_height=items.setter('height'))
         scroll.add_widget(items)
         root.add_widget(scroll)
@@ -587,6 +1254,8 @@ class MidiDevicesPanel(BoxLayout):
         current_output_id = data.get('currentOutputPort')
         current_input_ids = set(data.get('currentInputPorts') or [])
         self._current_inputs = set(current_input_ids)
+        self._current_output_id = current_output_id
+        self._passthrough = list(data.get('passthroughConnections') or [])
 
         self._current_output = None
         for p in output_ports:
@@ -607,11 +1276,16 @@ class MidiDevicesPanel(BoxLayout):
             items.add_widget(_empty_row('No output ports'))
             return
         for port in ports:
+            pid = port.get('id')
             name = port.get('name', '?')
-            is_active = port.get('id') == current_id
-            btn = _port_button(name, is_active)
-            btn.bind(on_release=lambda _b, n=name: self._select_output(n))
-            items.add_widget(btn)
+            if port.get('virtual'):
+                items.add_widget(_virtual_device_row(name))
+            else:
+                is_active = pid == current_id
+                row = _device_row(
+                    name, pid, is_active,
+                    on_toggle=lambda new, n=name: self._toggle_output(n, new))
+                items.add_widget(row)
 
     def _populate_inputs(self, ports: list, current_ids: set) -> None:
         items = self._inputs_box['items']
@@ -619,17 +1293,35 @@ class MidiDevicesPanel(BoxLayout):
         if not ports:
             items.add_widget(_empty_row('No input ports'))
             return
+        has_output = self._current_output_id is not None
+        passthrough_ids = {c.get('inputPort') for c in self._passthrough}
         for port in ports:
             pid = port.get('id')
             name = port.get('name', '?')
             is_active = pid in current_ids
-            btn = _port_button(name, is_active)
-            btn.bind(on_release=lambda _b, i=pid: self._toggle_input(i))
-            items.add_widget(btn)
+            show_pt = is_active and has_output
+            pt_active = pid in passthrough_ids
+            row = _device_row(
+                name, pid, is_active,
+                on_toggle=lambda _new, i=pid: self._toggle_input(i),
+                passthrough_visible=show_pt,
+                passthrough_active=pt_active,
+                on_passthrough_toggle=(
+                    lambda new, i=pid: self._toggle_passthrough(i, new)),
+            )
+            items.add_widget(row)
 
-    def _select_output(self, name: str) -> None:
-        if self._bridge is not None:
+    def _toggle_output(self, name: str, new_state: bool) -> None:
+        # Mirrors the web ``handleOutputToggle``: toggling on selects the
+        # port, toggling off clears the selection (``midiOutputId=None``
+        # disconnects on the backend). ``set_midi_output`` ignores
+        # ``None``, so the off case goes through ``set_config`` directly.
+        if self._bridge is None:
+            return
+        if new_state:
             self._bridge.set_midi_output(name)
+        else:
+            self._bridge.set_config('midi.midiOutputId', None)
 
     def _toggle_input(self, port_id: Any) -> None:
         if self._bridge is None:
@@ -643,10 +1335,29 @@ class MidiDevicesPanel(BoxLayout):
         self._current_inputs = ids
         self._bridge.set_midi_input(sorted(ids))
 
+    def _toggle_passthrough(self, input_port_id: Any, new_state: bool) -> None:
+        # Mirrors the web ``handlePassthroughToggle``: on adds a
+        # ``{inputPort, outputPort}`` connection targeting the current
+        # output; off filters out any connection for this input.
+        if self._bridge is None:
+            return
+        if new_state:
+            if self._current_output_id is None:
+                return
+            new_list = [c for c in self._passthrough
+                        if c.get('inputPort') != input_port_id]
+            new_list.append({'inputPort': input_port_id,
+                             'outputPort': self._current_output_id})
+        else:
+            new_list = [c for c in self._passthrough
+                        if c.get('inputPort') != input_port_id]
+        self._passthrough = new_list
+        self._bridge.set_config('midi.midiPassthrough', new_list)
+
 
 def _empty_row(text: str) -> Label:
     lbl = Label(
-        text=text, color=theme.TEXT_MUTED, font_size='12sp',
+        text=text, color=theme.TEXT_MUTED, font_size='8sp',
         size_hint_y=None, height=26, halign='left', valign='middle',
     )
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -660,8 +1371,326 @@ def _port_button(name: str, active: bool) -> Button:
         background_normal='', background_down='',
         background_color=(theme.ACCENT_BG if active else theme.BG_SURFACE_ALT),
         color=(theme.TEXT_PRIMARY if active else theme.TEXT_SECONDARY),
-        font_size='12sp', halign='left', valign='middle',
+        font_size='8sp', halign='left', valign='middle',
     )
+
+
+def _toggle_switch(active: bool, on_toggle,
+                   width: int = 60, height: int = 32) -> Button:
+    """Pill-shaped on/off switch with a white knob that slides across.
+
+    Mirrors the web ``.toggle-slider``: gray track when off, green when
+    on. The switch is a ``Button`` so it captures touches; the track and
+    knob are painted on ``canvas.before`` / ``canvas.after`` and follow
+    pos/size changes. Calls ``on_toggle(new_state)`` on each release."""
+    radius = height // 2
+    btn = Button(
+        text='', size_hint=(None, None), size=(width, height),
+        background_normal='', background_down='',
+        background_color=(0, 0, 0, 0),
+    )
+    btn.active = bool(active)
+    with btn.canvas.before:
+        track_col = Color(*(theme.STATUS_CONNECTED if btn.active
+                            else theme.STATUS_DISCONNECTED))
+        track = RoundedRectangle(pos=btn.pos, size=btn.size, radius=[radius])
+    with btn.canvas.after:
+        Color(1, 1, 1, 1)
+        pad = max(3, height // 8)
+        knob_d = height - 2 * pad
+        knob = Ellipse(pos=(btn.x + pad, btn.y + pad),
+                       size=(knob_d, knob_d))
+
+    def _repaint(*_):
+        track.pos = btn.pos
+        track.size = btn.size
+        p = max(3, btn.height // 8)
+        d = btn.height - 2 * p
+        knob.size = (d, d)
+        if btn.active:
+            knob.pos = (btn.right - p - d, btn.y + p)
+            track_col.rgba = theme.STATUS_CONNECTED
+        else:
+            knob.pos = (btn.x + p, btn.y + p)
+            track_col.rgba = theme.STATUS_DISCONNECTED
+
+    btn.bind(pos=_repaint, size=_repaint)
+
+    def _on_release(*_):
+        btn.active = not btn.active
+        _repaint()
+        on_toggle(btn.active)
+
+    btn.bind(on_release=_on_release)
+    return btn
+
+
+def _virtual_device_row(name: str) -> BoxLayout:
+    """Read-only card for a virtual MIDI port (no toggle switch)."""
+    row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                    height=80, spacing=theme.SPACE_3,
+                    padding=(theme.SPACE_3, theme.SPACE_2))
+    with row.canvas.before:
+        Color(*theme.BG_SURFACE_ALT)
+        bg = RoundedRectangle(pos=row.pos, size=row.size,
+                              radius=[theme.SPACE_2])
+
+    def _sync_bg(*_):
+        bg.pos = row.pos
+        bg.size = row.size
+    row.bind(pos=_sync_bg, size=_sync_bg)
+
+    info = BoxLayout(orientation='vertical', padding=(0, theme.SPACE_1))
+    name_lbl = Label(
+        text=name, color=theme.TEXT_PRIMARY, font_size='10sp',
+        halign='left', valign='middle',
+    )
+    name_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+    badge_lbl = Label(
+        text='Virtual', color=theme.STATUS_CONNECTED, font_size='8sp',
+        halign='left', valign='top',
+    )
+    badge_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+    info.add_widget(name_lbl)
+    info.add_widget(badge_lbl)
+    row.add_widget(info)
+    return row
+
+
+def _device_row(name: str, port_id: Any, active: bool,
+                on_toggle, *,
+                passthrough_visible: bool = False,
+                passthrough_active: bool = False,
+                on_passthrough_toggle=None) -> BoxLayout:
+    """Web-UI-style MIDI device card: toggle switch on the left, device
+    name above an ``Index: <id>`` caption on the right. The card has a
+    neutral rounded background to give each item card-like shape; the
+    on/off state is communicated solely by the switch.
+
+    When ``passthrough_visible`` is true a secondary smaller switch
+    labelled "Passthrough" appears under the index caption (mirrors the
+    web inputs list which exposes per-input passthrough toggles when an
+    output port is selected). The row exposes ``toggle_switch`` and
+    ``passthrough_switch`` references so callers/tests can address each
+    control unambiguously."""
+    row_h = 76 if passthrough_visible else 52
+    row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                    height=row_h, spacing=theme.SPACE_3,
+                    padding=(theme.SPACE_3, theme.SPACE_2))
+    with row.canvas.before:
+        Color(*theme.BG_SURFACE_ALT)
+        bg = RoundedRectangle(pos=row.pos, size=row.size,
+                              radius=[theme.SPACE_2])
+
+    def _sync_bg(*_):
+        bg.pos = row.pos
+        bg.size = row.size
+    row.bind(pos=_sync_bg, size=_sync_bg)
+
+    switch = _toggle_switch(active, on_toggle)
+    row.toggle_switch = switch
+    row.passthrough_switch = None
+    # Top-align the switch with the device name rather than centering it
+    # over the whole card (which drops it between the two rows when the
+    # passthrough toggle is present).
+    switch_wrap = AnchorLayout(anchor_x='center', anchor_y='top',
+                               size_hint=(None, 1), width=switch.width)
+    switch_wrap.add_widget(switch)
+    row.add_widget(switch_wrap)
+
+    info = BoxLayout(orientation='vertical', padding=(0, theme.SPACE_1))
+    name_lbl = Label(
+        text=name, color=theme.TEXT_PRIMARY, font_size='10sp',
+        halign='left', valign='middle',
+    )
+    name_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+    idx_lbl = Label(
+        text=f'Index: {port_id}', color=theme.TEXT_MUTED, font_size='8sp',
+        halign='left', valign='top',
+    )
+    idx_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+    info.add_widget(name_lbl)
+    info.add_widget(idx_lbl)
+
+    if passthrough_visible:
+        pt_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                           height=28, spacing=theme.SPACE_2)
+        pt_switch = _toggle_switch(
+            passthrough_active,
+            on_passthrough_toggle or (lambda _new: None),
+            width=45, height=21)
+        pt_switch.pos_hint = {'center_y': 0.5}
+        row.passthrough_switch = pt_switch
+        pt_row.add_widget(pt_switch)
+        pt_lbl = Label(
+            text='Passthrough', color=theme.TEXT_SECONDARY, font_size='8sp',
+            halign='left', valign='middle',
+        )
+        pt_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        pt_row.add_widget(pt_lbl)
+        info.add_widget(pt_row)
+
+    row.add_widget(info)
+    return row
+
+
+_MIDI_INPUT_MODES: Tuple[Tuple[str, str], ...] = (
+    ('Direct',      'direct'),
+    ('Major Scale', 'majorScale'),
+    ('Minor Scale', 'minorScale'),
+    ('Auto Scale',  'autoScale'),
+)
+_MIDI_INPUT_MODE_LABELS = tuple(label for label, _ in _MIDI_INPUT_MODES)
+_MIDI_INPUT_LABEL_TO_VALUE = {label: value for label, value in _MIDI_INPUT_MODES}
+_MIDI_INPUT_VALUE_TO_LABEL = {value: label for label, value in _MIDI_INPUT_MODES}
+
+
+def _status_badge(connected: bool) -> BoxLayout:
+    """Pill-shaped 'connected'/'disconnected' indicator (dot + text).
+
+    Mirrors the web ``.status-badge.small`` used by the MIDI Input panel
+    header. Returns a ``BoxLayout`` so callers can keep references to
+    the inner dot/label and mutate state in place."""
+    row = BoxLayout(orientation='horizontal', size_hint=(None, None),
+                    height=theme.CONTROL_HEIGHT,
+                    spacing=theme.SPACE_2,
+                    padding=(theme.SPACE_3, 0))
+    row.dot = _status_dot(active=connected)
+    # ``pos_hint`` keeps the fixed-size dot vertically centred against the
+    # label text inside the horizontal BoxLayout (which would otherwise
+    # park ``size_hint_y=None`` children at the bottom of the row).
+    row.dot.pos_hint = {'center_y': 0.5}
+    row.add_widget(row.dot)
+    # No ``text_size`` binding: a constrained ``text_size`` would wrap the
+    # label to its initial (tiny) width before the texture-size callback
+    # had a chance to grow it. Let the label size to its texture directly.
+    row.label = Label(
+        text=('connected' if connected else 'disconnected'),
+        color=theme.TEXT_PRIMARY, font_size='9.5sp', bold=True,
+        size_hint=(None, None), pos_hint={'center_y': 0.5},
+    )
+    def _sync_label_size(w, ts):
+        w.size = ts
+    row.label.bind(texture_size=_sync_label_size)
+    row.label.size = row.label.texture_size
+    row.add_widget(row.label)
+    def _sync_width(*_):
+        row.width = (row.padding[0] + row.dot.width + row.spacing
+                     + row.label.width + row.padding[2])
+    row.label.bind(width=_sync_width)
+    _sync_width()
+    return row
+
+
+class MIDIInputPanel(BoxLayout):
+    """Native mirror of the web ``midi-input`` panel.
+
+    Shows the backend's MIDI input status (connected/disconnected),
+    the currently held notes (server-side, before any scale mapping),
+    the active ``midi.inputMode``, and the source port name when the
+    server has received at least one note event. Subscribes to
+    ``'config'`` for the input mode and to ``'midi-input'`` for the
+    note / port snapshots; requests a snapshot at construction so the
+    panel renders current state on first open."""
+
+    def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
+        super().__init__(orientation='vertical', spacing=theme.SPACE_4, **kwargs)
+        self._bridge = bridge
+        self._input_mode: str = 'direct'
+
+        # Status badge — own row, left-aligned with a small top margin so
+        # it doesn't kiss the panel header.
+        self._badge = _status_badge(connected=False)
+        badge_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                              height=theme.CONTROL_HEIGHT + theme.SPACE_2,
+                              padding=[0, theme.SPACE_2, 0, 0])
+        badge_row.add_widget(self._badge)
+        badge_row.add_widget(Widget())
+        self.add_widget(badge_row)
+
+        # Notes — field label above the value, matching the form rhythm
+        # used in Strumming / Velocity / etc.
+        self._notes_value = Label(
+            text='—', color=theme.TEXT_PRIMARY,
+            font_size=theme.INPUT_FONT_SIZE,
+            size_hint_y=None, height=theme.INPUT_HEIGHT,
+            halign='left', valign='middle',
+        )
+        self._notes_value.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self.add_widget(_setting_row('Notes', self._notes_value))
+
+        # Input Mode — field label above a half-width, left-aligned dropdown.
+        self._mode_dropdown = _dropdown(
+            _MIDI_INPUT_MODE_LABELS,
+            _MIDI_INPUT_VALUE_TO_LABEL.get(self._input_mode, _MIDI_INPUT_MODE_LABELS[0]),
+            on_change=self._on_mode_change,
+            width_hint=0.5,
+        )
+        self.add_widget(_setting_row('Input Mode', self._mode_dropdown))
+
+        # Source caption — own row, only populated once a port is known.
+        self._source_label = Label(
+            text='', color=theme.TEXT_MUTED, font_size='8sp',
+            size_hint_y=None, height=24,
+            halign='left', valign='middle',
+        )
+        self._source_label.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self.add_widget(self._source_label)
+
+        self.add_widget(Widget())
+
+        if bridge is not None:
+            bridge.on('config', self._on_config)
+            bridge.on('midi-input', self._on_midi_input)
+            bridge.request_midi_input_status()
+
+    # ---- Bridge events -----------------------------------------------
+
+    def _on_config(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        midi_cfg = (payload.get('config') or {}).get('midi') or {}
+        mode = midi_cfg.get('inputMode')
+        if mode not in _MIDI_INPUT_VALUE_TO_LABEL:
+            mode = 'direct'
+        self._input_mode = mode
+        target_label = _MIDI_INPUT_VALUE_TO_LABEL[mode]
+        if self._mode_dropdown.text != target_label:
+            self._mode_dropdown.text = target_label
+
+    def _on_midi_input(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        connected = bool(payload.get('connected'))
+        self._sync_badge(connected)
+        notes = payload.get('notes') or []
+        self._notes_value.text = ', '.join(notes) if notes else '—'
+        port_name = payload.get('portName') or payload.get('connectedPort')
+        self._source_label.text = f'from: {port_name}' if port_name else ''
+
+    # ---- User actions ------------------------------------------------
+
+    def _on_mode_change(self, label: str) -> None:
+        value = _MIDI_INPUT_LABEL_TO_VALUE.get(label)
+        if value is None or value == self._input_mode:
+            return
+        self._input_mode = value
+        if self._bridge is not None:
+            self._bridge.set_config('midi.inputMode', value)
+
+    # ---- View sync ---------------------------------------------------
+
+    def _sync_badge(self, connected: bool) -> None:
+        text = 'connected' if connected else 'disconnected'
+        if self._badge.label.text != text:
+            self._badge.label.text = text
+        color = theme.STATUS_CONNECTED if connected else theme.STATUS_DISCONNECTED
+        dot = self._badge.dot
+        for instr in list(dot.canvas.children):
+            if isinstance(instr, Color):
+                instr.rgba = color
+                break
+
 
 
 def extract_strumming(config_event: Any) -> dict:
@@ -796,14 +1825,14 @@ class StrummingSettingsPanel(BoxLayout):
 
 
 def _setting_label(text: str) -> Label:
-    lbl = Label(text=text, color=theme.TEXT_SECONDARY, font_size='14sp',
+    lbl = Label(text=text, color=theme.TEXT_SECONDARY, font_size='9.5sp',
                 halign='left', valign='middle')
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
     return lbl
 
 
 def _value_readout(initial: str) -> Label:
-    lbl = Label(text=initial, color=theme.TEXT_PRIMARY, font_size='14sp',
+    lbl = Label(text=initial, color=theme.TEXT_PRIMARY, font_size='9.5sp',
                 size_hint_x=None, width=80,
                 halign='right', valign='middle')
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -986,7 +2015,7 @@ class _CurveVisualizer(Widget):
 
         # Output value readout, anchored above the hover line.
         self._output_label = Label(
-            text='', color=spec.curve_color, font_size='11sp', bold=True,
+            text='', color=spec.curve_color, font_size='7.5sp', bold=True,
             size_hint=(None, None), size=(80, 16),
             halign='center', valign='middle',
         )
@@ -999,7 +2028,7 @@ class _CurveVisualizer(Widget):
         # characters — keeps the widget pure-Kivy.
         self._axis_label = Label(
             text='\n'.join(spec.output_label),
-            color=theme.TEXT_SECONDARY, font_size='9sp',
+            color=theme.TEXT_SECONDARY, font_size='7sp',
             size_hint=(None, None), size=(14, 1),
             halign='center', valign='middle',
         )
@@ -1007,7 +2036,7 @@ class _CurveVisualizer(Widget):
         self.add_widget(self._axis_label)
 
         self._min_label = Label(
-            text='', color=theme.TEXT_SECONDARY, font_size='9sp',
+            text='', color=theme.TEXT_SECONDARY, font_size='7sp',
             size_hint=(None, None), size=(self._PAD_LEFT - 4, 14),
             halign='right', valign='middle',
         )
@@ -1015,7 +2044,7 @@ class _CurveVisualizer(Widget):
         self.add_widget(self._min_label)
 
         self._max_label = Label(
-            text='', color=theme.TEXT_SECONDARY, font_size='9sp',
+            text='', color=theme.TEXT_SECONDARY, font_size='7sp',
             size_hint=(None, None), size=(self._PAD_LEFT - 4, 14),
             halign='right', valign='middle',
         )
@@ -1606,18 +2635,91 @@ def extract_chord_progressions(config_event: Any) -> dict:
     return {str(k): list(v or []) for k, v in progs.items()}
 
 
+def extract_button_mappings(config_event: Any) -> dict:
+    """Compute the configured stylus + numeric button -> action mapping.
+
+    Mirrors the web dashboard's ``getConfiguredButtonMappings``: walks
+    direct ``rules`` plus expands ``groupRules`` (chord-progression
+    pulls per-button chords from ``chordProgressions``, otherwise the
+    whole group shares the same action label). Returns
+    ``{'stylus': [{'kind', 'action'}], 'buttons': [{'buttonNum', 'action'}]}``
+    sorted by button number.
+    """
+    rules = extract_action_rules(config_event)
+    progressions = extract_chord_progressions(config_event)
+    stylus: list = []
+    buttons: list = []
+
+    def push(button_id: Any, action_text: str) -> None:
+        if not isinstance(button_id, str):
+            return
+        bid = button_id[len('button:'):] if button_id.startswith('button:') else button_id
+        if bid in ('primary', 'secondary'):
+            stylus.append({'kind': bid, 'action': action_text})
+            return
+        try:
+            num = int(bid)
+        except ValueError:
+            return
+        buttons.append({'buttonNum': num, 'action': action_text})
+
+    for rule in rules['rules']:
+        push(rule.get('button'), format_action(rule.get('action')))
+
+    groups_by_id = {g.get('id'): g for g in rules['groups']}
+    for grule in rules['groupRules']:
+        group = groups_by_id.get(grule.get('groupId'))
+        if group is None:
+            continue
+        group_buttons = group.get('buttons') or []
+        action = grule.get('action')
+        if isinstance(action, dict) and action.get('type') == 'chord-progression':
+            chords = progressions.get(action.get('progression', ''), [])
+            for i, btn in enumerate(group_buttons):
+                chord = chords[i] if i < len(chords) else '–'
+                push(btn, str(chord))
+        else:
+            label = action.get('progression', '') if isinstance(action, dict) else format_action(action)
+            for btn in group_buttons:
+                push(btn, str(label))
+
+    buttons.sort(key=lambda b: b['buttonNum'])
+    return {'stylus': stylus, 'buttons': buttons}
+
+
+def extract_notes(config_event: Any) -> list:
+    """Pull strummer notes (``[{notation, octave}]``) for the string strip.
+
+    Notes are flattened to the top level of the config payload by
+    ``Server._get_config_data`` (mirroring the web ``config`` message),
+    so we read ``config_event['notes']`` rather than the nested
+    ``config_event['config']['notes']`` block.
+    """
+    if not isinstance(config_event, dict):
+        return []
+    raw = config_event.get('notes') or []
+    out: list = []
+    for n in raw:
+        if isinstance(n, dict):
+            out.append({
+                'notation': str(n.get('notation', '')),
+                'octave': int(n.get('octave', 0) or 0),
+            })
+    return out
+
+
 def _delete_button() -> Button:
     return Button(
         text='Delete', size_hint=(None, None), size=(80, theme.CONTROL_HEIGHT),
         background_normal='', background_down='',
         background_color=theme.BG_SURFACE_ALT,
-        color=theme.TEXT_SECONDARY, font_size='14sp',
+        color=theme.TEXT_SECONDARY, font_size='9.5sp',
     )
 
 
 def _list_row_label(text: str) -> Label:
     lbl = Label(
-        text=text, color=theme.TEXT_PRIMARY, font_size='14sp',
+        text=text, color=theme.TEXT_PRIMARY, font_size='9.5sp',
         halign='left', valign='middle',
     )
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -1627,7 +2729,7 @@ def _list_row_label(text: str) -> Label:
 def _text_input(hint: str, width_hint: float = 1.0) -> TextInput:
     return TextInput(
         text='', multiline=False, write_tab=False,
-        size_hint=(width_hint, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
+        size_hint=(width_hint, None), height=theme.CONTROL_HEIGHT, font_size='9.5sp',
         background_color=theme.BG_SURFACE_ALT,
         foreground_color=theme.TEXT_PRIMARY,
         cursor_color=theme.ACCENT,
@@ -1638,7 +2740,7 @@ def _text_input(hint: str, width_hint: float = 1.0) -> TextInput:
 def _section_header(text: str) -> Label:
     lbl = Label(
         text=f'[b]{text}[/b]', markup=True, color=theme.TEXT_PRIMARY,
-        font_size='14sp', size_hint_y=None, height=24,
+        font_size='9.5sp', size_hint_y=None, height=24,
         halign='left', valign='middle',
     )
     lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -1708,35 +2810,34 @@ def _action_choices() -> Tuple[str, ...]:
 class _CaretDropdown(Spinner):
     """Spinner with a right-aligned chevron rendered on ``canvas.after``.
 
-    The caret glyph (``▾``) is drawn as a texture overlay so the
-    underlying ``text`` property still holds the raw selected value —
-    callers can compare/assign ``dropdown.text`` exactly as before.
+    The chevron is painted with graphics primitives on ``canvas.after``
+    rather than a unicode glyph: the kiosk SDL2 font doesn't carry the
+    ``▾`` glyph and renders it as a missing-glyph box (the same reason
+    the edit/delete affordances are drawn, not texted). The underlying
+    ``text`` property still holds the raw selected value, so callers can
+    compare/assign ``dropdown.text`` exactly as before.
     """
 
-    _CARET_PAD = 10
+    _CARET_PAD = 12
+    _CARET_W = 12
+    _CARET_H = 7
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        from kivy.core.text import Label as CoreLabel
-        cl = CoreLabel(text='\u25BE', font_size=18)
-        cl.refresh()
-        self._caret_tex = cl.texture
+        from kivy.graphics import Triangle
         with self.canvas.after:
             self._caret_color = Color(*theme.TEXT_SECONDARY)
-            self._caret_rect = Rectangle(
-                texture=self._caret_tex,
-                size=self._caret_tex.size,
-                pos=(0, 0),
-            )
+            self._caret = Triangle()
         self.bind(pos=self._sync_caret, size=self._sync_caret)
         self._sync_caret()
 
     def _sync_caret(self, *_):
-        tw, th = self._caret_tex.size
-        self._caret_rect.pos = (
-            self.x + self.width - tw - self._CARET_PAD,
-            self.y + (self.height - th) / 2.0,
-        )
+        w, h = self._CARET_W, self._CARET_H
+        rx = self.x + self.width - self._CARET_PAD - w
+        cy = self.y + self.height / 2.0
+        top, bot = cy + h / 2.0, cy - h / 2.0
+        # Down-pointing triangle: top-left, top-right, bottom-centre.
+        self._caret.points = [rx, top, rx + w, top, rx + w / 2.0, bot]
 
 
 def _dropdown(values: Tuple[str, ...], current: str, on_change=None,
@@ -1801,7 +2902,7 @@ class _NumberStepper(BoxLayout):
             text='−', size_hint=(None, None), size=(50, theme.INPUT_HEIGHT),
             background_normal='', background_down='',
             background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_PRIMARY, font_size='28sp',
+            color=theme.TEXT_PRIMARY, font_size='18.5sp',
         )
         self._dec.bind(on_release=lambda *_: self._step_by(-1))
         self.add_widget(self._dec)
@@ -1823,7 +2924,7 @@ class _NumberStepper(BoxLayout):
             text='+', size_hint=(None, None), size=(50, theme.INPUT_HEIGHT),
             background_normal='', background_down='',
             background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_PRIMARY, font_size='28sp',
+            color=theme.TEXT_PRIMARY, font_size='18.5sp',
         )
         self._inc.bind(on_release=lambda *_: self._step_by(1))
         self.add_widget(self._inc)
@@ -1948,7 +3049,7 @@ def _inline_setting_row(label_text: str, control: Widget) -> BoxLayout:
     row = BoxLayout(orientation='horizontal', size_hint_y=None, height=row_h,
                     spacing=theme.SPACE_3, padding=[0, top_margin, 0, 0])
     label = Label(
-        text=label_text, color=theme.TEXT_SECONDARY, font_size='13sp',
+        text=label_text, color=theme.TEXT_SECONDARY, font_size='8.5sp',
         halign='left', valign='middle', bold=True,
     )
     label.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -1973,12 +3074,12 @@ _BADGE_COLORS: Dict[str, Tuple[float, float, float, float]] = {}
 # though "Startup" is two glyphs wider than "Group". The value is
 # generous enough to fit the widest type label plus the badge padding.
 _TYPE_BADGE_KINDS = frozenset({'button', 'group', 'startup'})
-_TYPE_BADGE_MIN_WIDTH = 140
+_TYPE_BADGE_MIN_WIDTH = 84
 
 # Horizontal / vertical padding inside every badge — gives the text
 # room to breathe so the pill reads as a tag rather than tight text.
-_BADGE_HPAD = 22
-_BADGE_VPAD = 8
+_BADGE_HPAD = 12
+_BADGE_VPAD = 4
 
 
 def _badge(text: str, kind: str) -> Label:
@@ -2001,7 +3102,7 @@ def _badge(text: str, kind: str) -> Label:
     }
     bg, fg = palette.get(kind, (theme.BG_SURFACE_ALT, theme.TEXT_PRIMARY))
     lbl = Label(
-        text=text, color=fg, font_size='16sp',
+        text=text, color=fg, font_size='10.5sp',
         size_hint=(None, None),
         halign='center', valign='middle',
         bold=True,
@@ -2035,13 +3136,16 @@ def _status_dot(active: bool = False) -> Widget:
     return w
 
 
-def _icon_button(symbol: str, on_release, tooltip: str = '') -> Button:
+def _icon_button(symbol: str, on_release, tooltip: str = '',
+                 size: Optional[int] = None,
+                 font_size: str = '20sp') -> Button:
     """Compact quiet button — used for edit/delete/back affordances."""
+    s = size or theme.CONTROL_HEIGHT
     btn = Button(
-        text=symbol, size_hint=(None, None), size=(theme.CONTROL_HEIGHT, theme.CONTROL_HEIGHT),
+        text=symbol, size_hint=(None, None), size=(s, s),
         background_normal='', background_down='',
         background_color=(0, 0, 0, 0),
-        color=theme.TEXT_PRIMARY, font_size='20sp',
+        color=theme.TEXT_PRIMARY, font_size=font_size,
     )
     btn.bind(on_release=lambda *_: on_release())
     return btn
@@ -2055,7 +3159,7 @@ def _icon_button(symbol: str, on_release, tooltip: str = '') -> Button:
 # kiosk. Draw the icons via canvas primitives so they're font-independent
 # and scale with the button.
 
-ROW_ICON_SIZE = int(theme.CONTROL_HEIGHT * 1.5)
+ROW_ICON_SIZE = int(theme.CONTROL_HEIGHT * 1.2)
 
 
 class _IconButton(Button):
@@ -2134,16 +3238,153 @@ def _trash_button(on_release, size: int = ROW_ICON_SIZE) -> _IconButton:
     return _IconButton(_draw_trashcan, on_release, size=size)
 
 
+# ---- Accidental glyphs ------------------------------------------------
+#
+# The unicode natural / sharp / flat glyphs (♮ ♯ ♭) aren't carried by the
+# SDL2 font on the Pi kiosk, so they render as tofu placeholders. Draw
+# them as vector lines so they're font-independent and scale with the
+# button — same pattern as the pencil / trash icons above.
+
+def _draw_natural(x: float, y: float, d: float) -> None:
+    # Two offset verticals connected by two short diagonal crossbars,
+    # mirroring the canonical natural-sign shape.
+    Line(points=[x + 0.35 * d, y + 0.05 * d,
+                 x + 0.35 * d, y + 0.78 * d], width=1.4)
+    Line(points=[x + 0.65 * d, y + 0.22 * d,
+                 x + 0.65 * d, y + 0.95 * d], width=1.4)
+    Line(points=[x + 0.35 * d, y + 0.62 * d,
+                 x + 0.65 * d, y + 0.78 * d], width=1.6)
+    Line(points=[x + 0.35 * d, y + 0.22 * d,
+                 x + 0.65 * d, y + 0.38 * d], width=1.6)
+
+
+def _draw_sharp(x: float, y: float, d: float) -> None:
+    # Two verticals + two upward-slanting crossbars.
+    Line(points=[x + 0.36 * d, y + 0.08 * d,
+                 x + 0.36 * d, y + 0.92 * d], width=1.4)
+    Line(points=[x + 0.64 * d, y + 0.08 * d,
+                 x + 0.64 * d, y + 0.92 * d], width=1.4)
+    Line(points=[x + 0.18 * d, y + 0.32 * d,
+                 x + 0.82 * d, y + 0.42 * d], width=1.8)
+    Line(points=[x + 0.18 * d, y + 0.58 * d,
+                 x + 0.82 * d, y + 0.68 * d], width=1.8)
+
+
+def _draw_flat(x: float, y: float, d: float) -> None:
+    # Vertical stem with a small bowl on the lower-right.
+    Line(points=[x + 0.32 * d, y + 0.05 * d,
+                 x + 0.32 * d, y + 0.95 * d], width=1.4)
+    Line(points=[
+        x + 0.32 * d, y + 0.62 * d,
+        x + 0.50 * d, y + 0.62 * d,
+        x + 0.66 * d, y + 0.55 * d,
+        x + 0.72 * d, y + 0.40 * d,
+        x + 0.62 * d, y + 0.22 * d,
+        x + 0.45 * d, y + 0.14 * d,
+        x + 0.32 * d, y + 0.10 * d,
+    ], width=1.6)
+
+
+def _draw_refresh(x: float, y: float, d: float) -> None:
+    # Feather "refresh-cw" — two semicircular arcs rotating in opposite
+    # directions, each terminated by an L-shaped arrowhead at the leading
+    # edge. Coordinates derive from the 24-unit SVG path used in the web
+    # UI, with the y-axis flipped so the top of the SVG lands at the top
+    # of the Kivy widget. Angles use Kivy's circle convention: 0° at top,
+    # increasing clockwise.
+    cx, cy = x + 0.5 * d, y + 0.5 * d
+    r = 0.417 * d
+    # Upper arc: from middle-left (9 o'clock) clockwise across the top
+    # to ~2 o'clock, leaving room for the upper-right arrowhead.
+    Line(circle=(cx, cy, r, -90, 62), width=1.4)
+    # Lower arc: from ~3 o'clock clockwise across the bottom to ~8
+    # o'clock, leaving room for the lower-left arrowhead.
+    Line(circle=(cx, cy, r, 92, 242), width=1.4)
+    # Upper-right L arrowhead.
+    Line(points=[
+        x + 0.646 * d, y + 0.667 * d,
+        x + 0.896 * d, y + 0.667 * d,
+        x + 0.896 * d, y + 0.917 * d,
+    ], width=1.4)
+    # Lower-left L arrowhead.
+    Line(points=[
+        x + 0.354 * d, y + 0.333 * d,
+        x + 0.104 * d, y + 0.333 * d,
+        x + 0.104 * d, y + 0.083 * d,
+    ], width=1.4)
+
+
+_ACCIDENTAL_PAINTERS: Dict[str, Any] = {
+    '': _draw_natural,   # natural — empty accidental value
+    '#': _draw_sharp,
+    'b': _draw_flat,
+}
+
+
+def _vdivider(height: Optional[int] = None, width: int = 12,
+              top_inset: Optional[int] = None,
+              bottom_inset: Optional[int] = None) -> Widget:
+    """Thin vertical rule used to separate option-button groups.
+
+    Passing ``height=None`` makes the rule stretch to fill its parent
+    vertically (``size_hint_y=1``) — useful as a column separator inside
+    a horizontal ``BoxLayout``. A positive ``height`` pins the rule to a
+    fixed size, as required by the chord-builder option-button rows.
+
+    ``top_inset`` / ``bottom_inset`` clip the painted line inwards from
+    the widget's bounding box (without changing the widget's size) — use
+    them to make a stretch-height rule start below a section header or
+    end above a footer."""
+    if height is None:
+        box = Widget(size_hint=(None, 1), width=width)
+    else:
+        box = Widget(size_hint=(None, None), size=(width, height))
+    with box.canvas:
+        col = Color(*theme.BORDER)
+        line = Line(points=[0, 0, 0, 0], width=1.2)
+    def _sync(*_):
+        cx = box.x + box.width / 2.0
+        default_pad = max(4, int(box.height * 0.15))
+        top_pad = default_pad if top_inset is None else max(0, top_inset)
+        bot_pad = default_pad if bottom_inset is None else max(0, bottom_inset)
+        line.points = [cx, box.y + bot_pad, cx, box.y + box.height - top_pad]
+    box.bind(pos=_sync, size=_sync)
+    _sync()
+    return box
+
+
+def _hdivider(height: int = 24) -> Widget:
+    """Full-width horizontal rule, centred vertically within ``height``.
+
+    The outer widget reserves ``height`` of vertical space so the line
+    has breathing room above and below; the line itself is 1.2px in
+    ``theme.BORDER``."""
+    box = Widget(size_hint_y=None, height=height)
+    with box.canvas:
+        Color(*theme.BORDER)
+        line = Line(points=[0, 0, 0, 0], width=1.2)
+    def _sync(*_):
+        cy = box.y + box.height / 2.0
+        line.points = [box.x, cy, box.x + box.width, cy]
+    box.bind(pos=_sync, size=_sync)
+    _sync()
+    return box
+
+
 def _accent_button(text: str, on_release, width: int = 120,
                    height: Optional[int] = None,
                    font_size: str = '14sp',
-                   radius: int = 0) -> Button:
+                   radius: int = 0,
+                   painter: Optional[Any] = None) -> Button:
     """Primary action button. When ``radius`` > 0 the background is a
     ``RoundedRectangle`` painted on ``canvas.before``; the built-in
     background is hidden so the rounded shape isn't framed by Kivy's
-    default rectangular 9-patch."""
+    default rectangular 9-patch. When ``painter`` is supplied, the button
+    renders a centred vector glyph via ``canvas.after`` (in the button's
+    foreground colour) in place of the label text — used for icon-only
+    actions whose web equivalents are SVG icons."""
     btn = Button(
-        text=text, size_hint=(None, None),
+        text='' if painter else text, size_hint=(None, None),
         size=(width, height or theme.CONTROL_HEIGHT),
         background_normal='', background_down='',
         background_color=(0, 0, 0, 0) if radius else theme.ACCENT_BG,
@@ -2159,73 +3400,184 @@ def _accent_button(text: str, on_release, width: int = 120,
             bg.pos = _w.pos
             bg.size = _w.size
         btn.bind(pos=_sync, size=_sync)
+    if painter is not None:
+        def _repaint(*_):
+            btn.canvas.after.clear()
+            pad = max(4, int(btn.height * 0.22))
+            d = min(btn.width, btn.height) - 2 * pad
+            if d <= 0:
+                return
+            gx = btn.x + (btn.width - d) / 2.0
+            gy = btn.y + (btn.height - d) / 2.0
+            with btn.canvas.after:
+                Color(*theme.TEXT_PRIMARY)
+                painter(gx, gy, d)
+        btn.bind(pos=_repaint, size=_repaint)
+        _repaint()
     btn.bind(on_release=lambda *_: on_release())
     return btn
 
 
-def _secondary_button(text: str, on_release, width: int = 110) -> Button:
+def _secondary_button(text: str, on_release, width: int = 110,
+                      height: Optional[int] = None,
+                      font_size: str = '14sp',
+                      radius: int = 0) -> Button:
+    """Muted-background companion to :func:`_accent_button`. When
+    ``radius`` > 0 paints a ``RoundedRectangle`` in ``BG_SURFACE_ALT``
+    on ``canvas.before`` and hides the default rectangular background,
+    matching the accent button's pill shape for paired form actions."""
     btn = Button(
-        text=text, size_hint=(None, None), size=(width, theme.CONTROL_HEIGHT),
+        text=text, size_hint=(None, None),
+        size=(width, height or theme.CONTROL_HEIGHT),
         background_normal='', background_down='',
-        background_color=theme.BG_SURFACE_ALT, color=theme.TEXT_PRIMARY,
-        font_size='14sp',
+        background_color=(0, 0, 0, 0) if radius else theme.BG_SURFACE_ALT,
+        color=theme.TEXT_PRIMARY,
+        font_size=font_size,
     )
+    if radius:
+        with btn.canvas.before:
+            Color(*theme.BG_SURFACE_ALT)
+            bg = RoundedRectangle(pos=btn.pos, size=btn.size,
+                                  radius=[radius])
+        def _sync(_w, *_):
+            bg.pos = _w.pos
+            bg.size = _w.size
+        btn.bind(pos=_sync, size=_sync)
     btn.bind(on_release=lambda *_: on_release())
     return btn
 
 
 def _option_button(text: str, selected: bool, on_release,
-                   disabled: bool = False, width: int = 64) -> Button:
-    """Chord-builder option button — selected state mirrors the web style."""
+                   disabled: bool = False, width: int = 64,
+                   height: Optional[int] = None,
+                   font_size: str = '9.5sp',
+                   painter: Optional[Any] = None,
+                   radius: Optional[int] = None) -> Button:
+    """Chord-builder option button — selected state mirrors the web style.
+
+    Paints a rounded background matching :func:`_button_chip` so the
+    chord builder reads as the same family of toggle controls. ``radius``
+    defaults to the full pill (``height // 2``); pass a smaller value to
+    get a tag-style corner. When ``painter`` is supplied, the button
+    renders a centred vector glyph via ``canvas.after`` instead of text
+    — used for accidentals whose unicode glyphs aren't available in the
+    kiosk font."""
+    height = height or theme.CONTROL_HEIGHT
+    radius = height // 2 if radius is None else radius
+    bg_color = theme.ACCENT_BG if selected else theme.BG_SURFACE_ALT
+    fg_color = (theme.TEXT_PRIMARY if selected
+                else theme.TEXT_MUTED if disabled
+                else theme.TEXT_SECONDARY)
     btn = Button(
-        text=text, size_hint=(None, None), size=(width, theme.CONTROL_HEIGHT),
+        text='' if painter else text, size_hint=(None, None),
+        size=(width, height),
         background_normal='', background_down='',
-        background_color=(theme.ACCENT_BG if selected else theme.BG_SURFACE_ALT),
-        color=(theme.TEXT_PRIMARY if selected else theme.TEXT_SECONDARY),
-        font_size='14sp', bold=selected,
+        background_color=(0, 0, 0, 0),
+        color=fg_color,
+        font_size=font_size, bold=selected,
         disabled=disabled,
     )
+    with btn.canvas.before:
+        Color(*bg_color)
+        bg = RoundedRectangle(pos=btn.pos, size=btn.size, radius=[radius])
+    def _sync(_w, *_):
+        bg.pos = _w.pos
+        bg.size = _w.size
+    btn.bind(pos=_sync, size=_sync)
+    if painter is not None:
+        def _repaint(*_):
+            btn.canvas.after.clear()
+            pad = max(4, int(btn.height * 0.18))
+            d = min(btn.width, btn.height) - 2 * pad
+            if d <= 0:
+                return
+            gx = btn.x + (btn.width - d) / 2.0
+            gy = btn.y + (btn.height - d) / 2.0
+            with btn.canvas.after:
+                Color(*fg_color)
+                painter(gx, gy, d)
+        btn.bind(pos=_repaint, size=_repaint)
+        _repaint()
     btn.bind(on_release=lambda *_: on_release())
     return btn
 
 
 def _button_chip(text: str, selected: bool = False,
-                 on_release=None) -> Button:
-    """Small chip used to display/toggle a button ID in groups."""
+                 on_release=None, height: int = 28,
+                 font_size: str = '9sp',
+                 size_hint_x: Optional[float] = None) -> Button:
+    """Tag-style chip used to display/toggle a button ID in groups.
+
+    Paints a rounded-pill background. When ``size_hint_x`` is ``None``
+    the chip auto-sizes its width to fit the label (plus a horizontal
+    padding) so longer IDs like ``button:secondary`` aren't clipped by
+    neighbours; when set, the chip fills its parent's cell horizontally
+    instead (used by the edit-group toggle grid)."""
+    radius = height // 2
+    bg_color = theme.ACCENT_BG if selected else theme.BG_SURFACE_ALT
     btn = Button(
-        text=text, size_hint=(None, None), size=(88, 40),
+        text=text,
+        size_hint=(size_hint_x, None),
+        size=(88, height),
         background_normal='', background_down='',
-        background_color=(theme.ACCENT_BG if selected else theme.BG_SURFACE_ALT),
+        background_color=(0, 0, 0, 0),
         color=(theme.TEXT_PRIMARY if selected else theme.TEXT_SECONDARY),
-        font_size='13sp', bold=selected,
+        font_size=font_size, bold=selected,
     )
+    with btn.canvas.before:
+        Color(*bg_color)
+        bg = RoundedRectangle(pos=btn.pos, size=btn.size, radius=[radius])
+    def _sync(_w, *_):
+        bg.pos = _w.pos
+        bg.size = _w.size
+    btn.bind(pos=_sync, size=_sync)
+    if size_hint_x is None:
+        def _fit(_w, *_):
+            btn.width = max(72, int(btn.texture_size[0]) + 28)
+        btn.bind(texture_size=_fit)
+        _fit(btn)
     if on_release is not None:
         btn.bind(on_release=lambda *_: on_release())
     return btn
 
 
-def _chord_chip(text: str, on_remove) -> BoxLayout:
+def _chord_chip(text: str, on_remove,
+                height: Optional[int] = None,
+                font_size: str = '14sp',
+                radius: Optional[int] = None) -> BoxLayout:
+    """Pill-shaped accent chip mirroring the selected ``_button_chip`` /
+    ``_option_button`` style, with a trailing ``×`` to remove the chord."""
+    height = height or theme.CONTROL_HEIGHT
+    radius = height // 2 if radius is None else radius
     row = BoxLayout(orientation='horizontal', size_hint=(None, None),
-                    size=(0, 36), spacing=2, padding=(8, 0, 2, 0))
-    _filled_rect_bg(row, theme.BG_SURFACE_ALT)
-    lbl = Label(text=text, color=theme.TEXT_PRIMARY, font_size='13sp',
+                    size=(0, height), spacing=theme.SPACE_1,
+                    padding=(theme.SPACE_3, 0, theme.SPACE_1, 0))
+    with row.canvas.before:
+        Color(*theme.ACCENT_BG)
+        bg = RoundedRectangle(pos=row.pos, size=row.size, radius=[radius])
+    def _sync(_w, *_):
+        bg.pos = _w.pos
+        bg.size = _w.size
+    row.bind(pos=_sync, size=_sync)
+    lbl = Label(text=text, color=theme.TEXT_PRIMARY, font_size=font_size,
                 bold=True, size_hint=(None, 1),
                 halign='left', valign='middle')
     def _resize(*_):
         lbl.texture_update()
         lbl.width = max(20, int(lbl.texture_size[0]))
         lbl.text_size = lbl.size
-        row.width = lbl.width + 30
+        row.width = lbl.width + theme.SPACE_3 + theme.SPACE_1 + height
     lbl.bind(texture_size=_resize)
     _resize()
     row.add_widget(lbl)
-    row.add_widget(_icon_button('×', on_remove))
+    row.add_widget(_icon_button('×', on_remove, size=height,
+                                font_size=font_size))
     return row
 
 
 def _form_field_label(text: str) -> Label:
     lbl = Label(
-        text=text, color=theme.TEXT_SECONDARY, font_size='13sp',
+        text=text, color=theme.TEXT_SECONDARY, font_size='8.5sp',
         size_hint_y=None, height=theme.FIELD_LABEL_HEIGHT,
         halign='left', valign='middle', bold=True,
     )
@@ -2254,7 +3606,7 @@ def _section_card(title: str, body: Widget,
         if title:
             title_lbl = Label(
                 text=title, color=theme.TEXT_PRIMARY,
-                font_size='13sp', bold=True,
+                font_size='8.5sp', bold=True,
                 halign='left', valign='middle',
             )
             title_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -2289,7 +3641,7 @@ _BUILDER_ACCIDENTALS: Tuple[Tuple[str, str], ...] = (
     ('♮', ''), ('♯', '#'), ('♭', 'b'),
 )
 _BUILDER_QUALITIES: Tuple[Tuple[str, str], ...] = (
-    ('Major', ''), ('Minor', 'm'), ('Dim', 'dim'), ('Aug', 'aug'),
+    ('Maj', ''), ('Min', 'm'), ('Dim', 'dim'), ('Aug', 'aug'),
     ('Sus2', 'sus2'), ('Sus4', 'sus4'), ('5', '5'),
 )
 _BUILDER_EXTENSIONS: Tuple[Tuple[str, str], ...] = (
@@ -2390,14 +3742,14 @@ class ActionRulesPanel(BoxLayout):
 
     def _build_list_view(self) -> BoxLayout:
         wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
-        # 1.5x the standard accent button with rounded corners so the
-        # primary "+ Add Action" affordance reads as the main action on
-        # the panel. ``title=''`` drops the redundant section header.
+        # Rounded-pill primary "+ Add Action" affordance, sized to match
+        # the app's standard accent buttons. ``title=''`` drops the
+        # redundant section header.
         add_btn = _accent_button(
             '+ Add Action', self._open_add_form,
-            width=240,
-            height=int(theme.CONTROL_HEIGHT * 1.5),
-            font_size='18sp', radius=int(theme.CONTROL_HEIGHT * 0.75),
+            width=150,
+            height=theme.CONTROL_HEIGHT,
+            font_size='12sp', radius=int(theme.CONTROL_HEIGHT * 0.5),
         )
         scroll, self._list = _scroll_list()
         wrap.add_widget(_section_card('', scroll, header_widget=add_btn))
@@ -2436,7 +3788,7 @@ class ActionRulesPanel(BoxLayout):
         up from the subtle ``BORDER`` token so the boundary between
         items reads clearly without becoming a loud stripe.
         """
-        row_h = max(ROW_ICON_SIZE + 2 * theme.SPACE_2, 136)
+        row_h = max(ROW_ICON_SIZE + 2 * theme.SPACE_2, 66)
         # Asymmetric padding: extra top + bottom space separates adjacent
         # rows so the divider line (drawn at row.y) reads as a section
         # between items rather than a stripe hugging the content.
@@ -2449,9 +3801,9 @@ class ActionRulesPanel(BoxLayout):
         left = BoxLayout(orientation='vertical', size_hint_x=0.5,
                          spacing=theme.SPACE_1)
         left_top = BoxLayout(orientation='horizontal', size_hint_y=None,
-                             height=56, spacing=theme.SPACE_2)
+                             height=24, spacing=theme.SPACE_2)
         left_bottom = BoxLayout(orientation='horizontal', size_hint_y=None,
-                                height=56, spacing=theme.SPACE_2)
+                                height=24, spacing=theme.SPACE_2)
         left.add_widget(left_top)
         left.add_widget(left_bottom)
 
@@ -2483,7 +3835,7 @@ class ActionRulesPanel(BoxLayout):
         # label is pos_hint-centered on the cross axis of its parent
         # BoxLayout — the same pattern ``_badge`` uses.
         lbl = Label(text=text, color=theme.TEXT_PRIMARY,
-                    font_size='13sp', bold=True,
+                    font_size='8.5sp', bold=True,
                     halign='left', valign='middle',
                     size_hint=(None, None), width=width,
                     pos_hint={'center_y': 0.5})
@@ -2500,7 +3852,7 @@ class ActionRulesPanel(BoxLayout):
         # stuck at "..." even after the row is sized. Skip it; the
         # surrounding row already caps width via fixed siblings.
         lbl = Label(text=text, color=theme.TEXT_SECONDARY,
-                    font_size='12sp',
+                    font_size='8sp',
                     halign='left', valign='middle')
         lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         return lbl
@@ -2511,7 +3863,7 @@ class ActionRulesPanel(BoxLayout):
         # description (flex) absorbs the slack, and pos_hint-centred so
         # the text aligns vertically with the trigger badge.
         lbl = Label(text=text, color=theme.TEXT_MUTED,
-                    font_size='12sp', italic=True,
+                    font_size='8sp', italic=True,
                     halign='right', valign='middle',
                     size_hint=(None, None),
                     pos_hint={'center_y': 0.5})
@@ -2638,25 +3990,15 @@ class ActionRulesPanel(BoxLayout):
 
     def _build_form_view(self) -> BoxLayout:
         wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
-        # Header with back button + title
-        header = BoxLayout(orientation='horizontal', size_hint_y=None,
-                           height=28, spacing=theme.SPACE_2)
-        header.add_widget(_icon_button('←', self._close_form))
-        title_lbl = Label(text=self._form_title(), color=theme.TEXT_PRIMARY,
-                          font_size='14sp', bold=True,
-                          halign='left', valign='middle')
-        title_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        header.add_widget(title_lbl)
-        wrap.add_widget(header)
-        # Scrollable form body
+        # Scrollable form body — 2-column grid matching the velocity /
+        # strum-release panels' ``.settings-form`` layout.
         scroll = ScrollView(do_scroll_x=False, bar_width=4)
-        form = BoxLayout(orientation='vertical', size_hint_y=None,
-                         spacing=theme.SPACE_2, padding=(theme.SPACE_2, 0))
-        form.bind(minimum_height=form.setter('height'))
+        form = _two_col_form()
+        form.padding = [theme.SPACE_2, 0, theme.SPACE_2, 0]
         scroll.add_widget(form)
         # Only show target selector when adding (not editing).
         if self._editing_id is None:
-            form.add_widget(self._field('Target Type', _dropdown(
+            form.add_widget(_setting_row('Target Type', _dropdown(
                 _TARGET_TYPES, self._form_target,
                 on_change=self._on_target_change)))
         if self._form_target == 'button':
@@ -2665,43 +4007,44 @@ class ActionRulesPanel(BoxLayout):
             self._build_group_fields(form)
         else:
             self._build_startup_fields(form)
-        # Common name field
-        name_in = TextInput(
-            text=self._form_name, multiline=False, write_tab=False,
-            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
-            background_color=theme.BG_SURFACE_ALT,
-            foreground_color=theme.TEXT_PRIMARY,
-            cursor_color=theme.ACCENT,
-            hint_text='e.g., My Action',
-        )
-        name_in.bind(text=lambda _w, v: self._set_attr('_form_name', v))
-        form.add_widget(self._field('Name (optional)', name_in))
+        # Name field intentionally omitted from the UI: this build
+        # targets a keyboard-less appliance. Existing names on edited
+        # rules are preserved because the save methods merge over the
+        # original rule dict and only overwrite ``name`` when set.
         wrap.add_widget(scroll)
-        # Form actions
+        # Form actions — match the rounded pill style of "+ Add Action".
+        action_h = int(theme.CONTROL_HEIGHT * 1.5)
+        action_r = int(theme.CONTROL_HEIGHT * 0.75)
         actions = BoxLayout(orientation='horizontal', size_hint_y=None,
-                            height=36, spacing=theme.SPACE_2,
+                            height=action_h + 2 * theme.SPACE_1,
+                            spacing=theme.SPACE_2,
                             padding=(0, theme.SPACE_1))
         actions.add_widget(Widget())
-        actions.add_widget(_secondary_button('Cancel', self._close_form,
-                                             width=90))
-        actions.add_widget(_accent_button('Save', self._save_form, width=90))
+        actions.add_widget(_secondary_button(
+            'Cancel', self._close_form,
+            width=160, height=action_h,
+            font_size='12sp', radius=action_r))
+        actions.add_widget(_accent_button(
+            'Save', self._save_form,
+            width=160, height=action_h,
+            font_size='12sp', radius=action_r))
         wrap.add_widget(actions)
         return wrap
 
-    def _build_button_fields(self, form: BoxLayout) -> None:
+    def _build_button_fields(self, form: GridLayout) -> None:
         buttons = _enabled_buttons(self._button_count)
-        form.add_widget(self._field('Button', _dropdown(
+        form.add_widget(_setting_row('Button', _dropdown(
             buttons, self._form_button,
             on_change=lambda v: self._set_attr('_form_button', v))))
-        form.add_widget(self._field('Action', _dropdown(
+        form.add_widget(_setting_row('Action', _dropdown(
             _action_choices(), self._form_action,
             on_change=self._on_action_change)))
         self._render_param_fields(form, self._form_action)
-        form.add_widget(self._field('Trigger', _dropdown(
+        form.add_widget(_setting_row('Trigger', _dropdown(
             _TRIGGER_OPTIONS, self._form_trigger,
             on_change=lambda v: self._set_attr('_form_trigger', v))))
 
-    def _build_group_fields(self, form: BoxLayout) -> None:
+    def _build_group_fields(self, form: GridLayout) -> None:
         groups = self._full['groups']
         group_ids = tuple(g.get('id', '') for g in groups) or ('',)
         # Resolve current id to name for the dropdown's display.
@@ -2711,31 +4054,31 @@ class ActionRulesPanel(BoxLayout):
         names = tuple(id_to_name.get(gid, gid) for gid in group_ids)
         current_name = id_to_name.get(self._form_group_id,
                                       names[0] if names else '')
-        form.add_widget(self._field('Group', _dropdown(
+        form.add_widget(_setting_row('Group', _dropdown(
             names, current_name,
             on_change=lambda v: self._set_attr('_form_group_id',
                                                name_to_id.get(v, v)))))
-        form.add_widget(self._field('Action Type', _dropdown(
+        form.add_widget(_setting_row('Action Type', _dropdown(
             ('chord-progression',), 'chord-progression')))
         progs = self._progression_names()
-        form.add_widget(self._field('Chord Progression', _dropdown(
+        form.add_widget(_setting_row('Chord Progression', _dropdown(
             progs, self._form_group_progression,
             on_change=lambda v: self._set_attr('_form_group_progression', v))))
-        oct_in = _number_input(self._form_group_octave, width_hint=0.3)
+        oct_in = _number_input(self._form_group_octave, width_hint=1.0)
         oct_in.bind(text=lambda _w, v: self._set_int_attr(
             '_form_group_octave', v, default=4))
-        form.add_widget(self._field('Octave', oct_in))
-        form.add_widget(self._field('Trigger', _dropdown(
+        form.add_widget(_setting_row('Octave', oct_in))
+        form.add_widget(_setting_row('Trigger', _dropdown(
             _TRIGGER_OPTIONS, self._form_group_trigger,
             on_change=lambda v: self._set_attr('_form_group_trigger', v))))
 
-    def _build_startup_fields(self, form: BoxLayout) -> None:
-        form.add_widget(self._field('Action', _dropdown(
+    def _build_startup_fields(self, form: GridLayout) -> None:
+        form.add_widget(_setting_row('Action', _dropdown(
             _action_choices(), self._form_action,
             on_change=self._on_action_change)))
         self._render_param_fields(form, self._form_action)
 
-    def _render_param_fields(self, form: BoxLayout, action: str) -> None:
+    def _render_param_fields(self, form: GridLayout, action: str) -> None:
         defn = _action_def(action)
         for param in defn.get('params') or ():
             key = param['key']
@@ -2747,7 +4090,7 @@ class ActionRulesPanel(BoxLayout):
             elif param['type'] == 'number':
                 allow_float = isinstance(param.get('step'), float) or \
                     isinstance(param.get('default'), float)
-                widget = _number_input(current, width_hint=0.4,
+                widget = _number_input(current, width_hint=1.0,
                                        allow_float=allow_float)
                 widget.bind(text=lambda _w, v, k=key,
                             f=allow_float: self._set_param(
@@ -2755,22 +4098,14 @@ class ActionRulesPanel(BoxLayout):
             else:
                 widget = TextInput(
                     text=str(current), multiline=False, write_tab=False,
-                    size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
+                    size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='9.5sp',
                     background_color=theme.BG_SURFACE_ALT,
                     foreground_color=theme.TEXT_PRIMARY,
                     cursor_color=theme.ACCENT,
                 )
                 widget.bind(text=lambda _w, v, k=key:
                             self._set_param(k, v))
-            form.add_widget(self._field(param['label'], widget))
-
-    def _field(self, label: str, widget: Widget) -> BoxLayout:
-        col = BoxLayout(orientation='vertical', size_hint_y=None,
-                        spacing=2)
-        col.add_widget(_form_field_label(label))
-        col.add_widget(widget)
-        col.height = 14 + (widget.height if widget.height else 32) + 2
-        return col
+            form.add_widget(_setting_row(param['label'], widget))
 
     def _form_title(self) -> str:
         if self._editing_id is not None:
@@ -3007,9 +4342,9 @@ class GroupsPanel(BoxLayout):
         wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
         add_btn = _accent_button(
             '+ Add Group', self._open_add_form,
-            width=240,
-            height=int(theme.CONTROL_HEIGHT * 1.5),
-            font_size='18sp', radius=int(theme.CONTROL_HEIGHT * 0.75),
+            width=150,
+            height=theme.CONTROL_HEIGHT,
+            font_size='12sp', radius=int(theme.CONTROL_HEIGHT * 0.5),
         )
         scroll, self._groups_list = _scroll_list()
         wrap.add_widget(_section_card('', scroll, header_widget=add_btn))
@@ -3042,9 +4377,9 @@ class GroupsPanel(BoxLayout):
         info = BoxLayout(orientation='vertical', spacing=theme.SPACE_1)
         # Line 1: group name
         name_lbl = Label(text=group.get('name', '(unnamed)'),
-                         color=theme.TEXT_PRIMARY, font_size='13sp',
+                         color=theme.TEXT_PRIMARY, font_size='8.5sp',
                          bold=True, halign='left', valign='middle',
-                         size_hint_y=None, height=36)
+                         size_hint_y=None, height=24)
         name_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         info.add_widget(name_lbl)
         # Line 2: button chips
@@ -3063,16 +4398,16 @@ class GroupsPanel(BoxLayout):
             lambda i=gid: self._delete_group(i)))
         row.add_widget(actions)
         row.height = max(ROW_ICON_SIZE + 2 * theme.SPACE_2,
-                         36 + chips.height + theme.SPACE_1
+                         24 + chips.height + theme.SPACE_1
                          + theme.SPACE_1 + theme.SPACE_3)
         return row
 
     def _chip_row(self, buttons: list) -> BoxLayout:
         row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                        height=44, spacing=4)
+                        height=32, spacing=4)
         if not buttons:
             row.add_widget(Label(text='(no buttons)',
-                                 color=theme.TEXT_MUTED, font_size='12sp',
+                                 color=theme.TEXT_MUTED, font_size='8sp',
                                  halign='left', valign='middle'))
             return row
         for btn in buttons:
@@ -3085,7 +4420,8 @@ class GroupsPanel(BoxLayout):
 
     def _open_add_form(self) -> None:
         self._editing_id = None
-        self._form_name = ''
+        # No keyboard on the appliance — auto-name new groups by index.
+        self._form_name = f'Group {len(self._full["groups"]) + 1}'
         self._form_buttons = []
         self._mode = 'form'
         self._render()
@@ -3106,63 +4442,54 @@ class GroupsPanel(BoxLayout):
 
     def _build_form_view(self) -> BoxLayout:
         wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
-        header = BoxLayout(orientation='horizontal', size_hint_y=None,
-                           height=28, spacing=theme.SPACE_2)
-        header.add_widget(_icon_button('\u2190', self._close_form))
-        title = 'Edit Group' if self._editing_id else 'Add Group'
-        title_lbl = Label(text=title, color=theme.TEXT_PRIMARY,
-                          font_size='14sp', bold=True,
-                          halign='left', valign='middle')
-        title_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        header.add_widget(title_lbl)
-        wrap.add_widget(header)
-        # Name field
+        # Header omitted — Cancel at the bottom handles dismiss.
         scroll = ScrollView(do_scroll_x=False, bar_width=4)
         form = BoxLayout(orientation='vertical', size_hint_y=None,
-                         spacing=theme.SPACE_2, padding=(theme.SPACE_2, 0))
+                         spacing=theme.SPACE_3, padding=(theme.SPACE_2, 0))
         form.bind(minimum_height=form.setter('height'))
         scroll.add_widget(form)
-        name_in = TextInput(
-            text=self._form_name, multiline=False, write_tab=False,
-            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
-            background_color=theme.BG_SURFACE_ALT,
-            foreground_color=theme.TEXT_PRIMARY,
-            cursor_color=theme.ACCENT,
-            hint_text='e.g., Main Chords',
+        # Group name as a static title — no keyboard on the appliance, so
+        # names are either preserved on edit or auto-generated on add.
+        title_lbl = Label(
+            text=self._form_name, color=theme.TEXT_PRIMARY,
+            font_size='14.5sp', bold=True,
+            size_hint_y=None, height=theme.CONTROL_HEIGHT,
+            halign='left', valign='middle',
         )
-        self._group_name = name_in
-        name_in.bind(text=lambda _w, v: self._set_attr('_form_name', v))
-        form.add_widget(self._field('Group Name', name_in))
-        # Button-chip toggle grid
+        title_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        form.add_widget(title_lbl)
+        # Button-chip toggle grid — 1.5× sized chips that fill their cell.
         toggle_lbl = _form_field_label('Buttons (tap to toggle)')
         form.add_widget(toggle_lbl)
-        grid = GridLayout(cols=4, spacing=4, size_hint_y=None)
+        chip_h = int(theme.CONTROL_HEIGHT * 1.5)
+        grid = GridLayout(cols=4, spacing=theme.SPACE_2, size_hint_y=None)
         grid.bind(minimum_height=grid.setter('height'))
         for btn_id in _enabled_buttons(self._button_count):
             selected = btn_id in self._form_buttons
             grid.add_widget(_button_chip(
                 btn_id, selected=selected,
-                on_release=lambda b=btn_id: self._toggle_button(b)))
+                on_release=lambda b=btn_id: self._toggle_button(b),
+                height=chip_h, font_size='12sp', size_hint_x=1))
         form.add_widget(grid)
         wrap.add_widget(scroll)
-        # Save/cancel row
+        # Save/cancel row — match the rounded pill style of the Actions form.
+        action_h = int(theme.CONTROL_HEIGHT * 1.5)
+        action_r = int(theme.CONTROL_HEIGHT * 0.75)
         actions = BoxLayout(orientation='horizontal', size_hint_y=None,
-                            height=36, spacing=theme.SPACE_2,
+                            height=action_h + 2 * theme.SPACE_1,
+                            spacing=theme.SPACE_2,
                             padding=(0, theme.SPACE_1))
         actions.add_widget(Widget())
-        actions.add_widget(_secondary_button('Cancel', self._close_form,
-                                             width=90))
-        actions.add_widget(_accent_button('Save', self._save_group, width=90))
+        actions.add_widget(_secondary_button(
+            'Cancel', self._close_form,
+            width=160, height=action_h,
+            font_size='12sp', radius=action_r))
+        actions.add_widget(_accent_button(
+            'Save', self._save_group,
+            width=160, height=action_h,
+            font_size='12sp', radius=action_r))
         wrap.add_widget(actions)
         return wrap
-
-    def _field(self, label: str, widget: Widget) -> BoxLayout:
-        col = BoxLayout(orientation='vertical', size_hint_y=None,
-                        spacing=2)
-        col.add_widget(_form_field_label(label))
-        col.add_widget(widget)
-        col.height = 14 + (widget.height if widget.height else 32) + 2
-        return col
 
     def _set_attr(self, name: str, value: Any) -> None:
         setattr(self, name, value)
@@ -3249,98 +4576,161 @@ class ChordProgressionsPanel(BoxLayout):
     # ---- Render -------------------------------------------------------
 
     def _render(self) -> None:
+        # Auto-name new progressions before painting so the title
+        # below the selector row has something to show.
+        if self._selected_key is None and not self._progression_name:
+            self._progression_name = self._default_new_name()
         self._body.clear_widgets()
+        # Full-width selector row sits above a two-column split:
+        # progression editing on the left, chord builder on the right.
+        # A horizontal rule with padding above/below separates the two
+        # regions so the selector reads as the top-of-panel chrome.
         self._body.add_widget(self._build_selector())
-        self._body.add_widget(self._build_preview())
-        self._body.add_widget(self._build_actions())
-        self._body.add_widget(self._build_chord_builder())
+        self._body.add_widget(_hdivider(height=theme.SPACE_5))
+        columns = BoxLayout(orientation='horizontal',
+                            spacing=theme.SPACE_5)
+        left = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        left.add_widget(self._build_title())
+        left.add_widget(self._build_actions())
+        left.add_widget(self._build_preview())
+        left.add_widget(Widget())
+        right = BoxLayout(orientation='vertical', spacing=theme.SPACE_3)
+        right.add_widget(self._build_builder_title())
+        right.add_widget(self._build_chord_builder())
+        right.add_widget(Widget())
+        columns.add_widget(left)
+        columns.add_widget(right)
+        self._body.add_widget(columns)
+
+    def _default_new_name(self) -> str:
+        return f'Chord Progression {len(self._progressions) + 1}'
 
     def _build_selector(self) -> BoxLayout:
+        # Row height + button radius mirror the shared ``_dropdown`` helper
+        # so the existing-progression dropdown reads as the same family of
+        # input controls used by the Actions / velocity panels.
+        row_h = theme.INPUT_HEIGHT
+        pill_r = row_h // 2
         row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                        height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
-        # Name input
-        self._name_input = TextInput(
-            text=self._progression_name, multiline=False, write_tab=False,
-            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
-            background_color=theme.BG_SURFACE_ALT,
-            foreground_color=theme.TEXT_PRIMARY,
-            cursor_color=theme.ACCENT,
-            hint_text='Enter progression name...',
-        )
-        self._name_input.bind(text=lambda _w, v: setattr(
-            self, '_progression_name', v))
-        row.add_widget(self._name_input)
-        # Existing-progression dropdown (label shows current selection)
+                        height=row_h, spacing=theme.SPACE_2)
         keys = sorted(self._progressions.keys())
         spinner_values = tuple(keys) if keys else ('(no progressions)',)
-        current = self._selected_key if self._selected_key in keys else (
-            spinner_values[0] if keys else spinner_values[0])
-        spinner = _CaretDropdown(
-            text=current, values=spinner_values,
-            size_hint=(None, None), size=(140, theme.CONTROL_HEIGHT),
-            background_normal='', background_down='',
-            background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_PRIMARY, font_size='14sp',
-            sync_height=True, disabled=not keys,
-        )
-        if keys:
-            spinner.bind(text=lambda _w, v: self._select_from_dropdown(v))
+        current = self._selected_key if self._selected_key in keys else \
+            spinner_values[0]
+        spinner = _dropdown(
+            spinner_values, current,
+            on_change=self._select_from_dropdown if keys else None)
+        spinner.disabled = not keys
         row.add_widget(spinner)
-        row.add_widget(_secondary_button('New', self._create_new, width=80))
+        row.add_widget(_secondary_button(
+            'New', self._create_new,
+            width=120, height=row_h, font_size='12sp', radius=pill_r))
         delete_btn = _secondary_button(
-            'Delete', self._delete_selected, width=90)
+            'Delete', self._delete_selected,
+            width=120, height=row_h, font_size='12sp', radius=pill_r)
         delete_btn.disabled = self._selected_key is None
         row.add_widget(delete_btn)
         return row
 
+    def _build_title(self) -> Label:
+        # Static title showing the current progression name. No keyboard on
+        # the appliance, so names are either preserved on load or auto-
+        # generated for new progressions. Height uses ``INPUT_HEIGHT`` so
+        # 22sp descenders ('g', 'p', 'y') aren't clipped by the label box.
+        lbl = Label(
+            text=self._progression_name, color=theme.TEXT_PRIMARY,
+            font_size='14.5sp', bold=True,
+            size_hint_y=None, height=theme.INPUT_HEIGHT,
+            halign='left', valign='middle',
+        )
+        lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        return lbl
+
     def _build_preview(self) -> BoxLayout:
+        # Top padding adds breathing room below the action row above; the
+        # gap between the label and chip area uses SPACE_3 so the heading
+        # reads as a distinct caption rather than crowding the chips.
+        chips_h = theme.INPUT_HEIGHT
+        top_pad = theme.SPACE_3
+        label_gap = theme.SPACE_3
         wrap = BoxLayout(orientation='vertical', size_hint_y=None,
-                         spacing=4)
+                         spacing=label_gap,
+                         padding=(0, top_pad, 0, 0))
         wrap.add_widget(_form_field_label(
             f'Progression ({len(self._selected_chords)} chords)'))
-        chips_row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                              height=34, spacing=4)
         if not self._selected_chords:
+            chips_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                  height=chips_h, spacing=theme.SPACE_2)
             empty = Label(
                 text='Build a chord below and tap "Add"',
-                color=theme.TEXT_MUTED, font_size='12sp',
+                color=theme.TEXT_MUTED, font_size='8sp',
                 halign='left', valign='middle',
             )
             empty.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
             chips_row.add_widget(empty)
         else:
+            # StackLayout flows chips left-to-right, top-to-bottom so they
+            # wrap onto a new row when the column width is exceeded.
+            chips_row = StackLayout(size_hint_y=None,
+                                    spacing=(theme.SPACE_2, theme.SPACE_2))
+            chips_row.bind(minimum_height=chips_row.setter('height'))
+            tag_r = theme.SPACE_2
             for i, chord in enumerate(self._selected_chords):
                 chips_row.add_widget(_chord_chip(
-                    chord, lambda idx=i: self._remove_chord(idx)))
-            chips_row.add_widget(Widget())
+                    chord, lambda idx=i: self._remove_chord(idx),
+                    height=chips_h, font_size='12sp', radius=tag_r))
         wrap.add_widget(chips_row)
-        wrap.height = 14 + 34 + 4
+        def _sync_h(*_):
+            wrap.height = (top_pad + theme.FIELD_LABEL_HEIGHT
+                           + label_gap + chips_row.height)
+        chips_row.bind(height=_sync_h)
+        _sync_h()
         return wrap
 
     def _build_actions(self) -> BoxLayout:
+        btn_h = theme.CONTROL_HEIGHT
+        pill_r = btn_h // 2
         row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                        height=36, spacing=theme.SPACE_2)
+                        height=btn_h, spacing=theme.SPACE_2)
         current = _build_chord_token(self._root, self._accidental,
                                      self._quality, self._extension)
         add_btn = _accent_button(
-            f'Add {current}', lambda: self._add_chord(current), width=120)
+            f'Add {current}', lambda: self._add_chord(current),
+            width=130, height=btn_h, font_size='12sp', radius=pill_r)
         add_btn.disabled = self._is_invalid_accidental()
         row.add_widget(add_btn)
-        row.add_widget(_secondary_button('Clear All', self._clear_all,
-                                         width=100))
+        row.add_widget(_secondary_button(
+            'Clear All', self._clear_all,
+            width=100, height=btn_h, font_size='12sp', radius=pill_r))
         save_btn = _secondary_button(
             'Update' if self._is_editing() else 'Save',
-            self._save_progression, width=90)
+            self._save_progression,
+            width=90, height=btn_h, font_size='12sp', radius=pill_r)
         save_btn.disabled = (not (self._progression_name or '').strip()
                              or not self._selected_chords)
         row.add_widget(save_btn)
         row.add_widget(Widget())
         return row
 
+    def _build_builder_title(self) -> Label:
+        # Matches the progression-name title style on the left column so
+        # the two columns read as the same heading hierarchy.
+        lbl = Label(
+            text='Build Progression', color=theme.TEXT_PRIMARY,
+            font_size='14.5sp', bold=True,
+            size_hint_y=None, height=theme.INPUT_HEIGHT,
+            halign='left', valign='middle',
+        )
+        lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        return lbl
+
     def _build_chord_builder(self) -> BoxLayout:
+        # Section-to-section gap mirrors the breathing room between
+        # adjacent ``_setting_row`` blocks in the Actions / Groups forms
+        # (~24px), so the now-two-row Quality / Extension blocks don't
+        # crowd their neighbours.
         wrap = BoxLayout(orientation='vertical', size_hint_y=None,
-                         spacing=theme.SPACE_2)
-        wrap.add_widget(_form_field_label('Build Chord'))
+                         spacing=theme.SPACE_5)
         # Root + Accidental
         wrap.add_widget(self._builder_section(
             'Root & Accidental', self._root_accidental_buttons()))
@@ -3350,51 +4740,82 @@ class ChordProgressionsPanel(BoxLayout):
         # Extension
         wrap.add_widget(self._builder_section(
             'Extension', self._extension_buttons()))
-        wrap.height = sum(c.height for c in wrap.children) + \
-            theme.SPACE_2 * (len(wrap.children) - 1)
+        # Sections have dynamic heights (StackLayout rows wrap), so keep
+        # the wrapper's height in sync with whatever each child reports.
+        def _sync(*_):
+            wrap.height = sum(c.height for c in wrap.children) + \
+                theme.SPACE_5 * max(0, len(wrap.children) - 1)
+        for child in wrap.children:
+            child.bind(height=_sync)
+        _sync()
         return wrap
 
+    # Chord-builder rows are sized to the same 1.5× scale as the action
+    # row above, so the whole panel reads as one family of tag controls.
+    # ``_BUILDER_BTN_R`` is a small tag-style radius (not a full pill) so
+    # the toggles read as selectable tags rather than action buttons.
+    _BUILDER_BTN_H = theme.CONTROL_HEIGHT
+    _BUILDER_FONT = '12sp'
+    _BUILDER_BTN_R = theme.SPACE_2
+
     def _builder_section(self, label: str, buttons: list) -> BoxLayout:
-        col = BoxLayout(orientation='vertical', size_hint_y=None, spacing=4)
+        # Label-to-row gap matches the ``_setting_row`` pattern used by
+        # the Actions / Groups forms so the field heading sits a clear
+        # step above the controls rather than crowding them.
+        label_gap = theme.SPACE_2
+        col = BoxLayout(orientation='vertical', size_hint_y=None,
+                        spacing=label_gap)
         col.add_widget(_form_field_label(label))
-        row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                        height=theme.CONTROL_HEIGHT, spacing=4)
+        # StackLayout flows buttons left-to-right and wraps to a new row
+        # when the column width is exceeded, so wider toggles naturally
+        # span two rows in the narrow right-hand column.
+        row = StackLayout(size_hint_y=None,
+                          spacing=(theme.SPACE_2, theme.SPACE_2))
+        row.bind(minimum_height=row.setter('height'))
         for b in buttons:
             row.add_widget(b)
-        row.add_widget(Widget())
         col.add_widget(row)
-        col.height = theme.FIELD_LABEL_HEIGHT + theme.CONTROL_HEIGHT + 4
+        def _sync(*_):
+            col.height = (theme.FIELD_LABEL_HEIGHT + row.height
+                          + label_gap)
+        row.bind(height=_sync)
+        _sync()
         return col
 
     def _root_accidental_buttons(self) -> list:
+        h, fs, r = self._BUILDER_BTN_H, self._BUILDER_FONT, self._BUILDER_BTN_R
         out: list = []
         for root in _BUILDER_ROOTS:
             out.append(_option_button(
                 root, selected=(self._root == root),
-                on_release=lambda r=root: self._set_root(r), width=44))
-        # divider
-        spacer = Widget(size_hint=(None, None), size=(8, theme.CONTROL_HEIGHT))
-        out.append(spacer)
+                on_release=lambda r=root: self._set_root(r),
+                width=41, height=h, font_size=fs, radius=r))
+        # Visible vertical rule separating roots from accidentals,
+        # matching the divider in the web chord builder.
+        out.append(_vdivider(h, width=theme.SPACE_3))
         for label, value in _BUILDER_ACCIDENTALS:
             disabled = _is_accidental_disabled(self._root, value)
             out.append(_option_button(
                 label, selected=(self._accidental == value),
                 disabled=disabled,
                 on_release=lambda v=value: self._set_accidental(v),
-                width=44))
+                width=41, height=h, font_size=fs, radius=r,
+                painter=_ACCIDENTAL_PAINTERS.get(value)))
         return out
 
     def _quality_buttons(self) -> list:
+        h, fs, r = self._BUILDER_BTN_H, self._BUILDER_FONT, self._BUILDER_BTN_R
         out: list = []
         for label, value in _BUILDER_QUALITIES:
             out.append(_option_button(
                 label, selected=(self._quality == value),
                 on_release=lambda v=value: self._set_quality(v),
-                width=58))
+                width=48, height=h, font_size=fs, radius=r))
         return out
 
     def _extension_buttons(self) -> list:
         disabled_all = _extension_disabled_for(self._quality)
+        h, fs, r = self._BUILDER_BTN_H, self._BUILDER_FONT, self._BUILDER_BTN_R
         out: list = []
         for label, value in _BUILDER_EXTENSIONS:
             # 'None' is always allowed; other extensions blocked for sus/5
@@ -3403,7 +4824,7 @@ class ChordProgressionsPanel(BoxLayout):
                 label, selected=(self._extension == value),
                 disabled=disabled,
                 on_release=lambda v=value: self._set_extension(v),
-                width=58))
+                width=56, height=h, font_size=fs, radius=r))
         return out
 
     # ---- Builder state mutators --------------------------------------
@@ -3602,7 +5023,7 @@ class ServerSettingsPanel(BoxLayout):
                                 height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
         self._status = Label(
             text='Current: (none)', color=theme.TEXT_SECONDARY,
-            font_size='13sp', halign='left', valign='middle',
+            font_size='8.5sp', halign='left', valign='middle',
         )
         self._status.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         status_cell.add_widget(self._status)
@@ -3610,7 +5031,7 @@ class ServerSettingsPanel(BoxLayout):
             text='Save', size_hint=(None, None), size=(96, theme.CONTROL_HEIGHT),
             background_normal='', background_down='',
             background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_MUTED, font_size='14sp',
+            color=theme.TEXT_MUTED, font_size='9.5sp',
             disabled=True,
         )
         self._save_btn.bind(on_release=lambda *_: self._save())
@@ -3632,7 +5053,7 @@ class ServerSettingsPanel(BoxLayout):
         row.add_widget(_setting_label('New config'))
         self._create_input = TextInput(
             text='', multiline=False, write_tab=False,
-            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='14sp',
+            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='9.5sp',
             background_color=theme.BG_SURFACE_ALT,
             foreground_color=theme.TEXT_PRIMARY,
             cursor_color=theme.ACCENT,
@@ -3651,7 +5072,7 @@ class ServerSettingsPanel(BoxLayout):
         wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_1)
         header = Label(
             text='[b]Available configs[/b]', markup=True, color=theme.TEXT_PRIMARY,
-            font_size='14sp', size_hint_y=None, height=22,
+            font_size='9.5sp', size_hint_y=None, height=22,
             halign='left', valign='middle',
         )
         header.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -3750,8 +5171,8 @@ def make_panel(panel_id: str, label: str, bridge: Optional[UIBridge]) -> BoxLayo
         return PerformancePanel(bridge=bridge)
     if panel_id == 'tabletVisualizer':
         return TabletVisualizerPanel(bridge=bridge)
-    if panel_id == 'stylusVisualizer':
-        return StylusVisualizerPanel(bridge=bridge)
+    if panel_id == 'midiInput':
+        return MIDIInputPanel(bridge=bridge)
     if panel_id == 'midiDevices':
         return MidiDevicesPanel(bridge=bridge)
     if panel_id == 'strummingSettings':

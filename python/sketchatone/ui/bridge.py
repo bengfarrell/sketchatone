@@ -28,7 +28,8 @@ from sketchatone.cli.server import (
 # Event names accepted by ``UIBridge.on``. Mirrors a subset of the
 # web-side ``StrummerWebSocketClientEvents`` so panel widgets can be
 # written against a single interface.
-EVENT_NAMES = ('device-status', 'tablet', 'strum', 'combined', 'config', 'midi-devices')
+EVENT_NAMES = ('device-status', 'tablet', 'strum', 'combined', 'config',
+               'midi-devices', 'midi-input')
 
 Listener = Callable[[Any], None]
 
@@ -56,14 +57,17 @@ class _BridgeServer(StrummerWebSocketServer):
     _status_hook: Optional[Callable[[bool, Optional[str]], None]] = None
     _config_hook: Optional[Callable[[Dict[str, Any]], None]] = None
     _midi_devices_hook: Optional[Callable[[Dict[str, Any]], None]] = None
+    _midi_input_hook: Optional[Callable[[Dict[str, Any]], None]] = None
 
     def __init__(self, *args: Any, _on_status: Optional[Callable[[bool, Optional[str]], None]] = None,
                  _on_config: Optional[Callable[[Dict[str, Any]], None]] = None,
                  _on_midi_devices: Optional[Callable[[Dict[str, Any]], None]] = None,
+                 _on_midi_input: Optional[Callable[[Dict[str, Any]], None]] = None,
                  **kwargs: Any) -> None:
         self._status_hook = _on_status
         self._config_hook = _on_config
         self._midi_devices_hook = _on_midi_devices
+        self._midi_input_hook = _on_midi_input
         super().__init__(*args, **kwargs)
 
     def broadcast_status(self, connected: bool, device_name: Optional[str] = None) -> None:  # type: ignore[override]
@@ -87,6 +91,70 @@ class _BridgeServer(StrummerWebSocketServer):
                 self._midi_devices_hook(self._get_midi_devices_data())
             except Exception:
                 pass
+
+    def _broadcast_midi_input(self, event: Dict[str, Any]) -> None:  # type: ignore[override]
+        super()._broadcast_midi_input(event)
+        if self._midi_input_hook is not None:
+            try:
+                self._midi_input_hook(self._build_midi_input_payload(event))
+            except Exception:
+                pass
+
+    def _build_midi_input_payload(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Same shape as the WS ``midi-input`` message, but as a dict."""
+        midi_input = getattr(self, 'midi_input', None)
+        available_ports = []
+        connected_port = None
+        if midi_input is not None:
+            try:
+                available_ports = midi_input.get_available_ports() or []
+            except Exception:
+                available_ports = []
+            connected_ports = getattr(midi_input, 'connected_ports', None) or []
+            if connected_ports:
+                connected_port = connected_ports[0].get('name')
+        return {
+            'notes': event.get('notes', []),
+            'added': event.get('added'),
+            'removed': event.get('removed'),
+            'portName': event.get('port_name'),
+            'availablePorts': [
+                {'id': p['id'], 'name': p['name']} for p in available_ports
+            ],
+            'connectedPort': connected_port,
+            'connected': bool(getattr(midi_input, 'is_connected', False)),
+        }
+
+    def _get_midi_input_status(self) -> Dict[str, Any]:
+        """Synchronous snapshot in the same shape as the broadcast payload.
+
+        Mirrors :meth:`_send_midi_input_status` so a freshly-subscribed
+        panel can render the current state without waiting for the next
+        note event."""
+        midi_input = getattr(self, 'midi_input', None)
+        if midi_input is None:
+            return {
+                'notes': [], 'added': None, 'removed': None,
+                'portName': None, 'availablePorts': [],
+                'connectedPort': None, 'connected': False,
+            }
+        try:
+            available_ports = midi_input.get_available_ports() or []
+        except Exception:
+            available_ports = []
+        connected_ports = getattr(midi_input, 'connected_ports', None) or []
+        connected_port = connected_ports[0].get('name') if connected_ports else None
+        return {
+            'notes': list(getattr(midi_input, 'notes', []) or []),
+            'added': None,
+            'removed': None,
+            'portName': connected_port,
+            'availablePorts': [
+                {'id': p['id'], 'name': p['name']} for p in available_ports
+            ],
+            'connectedPort': connected_port,
+            'connected': bool(getattr(midi_input, 'is_connected', False)),
+        }
 
 
 class UIBridge:
@@ -131,6 +199,10 @@ class UIBridge:
         # Cached here so a fresh 'config' subscriber receives the current
         # snapshot immediately rather than waiting for the next mutation.
         self._last_config: Optional[Dict[str, Any]] = None
+        # Last MIDI input snapshot/event; replayed on subscribe so a panel
+        # opened after the backend has already started shows current notes
+        # and source port without waiting for the next input event.
+        self._last_midi_input: Optional[Dict[str, Any]] = None
 
     def on(self, event: str, callback: Listener) -> Callable[[], None]:
         """Subscribe to ``event``. Returns an unsubscribe function.
@@ -144,6 +216,8 @@ class UIBridge:
         self._listeners[event].append(callback)
         if event == 'config' and self._last_config is not None:
             _schedule_on_kivy_main(callback, self._last_config)
+        if event == 'midi-input' and self._last_midi_input is not None:
+            _schedule_on_kivy_main(callback, self._last_midi_input)
         def _off() -> None:
             if callback in self._listeners[event]:
                 self._listeners[event].remove(callback)
@@ -219,6 +293,10 @@ class UIBridge:
     def _on_midi_devices(self, data: Dict[str, Any]) -> None:
         self._emit('midi-devices', data)
 
+    def _on_midi_input(self, data: Dict[str, Any]) -> None:
+        self._last_midi_input = data
+        self._emit('midi-input', data)
+
     # ---- Public command API (callable from the Kivy main thread) ------
 
     def request_midi_devices(self) -> None:
@@ -237,6 +315,24 @@ class UIBridge:
             except Exception:
                 return
             self._emit('midi-devices', data)
+        self._run_on_loop(_fetch)
+
+    def request_midi_input_status(self) -> None:
+        """Ask the backend for the current MIDI input snapshot.
+
+        Delivered via the ``'midi-input'`` event so the same listener path
+        is used for refreshes and unsolicited note broadcasts. Also
+        updates the cached ``_last_midi_input`` so subsequent subscribers
+        receive the snapshot immediately."""
+        def _fetch() -> None:
+            srv = self._server
+            if srv is None:
+                return
+            try:
+                data = srv._get_midi_input_status()
+            except Exception:
+                return
+            self._on_midi_input(data)
         self._run_on_loop(_fetch)
 
     def set_midi_output(self, port: Optional[str]) -> None:
@@ -320,6 +416,12 @@ class UIBridge:
                 return
             try:
                 srv._handle_config_update(path, value)
+                # Mirror the WebSocket ``update-config`` handler:
+                # ``_handle_config_update`` doesn't broadcast on its own,
+                # so without this call the in-process listeners (status
+                # bar dirty tracker, other panels reflecting shared
+                # state) would never see the change.
+                srv.broadcast_config()
             except Exception:
                 pass
         self._run_on_loop(_apply)
@@ -376,11 +478,23 @@ class UIBridge:
         Polls briefly because ``start()`` and ``pause()`` happen partway
         through ``run_server``; we resume right after so panel widgets
         receive ``combined`` events without needing a WS client.
+
+        Also fires a one-shot ``broadcast_config(is_saved_state=True)``
+        so the StatusBar's dirty tracker captures a baseline snapshot.
+        The server's initial ``broadcast_config`` (triggered by
+        ``_setup_notes`` during ``__init__``) defaults to
+        ``is_saved_state=False``; without this re-broadcast no in-process
+        subscriber would ever see a saved-state payload, leaving Save /
+        Revert permanently disabled.
         """
         for _ in range(100):
             srv = self._server
             if srv is not None and getattr(srv.event_bus, '_interval_task', None) is not None:
                 srv.event_bus.resume()
+                try:
+                    srv.broadcast_config(is_saved_state=True)
+                except Exception:
+                    pass
                 return
             await asyncio.sleep(0.05)
 
@@ -418,6 +532,7 @@ class UIBridge:
                     _on_status=self._on_status,
                     _on_config=self._on_config,
                     _on_midi_devices=self._on_midi_devices,
+                    _on_midi_input=self._on_midi_input,
                 )
                 self._server.event_bus.on_combined_event(self._on_combined)
                 self._run_task = loop.create_task(self._server.run_server())

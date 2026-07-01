@@ -1,0 +1,90 @@
+{
+  "name": "Inspiroy H640P",
+  "manufacturer": "Huion",
+  "model": "H640P",
+  "description": "Graphics tablet configured via CLI walkthrough",
+  "vendorId": "0x256c",
+  "productId": "0x6d",
+  "deviceInfo": {
+    "vendor_id": 9580,
+    "product_id": 109,
+    "product_string": "Unknown Device",
+    "interfaces": [
+      13,
+      1
+    ]
+  },
+  "modes": [
+    {
+      "reportId": 8,
+      "digitizerUsagePage": 13,
+      "capabilities": {
+        "hasButtons": true,
+        "buttonCount": 6,
+        "hasPressure": true,
+        "pressureLevels": 8192,
+        "hasTilt": false,
+        "resolution": {
+          "x": 32000,
+          "y": 20000
+        }
+      },
+      "byteCodeMappings": {
+        "x": {
+          "byteIndex": [
+            2,
+            3
+          ],
+          "max": 32000,
+          "type": "multi-byte-range"
+        },
+        "y": {
+          "byteIndex": [
+            5,
+            6
+          ],
+          "max": 20000,
+          "type": "multi-byte-range"
+        },
+        "pressure": {
+          "byteIndex": [
+            8,
+            9
+          ],
+          "max": 8191,
+          "type": "multi-byte-range"
+        },
+        "status": {
+          "byteIndex": [
+            1
+          ],
+          "values": {
+            "192": {
+              "state": "hover"
+            },
+            "193": {
+              "state": "contact"
+            },
+            "194": {
+              "state": "hover",
+              "secondaryButtonPressed": true
+            },
+            "195": {
+              "state": "contact",
+              "secondaryButtonPressed": true
+            },
+            "196": {
+              "state": "hover",
+              "primaryButtonPressed": true
+            },
+            "197": {
+              "state": "contact",
+              "primaryButtonPressed": true
+            }
+          }
+        }
+      },
+      "stylusModeStatusByte": 192
+    }
+  ]
+}

@@ -105,21 +105,23 @@ _apply(PALETTES[ACTIVE])
 
 
 # Spacing scale — mirrors --sketch-spacing-N (pixels).
-SPACE_1 = 4
-SPACE_2 = 8
-SPACE_3 = 12
-SPACE_4 = 16
-SPACE_5 = 24
+SPACE_1 = 3
+SPACE_2 = 6
+SPACE_3 = 8
+SPACE_4 = 11
+SPACE_5 = 16
 
-# Layout heights (designed for the 800x480 kiosk target).
-TOPBAR_HEIGHT = 84
-TABBAR_HEIGHT = 84
-STATUSBAR_HEIGHT = 40
+# Layout heights (designed for the 800x480 kiosk target at density=1).
+# These are intentionally in raw pixels, not dp, so Mac and Pi render
+# identically once KIVY_METRICS_DENSITY=1 and SDL_ALLOW_HIDPI=0 are set.
+TOPBAR_HEIGHT = 30
+TABBAR_HEIGHT = 32
+STATUSBAR_HEIGHT = 32
 
 # Touch targets — sized for finger input on the 800x480 kiosk.
-CONTROL_HEIGHT = 40
-FIELD_LABEL_HEIGHT = 32
+CONTROL_HEIGHT = 27
+FIELD_LABEL_HEIGHT = 22
 
 # Numeric inputs and dropdowns — enlarged for finger-friendly editing.
-INPUT_HEIGHT = 60
-INPUT_FONT_SIZE = '21sp'
+INPUT_HEIGHT = 40
+INPUT_FONT_SIZE = '14sp'

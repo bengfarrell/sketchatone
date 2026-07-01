@@ -480,7 +480,7 @@ INSTALLEOF
     echo "To install on Raspberry Pi / Zynthian:"
     echo ""
     echo "  # Copy files to Pi"
-    echo "  scp dist/sketchatone-${VERSION}-deb-pkg.tar.gz dist/install-sketchatone.sh root@synth.local:~/"
+    echo "  scp dist/sketchatone-${VERSION}-deb-pkg.tar.gz dist/install-sketchatone.sh sketchy@sketchatone.local:~/"
     echo ""
     echo "  # On the Pi:"
     echo "  ./install-sketchatone.sh"

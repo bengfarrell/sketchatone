@@ -69,8 +69,10 @@ pip install -e ".[hotreload]"
 then pass `--hot-reload`:
 
 ```bash
-sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
-    -s public/configs/default.json --hot-reload
+sudo ./venv/bin/python -u -m sketchatone.cli.ui \                      
+    --hot-reload --throttle 33 \
+    -s public/configs/default.json \
+    --enable-ws
 ```
 
 Edits under `python/sketchatone/ui/` trigger a soft rebuild. Edits to `app.py` or `hotreload.py` itself trigger a full process restart (re-execs the same argv). `bridge.py` and anything under `cli/` are intentionally not watched — change those and restart manually.

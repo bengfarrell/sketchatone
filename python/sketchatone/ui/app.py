@@ -12,8 +12,9 @@ imported when the optional ``[ui]`` extra is installed. The CLI in
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from kivy.app import App
 from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
@@ -21,6 +22,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.uix.label import Label
+from kivy.uix.scatter import Scatter
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
@@ -100,12 +102,12 @@ class TopCategoryTab(Button):
     def __init__(self, category: CategoryInfo, active: bool, on_select, **kwargs) -> None:
         super().__init__(
             text=category.label,
-            size_hint=(None, None), height=54,
+            size_hint=(None, None), height=24,
             pos_hint={'center_y': 0.5},
             background_normal='', background_down='',
             background_color=(0, 0, 0, 0),
             color=theme.TEXT_PRIMARY,
-            font_size='14sp',
+            font_size='9.5sp',
             bold=True,
             **kwargs,
         )
@@ -139,7 +141,7 @@ class TopCategoryTab(Button):
 class Divider(Widget):
     """Thin vertical divider line, vertically centered in its parent row."""
 
-    def __init__(self, height: int = 32, width: int = 1, **kwargs) -> None:
+    def __init__(self, height: int = 20, width: int = 1, **kwargs) -> None:
         super().__init__(
             size_hint=(None, None),
             size=(width, height),
@@ -159,7 +161,7 @@ class Divider(Widget):
 class ThemeToggleIcon(Button):
     """Half-filled circle icon for toggling between light and dark themes."""
 
-    def __init__(self, on_toggle=None, size: int = 36, **kwargs) -> None:
+    def __init__(self, on_toggle=None, size: int = 24, **kwargs) -> None:
         super().__init__(
             text='',
             size_hint=(None, None),
@@ -210,7 +212,7 @@ class StatusBadge(BoxLayout):
             self._dot_ellipse = Ellipse(pos=self._dot.pos, size=self._dot.size)
         self._dot.bind(pos=self._sync_dot, size=self._sync_dot)
         self._label = Label(
-            text=text, color=theme.TEXT_SECONDARY, font_size='12sp',
+            text=text, color=theme.TEXT_SECONDARY, font_size='8sp',
             size_hint=(None, 1),
             halign='left', valign='middle',
         )
@@ -233,11 +235,11 @@ class StatusBadge(BoxLayout):
 # ---- Tab bar -------------------------------------------------------------
 
 # Horizontal text padding applied inside each sub-category panel tab.
-PANEL_TAB_PAD_X = 16
+PANEL_TAB_PAD_X = 10
 
 # Active-tab underline geometry.
 PANEL_TAB_UNDERLINE_THICKNESS = 3
-PANEL_TAB_UNDERLINE_OFFSET = 10
+PANEL_TAB_UNDERLINE_OFFSET = 7
 
 
 class PanelTab(Button):
@@ -249,7 +251,7 @@ class PanelTab(Button):
             background_down='',
             background_color=theme.BG_SURFACE,
             color=(theme.TEXT_PRIMARY if active else theme.TEXT_SECONDARY),
-            font_size='19sp',
+            font_size='11.875sp',
             bold=True,
             **kwargs,
         )
@@ -384,16 +386,24 @@ class StatusBar(BoxLayout):
             size_hint_y=None,
             height=theme.STATUSBAR_HEIGHT,
             padding=(theme.SPACE_4, 0),
-            spacing=theme.SPACE_4,
+            spacing=theme.SPACE_3,
             **kwargs,
         )
         _paint_bg(self, theme.BG_SURFACE)
+
+        self._bridge = bridge
+        # Dirty-tracking mirrors ``ServerSettingsPanel``: snapshot the
+        # config JSON whenever the backend reports a saved state, then
+        # compare on every subsequent ``'config'`` event.
+        self._current_name: Optional[str] = None
+        self._saved_snapshot: Optional[str] = None
+        self._dirty: bool = False
 
         left_text = f'ws://localhost:{ws_port}' if ws_port else 'in-process (no WS)'
         left = Label(
             text=left_text,
             color=theme.TEXT_SECONDARY,
-            font_size='12sp',
+            font_size='8sp',
             halign='left', valign='middle',
         )
         left.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -405,22 +415,77 @@ class StatusBar(BoxLayout):
         self._right = Label(
             text=self._format_config_label(config),
             color=theme.TEXT_MUTED,
-            font_size='12sp',
+            font_size='8sp',
             size_hint=(None, 1),
             halign='right', valign='middle',
         )
         self._right.bind(texture_size=lambda w, s: setattr(w, 'width', s[0]))
         self._right.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        right = self._right
+
+        self._revert_btn = self._make_action_button(
+            'Revert', theme.BG_SURFACE_ALT, self._revert)
+        self._save_btn = self._make_action_button(
+            'Save', theme.ACCENT_BG, self._save)
+        self._apply_button_state()
 
         if bridge is not None:
             bridge.on('config', self._on_config)
 
         self.badge = StatusBadge('Disconnected', connected=False)
 
-        self.add_widget(left)
-        self.add_widget(right)
+        # Badge first (left edge), then WS label adjacent. ``left`` keeps
+        # ``size_hint=(1, 1)`` so it stretches across the middle and
+        # pushes the config label + action buttons to the right edge.
         self.add_widget(self.badge)
+        self.add_widget(left)
+        self.add_widget(self._right)
+        self.add_widget(self._revert_btn)
+        self.add_widget(self._save_btn)
+
+    # ---- Button factory ---------------------------------------------
+
+    def _make_action_button(self, text: str, enabled_bg: tuple,
+                            on_release) -> Button:
+        """Pill button with explicit enabled/disabled visual state.
+
+        Kivy's built-in disabled visual relies on
+        ``background_disabled_normal``, which is bypassed here because
+        the fill is painted on ``canvas.before``. The active background
+        colour and text colour are toggled in :meth:`_apply_button_state`.
+        """
+        h = theme.CONTROL_HEIGHT
+        btn = Button(
+            text=text, size_hint=(None, None),
+            size=(64, h),
+            background_normal='', background_down='',
+            background_color=(0, 0, 0, 0),
+            color=theme.TEXT_PRIMARY,
+            font_size='8.5sp', bold=True,
+        )
+        btn.pos_hint = {'center_y': 0.5}
+        with btn.canvas.before:
+            btn._bg_color = Color(*enabled_bg)
+            btn._bg_rect = RoundedRectangle(pos=btn.pos, size=btn.size,
+                                            radius=[h // 2])
+        def _sync(w, *_):
+            w._bg_rect.pos = w.pos
+            w._bg_rect.size = w.size
+        btn.bind(pos=_sync, size=_sync)
+        btn._enabled_bg = enabled_bg
+        btn.bind(on_release=lambda *_: on_release())
+        return btn
+
+    def _apply_button_state(self) -> None:
+        can_act = bool(self._dirty and self._bridge is not None
+                       and self._current_name is not None)
+        for btn in (self._save_btn, self._revert_btn):
+            btn.disabled = not can_act
+            if can_act:
+                btn._bg_color.rgba = btn._enabled_bg
+                btn.color = theme.TEXT_PRIMARY
+            else:
+                btn._bg_color.rgba = theme.BG_SURFACE_ALT
+                btn.color = theme.TEXT_MUTED
 
     @staticmethod
     def _format_config_label(name: Optional[str]) -> str:
@@ -432,11 +497,46 @@ class StatusBar(BoxLayout):
         import os
         return f'config: {os.path.basename(name)}'
 
+    # ---- Bridge events ----------------------------------------------
+
     def _on_config(self, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
         name = payload.get('currentConfigName')
+        self._current_name = name
         self._right.text = self._format_config_label(name)
+        config = payload.get('config')
+        if payload.get('isSavedState'):
+            self._refresh_snapshot(config)
+        self._dirty = panel_widgets.compute_dirty(
+            config, self._saved_snapshot)
+        self._apply_button_state()
+
+    def _refresh_snapshot(self, config: Any) -> None:
+        import json
+        if config is None:
+            self._saved_snapshot = None
+            return
+        try:
+            self._saved_snapshot = json.dumps(config, sort_keys=True)
+        except (TypeError, ValueError):
+            self._saved_snapshot = None
+
+    # ---- User actions -----------------------------------------------
+
+    def _save(self) -> None:
+        if self._bridge is None or not self._dirty:
+            return
+        self._bridge.save_config()
+
+    def _revert(self) -> None:
+        if (self._bridge is None or not self._dirty
+                or self._current_name is None):
+            return
+        # Re-loading the current config from disk discards in-memory
+        # edits and triggers an ``isSavedState=True`` broadcast that
+        # will reset our dirty flag in ``_on_config``.
+        self._bridge.load_config(self._current_name)
 
 
 # ---- Header (top + tab bars + branding column) --------------------------
@@ -444,7 +544,7 @@ class StatusBar(BoxLayout):
 class HeaderArea(BoxLayout):
     """Top region: left column with TopBar + PanelTabBar, logo on the right."""
 
-    LOGO_COLUMN_WIDTH = 280
+    LOGO_COLUMN_WIDTH = 160
 
     def __init__(self, topbar: 'TopBar', tabbar: 'PanelTabBar', **kwargs) -> None:
         super().__init__(
@@ -548,6 +648,56 @@ class DashboardRoot(BoxLayout):
         self._statusbar.badge.set_state(connected, text=text)
 
 
+# ---- 2× scale container (macOS only) ------------------------------------
+
+class _ScaledContainer(Scatter):
+    """Scatter that renders its 800×480 child scaled-to-fit the window (macOS only).
+
+    macOS Retina ignores ``SDL_ALLOW_HIDPI=0``, so the real framebuffer
+    (``Window.size``) is the requested point size times the backing scale
+    (typically 2×). Rather than hard-code a scale factor, this container
+    derives one from the live window size: the 800×480 logical dashboard is
+    scaled uniformly to fit and centered, with symmetric letterboxing when
+    the aspect ratios differ. This keeps the preview faithful regardless of
+    backing scale, window size, or resize.
+
+    A ``Scatter`` (rather than a canvas ``Scale``) is used deliberately:
+    Scatter folds the scale into the widget transform, so ``to_local`` /
+    ``to_window`` compose correctly and child widgets that re-transform
+    touches — ScrollView, RelativeLayout — receive accurate coordinates.
+    A raw canvas Scale only moves pixels, leaving those children's touch
+    math in window-pixel space, which silently breaks their hit testing.
+    User-driven pan/zoom/rotate are disabled; the transform is set purely
+    by :meth:`_fit` from the window size.
+    """
+
+    _LOGICAL_W = 800.0
+    _LOGICAL_H = 480.0
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(
+            size_hint=(None, None),
+            size=(self._LOGICAL_W, self._LOGICAL_H),
+            do_rotation=False,
+            do_translation=False,
+            do_scale=False,
+            **kwargs,
+        )
+        from kivy.core.window import Window
+        Window.bind(size=self._fit)
+        self._fit(Window, Window.size)
+
+    def _fit(self, _window, size) -> None:
+        w, h = size
+        if w <= 0 or h <= 0:
+            return
+        # Set scale first (Scatter scales about its current center), then
+        # recenter on the window so the result is centered with symmetric
+        # letterboxing.
+        self.scale = min(w / self._LOGICAL_W, h / self._LOGICAL_H)
+        self.center = (w / 2.0, h / 2.0)
+
+
 # ---- App -----------------------------------------------------------------
 
 class SketchatoneUIApp(App):
@@ -567,41 +717,53 @@ class SketchatoneUIApp(App):
         self._bridge = bridge
 
     def _make_root(self, active_id: str = DEFAULT_PANEL_ID) -> DashboardRoot:
+        kw: dict = {}
+        if sys.platform == 'darwin':
+            # Scatter doesn't lay out its children, so we must pin the size.
+            kw['size_hint'] = (None, None)
+            kw['size'] = (800, 480)
         return DashboardRoot(
             ws_port=self._ws_port,
             config=self._config_path,
             bridge=self._bridge,
             active_id=active_id,
             on_toggle_theme=self.toggle_theme,
+            **kw,
         )
 
-    def build(self) -> DashboardRoot:  # type: ignore[override]
-        return self._make_root()
+    def build(self) -> Union[DashboardRoot, _ScaledContainer]:  # type: ignore[override]
+        dashboard = self._make_root()
+        if sys.platform == 'darwin':
+            container = _ScaledContainer()
+            container.add_widget(dashboard)
+            return container
+        return dashboard
 
     def _current_dashboard(self) -> Optional[DashboardRoot]:
-        """Return the currently-mounted DashboardRoot, or None.
-
-        Exists as a hook so subclasses that wrap the root in an
-        intermediary container (e.g. the Kaki hot-reload app) can
-        return ``self.approot`` instead of ``self.root``.
-        """
+        """Return the currently-mounted DashboardRoot, or None."""
         if isinstance(self.root, DashboardRoot):
             return self.root
+        if isinstance(self.root, _ScaledContainer):
+            for child in self.root.children:
+                if isinstance(child, DashboardRoot):
+                    return child
         return None
 
     def _swap_dashboard(self, new_root: DashboardRoot) -> None:
-        """Replace the currently-mounted DashboardRoot with ``new_root``.
-
-        Subclasses can override to route the swap through a container
-        (e.g. Kaki's ``set_widget``) instead of touching ``root_window``
-        directly.
-        """
-        window = self.root_window
-        if self.root is not None and window is not None:
-            window.remove_widget(self.root)
-        self.root = new_root
-        if window is not None:
-            window.add_widget(new_root)
+        """Replace the currently-mounted DashboardRoot with ``new_root``."""
+        if isinstance(self.root, _ScaledContainer):
+            container = self.root
+            for child in list(container.children):
+                if isinstance(child, DashboardRoot):
+                    container.remove_widget(child)
+            container.add_widget(new_root)
+        else:
+            window = self.root_window
+            if self.root is not None and window is not None:
+                window.remove_widget(self.root)
+            self.root = new_root
+            if window is not None:
+                window.add_widget(new_root)
 
     def toggle_theme(self) -> None:
         """Swap palette and rebuild the root widget tree.

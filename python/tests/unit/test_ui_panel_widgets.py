@@ -10,6 +10,7 @@ boot the Kivy event loop.
 from __future__ import annotations
 
 import pytest
+from kivy.uix.button import Button
 
 from sketchatone.cli.server import StrumEventData, StrumNoteEventData, TabletEventData
 from sketchatone.ui import bridge as bridge_mod
@@ -29,7 +30,6 @@ from sketchatone.ui.panel_widgets import (
     SlidePanel,
     StrumReleasePanel,
     StrummingSettingsPanel,
-    StylusVisualizerPanel,
     TabletVisualizerPanel,
     calculate_curve_output,
     compute_dirty,
@@ -129,13 +129,8 @@ class TestMakePanel:
         assert isinstance(make_panel('events', 'Events', bridge=None), EventsPanel)
 
     def test_performance_panel_factory(self):
-        # PerformancePanel schedules a Kivy Clock interval; that's fine
-        # because Kivy is importable in the test environment.
         panel = make_panel('performance', 'Performance', bridge=None)
-        try:
-            assert isinstance(panel, PerformancePanel)
-        finally:
-            panel._tick_event.cancel()
+        assert isinstance(panel, PerformancePanel)
 
     def test_unknown_panel_returns_placeholder(self):
         assert isinstance(make_panel('bogus', 'Bogus', bridge=None), PlaceholderPanel)
@@ -144,12 +139,6 @@ class TestMakePanel:
         assert isinstance(
             make_panel('tabletVisualizer', 'Tablet', bridge=None),
             TabletVisualizerPanel,
-        )
-
-    def test_stylus_visualizer_panel_factory(self):
-        assert isinstance(
-            make_panel('stylusVisualizer', 'Stylus', bridge=None),
-            StylusVisualizerPanel,
         )
 
     def test_midi_devices_panel_factory(self):
@@ -199,15 +188,66 @@ class TestEventsPanelSubscription:
 
 
 class TestPerformancePanelSubscription:
-    def test_tablet_events_increment_rate_tracker(self):
+    def _config_event(self, *, notes=None, rules=None, group_rules=None,
+                      groups=None, progressions=None):
+        # Mirrors ``Server._get_config_data``: ``notes`` lives at the top
+        # level, ``strummer.actionRules`` / ``chordProgressions`` live
+        # under ``config``.
+        return {
+            'notes': list(notes or []),
+            'config': {
+                'strummer': {
+                    'actionRules': {
+                        'rules': list(rules or []),
+                        'groups': list(groups or []),
+                        'groupRules': list(group_rules or []),
+                        'startupRules': [],
+                    },
+                    'chordProgressions': dict(progressions or {}),
+                },
+            },
+        }
+
+    def test_config_rebuilds_chips(self):
         b = UIBridge()
         panel = PerformancePanel(bridge=b)
-        try:
-            for _ in range(3):
-                b._emit('tablet', TabletEventData())
-            assert panel.tablet_rate.total == 3
-        finally:
-            panel._tick_event.cancel()
+        b._emit('config', self._config_event(
+            rules=[
+                {'button': 'button:primary', 'action': 'mute'},
+                {'button': 'button:1', 'action': 'C-major'},
+                {'button': 'button:2', 'action': 'A-minor'},
+            ],
+        ))
+        assert set(panel._stylus_chips.keys()) == {'primary'}
+        assert set(panel._button_chips.keys()) == {1, 2}
+
+    def test_tablet_button_press_highlights_chip(self):
+        b = UIBridge()
+        panel = PerformancePanel(bridge=b)
+        b._emit('config', self._config_event(
+            rules=[
+                {'button': 'button:1', 'action': 'C-major'},
+                {'button': 'button:primary', 'action': 'mute'},
+            ],
+        ))
+        ev = TabletEventData(primaryButtonPressed=True, buttons={'button1': True})
+        b._emit('tablet', ev)
+        assert panel._button_chips[1]._active is True
+        assert panel._stylus_chips['primary']._active is True
+
+    def test_strum_marks_plucked_string(self):
+        b = UIBridge()
+        panel = PerformancePanel(bridge=b)
+        b._emit('config', self._config_event(
+            notes=[{'notation': 'E', 'octave': 2},
+                   {'notation': 'A', 'octave': 2}],
+        ))
+        b._emit('strum', StrumEventData(
+            type='strum', velocity=90,
+            notes=[StrumNoteEventData(note=45, velocity=90, name='A', octave=2,
+                                      duration=0.4)],
+        ))
+        assert panel._strip._plucked == 1
 
 
 class TestFitTabletRect:
@@ -257,10 +297,15 @@ class TestVisualizerPanelSubscription:
     def test_tablet_visualizer_updates_readout(self):
         b = UIBridge()
         panel = TabletVisualizerPanel(bridge=b)
-        b._emit('tablet', TabletEventData(x=0.25, y=0.75, pressure=0.5))
-        assert '0.250' in panel._readout.text
-        assert '0.750' in panel._readout.text
-        assert '0.500' in panel._readout.text
+        b._emit('tablet', TabletEventData(x=0.25, y=0.75, pressure=0.5,
+                                          tiltX=0.3, tiltY=-0.2))
+        text = panel._readout.text
+        assert '0.250' in text
+        assert '0.750' in text
+        assert '0.500' in text
+        # Merged panel carries the stylus tilt fields in the same readout.
+        assert '0.300' in text
+        assert '-0.200' in text
 
     def test_tablet_visualizer_config_sets_notes(self):
         b = UIBridge()
@@ -268,12 +313,12 @@ class TestVisualizerPanelSubscription:
         b._emit('config', {'notes': [{'notation': 'E', 'octave': 2}, {'notation': 'A', 'octave': 2}]})
         assert len(panel._canvas_widget._notes) == 2
 
-    def test_stylus_visualizer_updates_readout(self):
+    def test_tablet_visualizer_forwards_event_to_stylus_canvas(self):
         b = UIBridge()
-        panel = StylusVisualizerPanel(bridge=b)
-        b._emit('tablet', TabletEventData(pressure=0.7, tiltX=0.3, tiltY=-0.2))
-        assert '0.700' in panel._readout.text
-        assert '0.300' in panel._readout.text
+        panel = TabletVisualizerPanel(bridge=b)
+        ev = TabletEventData(pressure=0.7, tiltX=0.3, tiltY=-0.2)
+        b._emit('tablet', ev)
+        assert panel._stylus_widget._last_event is ev
 
 
 
@@ -288,15 +333,39 @@ class TestMidiDevicesPanel:
         b._requested = 0  # type: ignore[attr-defined]
         b._set_output_calls = []  # type: ignore[attr-defined]
         b._set_input_calls = []  # type: ignore[attr-defined]
+        b._set_config_calls = []  # type: ignore[attr-defined]
         b.request_midi_devices = lambda: setattr(b, '_requested', b._requested + 1)  # type: ignore[assignment]
         b.set_midi_output = lambda name: b._set_output_calls.append(name)  # type: ignore[assignment]
         b.set_midi_input = lambda ids: b._set_input_calls.append(list(ids))  # type: ignore[assignment]
+        b.set_config = lambda path, value: b._set_config_calls.append((path, value))  # type: ignore[assignment]
         return b
 
     def test_panel_requests_snapshot_on_construction(self):
         b = self._fresh_bridge()
         MidiDevicesPanel(bridge=b)
         assert b._requested == 1
+
+    @staticmethod
+    def _row_label_texts(widget) -> list:
+        """Flatten all label/button text within ``widget`` (depth-first)."""
+        out: list = []
+        def visit(w):
+            t = getattr(w, 'text', None)
+            if isinstance(t, str) and t:
+                out.append(t)
+            for c in getattr(w, 'children', []):
+                visit(c)
+        visit(widget)
+        return out
+
+    @staticmethod
+    def _row_switch(row):
+        """First descendant ``Button`` with an ``active`` attribute — the
+        toggle switch inside a device row."""
+        for w in row.walk(restrict=False):
+            if isinstance(w, Button) and hasattr(w, 'active'):
+                return w
+        return None
 
     def test_panel_populates_output_and_input_lists(self):
         b = self._fresh_bridge()
@@ -310,17 +379,25 @@ class TestMidiDevicesPanel:
         })
         out_items = panel._outputs_box['items'].children
         in_items = panel._inputs_box['items'].children
-        # children are stored in reverse insertion order; presence is what matters.
-        out_texts = [c.text for c in out_items]
-        in_texts = [c.text for c in in_items]
-        assert any('IAC Bus 1' in t for t in out_texts)
-        assert any('Virtual' in t for t in out_texts)
-        assert any('Keystation' in t for t in in_texts)
-        # Active output uses the filled marker
-        assert any(t.startswith('● ') and 'Virtual' in t for t in out_texts)
-        assert any(t.startswith('○ ') and 'IAC Bus 1' in t for t in out_texts)
-        # Active input is marked
-        assert any(t.startswith('● ') and 'Keystation' in t for t in in_texts)
+        # Outputs and inputs both render as device-row composites: flatten
+        # label text and read the toggle switch's ``active`` attribute to
+        # check selection state.
+        out_label_texts = [self._row_label_texts(r) for r in out_items]
+        assert any('IAC Bus 1' in t for texts in out_label_texts for t in texts)
+        assert any('Virtual' in t for texts in out_label_texts for t in texts)
+        assert any(any('Index: 0' in t for t in texts) for texts in out_label_texts)
+        assert any(any('Index: 1' in t for t in texts) for texts in out_label_texts)
+
+        def out_row(name: str):
+            return next(r for r in out_items
+                        if any(name in t for t in self._row_label_texts(r)))
+        assert self._row_switch(out_row('Virtual')).active is True
+        assert self._row_switch(out_row('IAC Bus 1')).active is False
+
+        in_label_texts = [self._row_label_texts(r) for r in in_items]
+        assert any('Keystation' in t for texts in in_label_texts for t in texts)
+        assert any(any('Index: 0' in t for t in texts) for texts in in_label_texts)
+        assert all(self._row_switch(r).active for r in in_items)
 
     def test_panel_renders_empty_state(self):
         b = self._fresh_bridge()
@@ -334,17 +411,33 @@ class TestMidiDevicesPanel:
         assert out_texts == ['No output ports']
         assert in_texts == ['No input ports']
 
-    def test_output_button_triggers_set_midi_output(self):
+    def test_output_toggle_triggers_set_midi_output(self):
         b = self._fresh_bridge()
         panel = MidiDevicesPanel(bridge=b)
         b._emit('midi-devices', {
             'outputPorts': [{'id': 0, 'name': 'IAC Bus 1'}],
             'inputPorts': [], 'currentOutputPort': None, 'currentInputPorts': [],
         })
-        # Find and "press" the IAC Bus 1 button.
-        btn = next(c for c in panel._outputs_box['items'].children if 'IAC Bus 1' in c.text)
-        btn.dispatch('on_release')
+        # Toggling on the inactive output selects it by name.
+        row = next(r for r in panel._outputs_box['items'].children
+                   if any('IAC Bus 1' in t for t in self._row_label_texts(r)))
+        self._row_switch(row).dispatch('on_release')
         assert b._set_output_calls == ['IAC Bus 1']
+
+    def test_output_toggle_off_clears_selection(self):
+        b = self._fresh_bridge()
+        panel = MidiDevicesPanel(bridge=b)
+        b._emit('midi-devices', {
+            'outputPorts': [{'id': 0, 'name': 'IAC Bus 1'}],
+            'inputPorts': [], 'currentOutputPort': 0, 'currentInputPorts': [],
+        })
+        # Toggling off the active output sends ``midiOutputId=None`` so the
+        # backend disconnects (mirrors the web ``handleOutputToggle``).
+        row = next(r for r in panel._outputs_box['items'].children
+                   if any('IAC Bus 1' in t for t in self._row_label_texts(r)))
+        self._row_switch(row).dispatch('on_release')
+        assert b._set_output_calls == []
+        assert b._set_config_calls == [('midi.midiOutputId', None)]
 
     def test_input_button_toggles_membership(self):
         b = self._fresh_bridge()
@@ -356,14 +449,16 @@ class TestMidiDevicesPanel:
             'currentOutputPort': None,
             'currentInputPorts': [2],
         })
+        def row_for(name: str):
+            return next(r for r in panel._inputs_box['items'].children
+                        if any(name in t for t in self._row_label_texts(r)))
+
         # Toggle Launchpad on (id=3) -> should send [2, 3] (sorted).
-        btn = next(c for c in panel._inputs_box['items'].children if 'Launchpad' in c.text)
-        btn.dispatch('on_release')
+        self._row_switch(row_for('Launchpad')).dispatch('on_release')
         assert b._set_input_calls == [[2, 3]]
 
         # Toggle Keystation off (id=2) -> should send [3].
-        btn = next(c for c in panel._inputs_box['items'].children if 'Keystation' in c.text)
-        btn.dispatch('on_release')
+        self._row_switch(row_for('Keystation')).dispatch('on_release')
         assert b._set_input_calls[-1] == [3]
 
 

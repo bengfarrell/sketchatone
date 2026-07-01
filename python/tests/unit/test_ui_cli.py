@@ -237,7 +237,7 @@ class TestPanelRegistry:
         from sketchatone.ui.panels import PANELS, DEFAULT_PANEL_ID, find_panel
         ids = [p.id for p in PANELS]
         # Spot-check a few stable ids — full list is checked by snapshot.
-        for expected in ('performance', 'tabletVisualizer', 'events', 'serverSettings'):
+        for expected in ('performance', 'tabletVisualizer', 'events', 'midiDevices'):
             assert expected in ids
         assert DEFAULT_PANEL_ID == 'performance'
         assert find_panel('events').label == 'Events'

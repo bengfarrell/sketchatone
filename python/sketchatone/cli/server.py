@@ -2025,12 +2025,18 @@ class StrummerWebSocketServer(TabletReaderBase):
         # For output: find the port ID that matches the connected port name
         current_output_port = None
         if self.backend and self.backend.is_connected and self.backend.current_output_name:
-            # Find the port index that matches the current output name
-            output_name = self.backend.current_output_name
-            for port in output_ports:
-                if port['name'] == output_name:
-                    current_output_port = port['id']
-                    break
+            if getattr(self.backend, 'is_virtual_port', False):
+                # Virtual port won't appear in the enumerated list; inject it
+                virtual_entry = {'id': '__virtual__', 'name': self.backend.current_output_name, 'virtual': True}
+                output_ports = [virtual_entry] + output_ports
+                current_output_port = '__virtual__'
+            else:
+                # Find the port index that matches the current output name
+                output_name = self.backend.current_output_name
+                for port in output_ports:
+                    if port['name'] == output_name:
+                        current_output_port = port['id']
+                        break
 
         # Get passthrough connections from config
         passthrough_connections = self.config.midi.midi_passthrough

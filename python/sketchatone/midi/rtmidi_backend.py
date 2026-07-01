@@ -61,6 +61,7 @@ class RtMidiBackend(MidiBackendProtocol):
         self._midi_out: Optional[rtmidi.MidiOut] = None
         self._connected = False
         self._current_output_name: Optional[str] = None
+        self._is_virtual = False
         self._inter_message_delay = max(0.0, float(inter_message_delay))
 
         # Serialize all MIDI output to avoid RtMIDI/ALSA contention (fixes stuck notes on RPi when strumming fast)
@@ -102,6 +103,10 @@ class RtMidiBackend(MidiBackendProtocol):
     @property
     def is_connected(self) -> bool:
         return self._connected and self._midi_out is not None
+
+    @property
+    def is_virtual_port(self) -> bool:
+        return self._is_virtual
 
     @property
     def current_output_name(self) -> Optional[str]:
@@ -160,6 +165,7 @@ class RtMidiBackend(MidiBackendProtocol):
                 print("[RtMidi] Created virtual port: Sketchatone")
                 print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
                 self._current_output_name = "Sketchatone"
+                self._is_virtual = True
                 self._connected = True
                 self._last_requested_port = output_port
                 self._start_hot_swap_monitoring()
@@ -177,6 +183,7 @@ class RtMidiBackend(MidiBackendProtocol):
 
             self._midi_out.open_port(port_index)
             self._current_output_name = available_ports[port_index]
+            self._is_virtual = False
             print(f"[RtMidi] Connected to: {self._current_output_name}")
             print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
             self._connected = True
@@ -257,6 +264,7 @@ class RtMidiBackend(MidiBackendProtocol):
             self._midi_out = None
 
         self._connected = False
+        self._is_virtual = False
         print("[RtMidi] Disconnected")
     
     def set_channel(self, channel: Optional[int]) -> None:

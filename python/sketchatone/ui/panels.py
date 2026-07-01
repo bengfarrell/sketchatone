@@ -27,10 +27,9 @@ class CategoryInfo:
 
 PANELS: List[PanelInfo] = [
     PanelInfo('performance',       'Performance'),
-    PanelInfo('tabletVisualizer',  'Tablet'),
-    PanelInfo('stylusVisualizer',  'Stylus'),
-    PanelInfo('midiInput',         'MIDI In'),
     PanelInfo('midiDevices',       'MIDI Devices'),
+    PanelInfo('tabletVisualizer',  'Tablet'),
+    PanelInfo('midiInput',         'MIDI In'),
     PanelInfo('events',            'Events'),
     PanelInfo('noteVelocity',      'Velocity'),
     PanelInfo('noteDuration',      'Duration'),
@@ -41,14 +40,13 @@ PANELS: List[PanelInfo] = [
     PanelInfo('actions',           'Actions'),
     PanelInfo('groups',            'Groups'),
     PanelInfo('chordProgressions', 'Chord Progressions'),
-    PanelInfo('serverSettings',    'Server'),
 ]
 
 # Two-level nav grouping for the kiosk tab bar. Panels not listed in any
 # category fall through to the first category's first panel.
 CATEGORIES: List[CategoryInfo] = [
     CategoryInfo('monitor', 'Monitor', (
-        'performance', 'tabletVisualizer', 'stylusVisualizer',
+        'performance', 'midiDevices', 'tabletVisualizer',
         'midiInput', 'events',
     )),
     CategoryInfo('sound', 'Sound', (
@@ -57,9 +55,6 @@ CATEGORIES: List[CategoryInfo] = [
     )),
     CategoryInfo('song', 'Song', (
         'actions', 'groups', 'chordProgressions',
-    )),
-    CategoryInfo('system', 'System', (
-        'midiDevices', 'serverSettings',
     )),
 ]
 
