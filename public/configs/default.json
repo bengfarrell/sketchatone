@@ -80,7 +80,13 @@
         {
           "id": "chord-buttons",
           "name": "Chord Buttons",
-          "buttons": []
+          "buttons": [
+            "key:1",
+            "key:2",
+            "key:3",
+            "key:4",
+            "key:5"
+          ]
         }
       ],
       "groupRules": [
@@ -363,7 +369,28 @@
         "name": "Button 4"
       }
     ],
-    "keys": []
+    "keys": [
+      {
+        "key": "1",
+        "name": "Key 1"
+      },
+      {
+        "key": "2",
+        "name": "Key 2"
+      },
+      {
+        "key": "3",
+        "name": "Key 3"
+      },
+      {
+        "key": "4",
+        "name": "Key 4"
+      },
+      {
+        "key": "5",
+        "name": "Key 5"
+      }
+    ]
   },
   "keyboard": {
     "enabled": true

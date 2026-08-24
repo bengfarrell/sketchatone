@@ -370,6 +370,155 @@ class StrummerEventBus:
         self._listeners.clear()
 
 
+class _PerfBucket:
+    """One named timing series: count, running total, max, and a bounded
+    ring of recent samples for percentile calculation. Not thread-safe on
+    its own; access is serialised by ``_PerfCollector._lock``."""
+
+    __slots__ = ('name', 'count', 'total_ms', 'max_ms', 'samples')
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.count = 0
+        self.total_ms = 0.0
+        self.max_ms = 0.0
+        self.samples: List[float] = []
+
+    def record(self, dur_ms: float) -> None:
+        self.count += 1
+        self.total_ms += dur_ms
+        if dur_ms > self.max_ms:
+            self.max_ms = dur_ms
+        self.samples.append(dur_ms)
+        if len(self.samples) > 512:
+            del self.samples[:256]
+
+    def snapshot_and_reset(self) -> Optional[tuple]:
+        if self.count == 0:
+            return None
+        ordered = sorted(self.samples)
+        n = len(ordered)
+        p50 = ordered[n // 2]
+        p95 = ordered[min(n - 1, int(n * 0.95))]
+        result = (self.count, self.total_ms / self.count, p50, p95, self.max_ms)
+        self.count = 0
+        self.total_ms = 0.0
+        self.max_ms = 0.0
+        self.samples.clear()
+        return result
+
+
+class _PerfCollector:
+    """Thread-safe bucketed timing recorder with periodic stdout summary.
+
+    Enabled via ``SKETCHATONE_STRUM_PERF=1``. The hot path pays a lock +
+    dict lookup per record. A daemon thread prints a per-interval summary
+    so the log formatting never fires from an audio-critical thread.
+    """
+
+    def __init__(self, enabled: bool, interval_s: float = 2.0) -> None:
+        self.enabled = enabled
+        self.interval_s = interval_s
+        self._buckets: Dict[str, _PerfBucket] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if not self.enabled or self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run, name='sketchatone-perf', daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def mark_now(self, name: str, start: float) -> None:
+        """Record elapsed ms between ``start`` (from ``time.perf_counter()``)
+        and now. No-op when disabled so call sites can be unconditional."""
+        if not self.enabled:
+            return
+        dur_ms = (time.perf_counter() - start) * 1000.0
+        with self._lock:
+            bucket = self._buckets.get(name)
+            if bucket is None:
+                bucket = _PerfBucket(name)
+                self._buckets[name] = bucket
+            bucket.record(dur_ms)
+
+    def record_ms(self, name: str, dur_ms: float) -> None:
+        """Record a pre-computed duration in ms. Used when the caller
+        already has a delta (e.g. GC pause between callback invocations)."""
+        if not self.enabled:
+            return
+        with self._lock:
+            bucket = self._buckets.get(name)
+            if bucket is None:
+                bucket = _PerfBucket(name)
+                self._buckets[name] = bucket
+            bucket.record(dur_ms)
+
+    # Bucket edges for the gap histogram, in ms. Chosen to spotlight
+    # the interesting range for a ~250Hz pen (nominal 4ms cadence): a
+    # single stall of 20ms is a dropped strum, 50ms is audible, 100ms
+    # is a clear hitch. Values above the last edge fall into ">200".
+    _HIST_EDGES_MS = (4.0, 8.0, 16.0, 32.0, 50.0, 100.0, 200.0)
+    _HIST_BUCKETS = ('gap', 'read_gap')
+
+    def _histogram(self, samples: List[float]) -> str:
+        edges = self._HIST_EDGES_MS
+        counts = [0] * (len(edges) + 1)
+        for s in samples:
+            placed = False
+            for i, edge in enumerate(edges):
+                if s < edge:
+                    counts[i] += 1
+                    placed = True
+                    break
+            if not placed:
+                counts[-1] += 1
+        parts = []
+        prev = 0.0
+        for i, edge in enumerate(edges):
+            parts.append(f'<{edge:g}:{counts[i]}')
+            prev = edge
+        parts.append(f'>={edges[-1]:g}:{counts[-1]}')
+        return ' '.join(parts)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_s):
+            self._flush()
+
+    def _flush(self) -> None:
+        with self._lock:
+            snapshots = []
+            hist_samples: Dict[str, List[float]] = {}
+            for name, bucket in self._buckets.items():
+                # Grab a copy of the samples for the histogram BEFORE we
+                # reset the bucket in snapshot_and_reset.
+                if any(name.endswith(suffix) for suffix in self._HIST_BUCKETS):
+                    hist_samples[name] = list(bucket.samples)
+                snap = bucket.snapshot_and_reset()
+                if snap is not None:
+                    snapshots.append((name, snap))
+        if not snapshots:
+            return
+        snapshots.sort(key=lambda t: t[1][4], reverse=True)
+        lines = ['[PERF] ---- summary ----']
+        for name, (count, avg, p50, p95, max_ms) in snapshots:
+            lines.append(
+                f'[PERF]   {name:<22} n={count:>4}  '
+                f'avg={avg:6.2f}  p50={p50:6.2f}  '
+                f'p95={p95:6.2f}  max={max_ms:6.2f}  ms'
+            )
+        for name, samples in hist_samples.items():
+            if samples:
+                lines.append(f'[PERF]   {name:<22} hist(ms): {self._histogram(samples)}')
+        print('\n'.join(lines))
+
+
 class StrummerWebSocketServer:
     """
     WebSocket server that broadcasts tablet and strum events.
@@ -400,6 +549,101 @@ class StrummerWebSocketServer:
         self.https_port = https_port
         self.poll_ms = poll_ms
         self.dev_mode = dev_mode
+
+        # ---- Perf instrumentation ----------------------------------------
+        # Initialised first so callbacks fired during the rest of __init__
+        # (notably ``_setup_notes`` -> ``notes_changed`` -> ``broadcast_config``)
+        # can dereference ``self._perf`` safely. Enabled via
+        # ``SKETCHATONE_STRUM_PERF=1``; off by default so the hot per-sample
+        # path stays branch-cheap in production. A daemon thread prints a
+        # rolling summary every ``interval_s`` seconds so log formatting
+        # never fires from the pen HID / audio-critical threads.
+        _perf_enabled = os.environ.get('SKETCHATONE_STRUM_PERF') == '1'
+        _perf_interval_ms = float(
+            os.environ.get('SKETCHATONE_STRUM_PERF_INTERVAL_MS', '2000')
+        )
+        self._perf = _PerfCollector(_perf_enabled, _perf_interval_ms / 1000.0)
+        # Wall-clock of the previous on_tablet_event call, used to compute
+        # the inter-sample gap on the pen reader thread.
+        self._perf_last_event_ts: float = 0.0
+        # GC pause tracker: gc.callbacks fires ('start', ...) and ('stop', ...)
+        # around every collection. Recording ``stop - start`` per generation
+        # tells us whether Python's stop-the-world sweeps are the cause of
+        # the multi-tens-of-ms gaps in the pen HID reader thread.
+        self._perf_gc_start_ts: float = 0.0
+        if _perf_enabled:
+            import gc as _gc
+
+            def _gc_perf_cb(phase: str, info: dict) -> None:
+                if phase == 'start':
+                    self._perf_gc_start_ts = time.perf_counter()
+                elif phase == 'stop' and self._perf_gc_start_ts > 0.0:
+                    dur_ms = (time.perf_counter() - self._perf_gc_start_ts) * 1000.0
+                    gen = info.get('generation', -1)
+                    self._perf.record_ms(f'gc.pause.gen{gen}', dur_ms)
+                    self._perf_gc_start_ts = 0.0
+
+            _gc.callbacks.append(_gc_perf_cb)
+            print(colored(
+                f'[PERF] Strum perf instrumentation on '
+                f'(summary every {_perf_interval_ms:.0f}ms)',
+                Colors.CYAN,
+            ))
+        self._perf.start()
+
+        # ---- GC tuning ---------------------------------------------------
+        # Python 3.9 defaults to (700, 10, 10); with steady WS broadcast +
+        # tablet event allocations, gen-1/gen-2 sweeps fire often enough to
+        # freeze every thread for 60-110 ms mid-strum, which was the audible
+        # hitch. Two-part mitigation:
+        #   1. Raise thresholds so higher generations rarely trigger on
+        #      their own timing.
+        #   2. Drive a cooperative idle-time collector (below) that runs
+        #      ``gc.collect(0/1)`` only when there has been no strum activity
+        #      for a short window, so any collection cost is absorbed while
+        #      no MIDI is sounding.
+        # Overridable via env for A/B testing:
+        #   SKETCHATONE_GC_DISABLE=1     - turn auto GC off entirely
+        #   SKETCHATONE_GC_THRESHOLDS=a,b,c - custom (gen0,gen1,gen2) thresholds
+        #   SKETCHATONE_GC_IDLE_DISABLE=1 - skip the idle scheduler
+        import gc as _gc
+        self._gc = _gc
+        # Wall-clock (perf_counter) of the last strum activity. The idle GC
+        # scheduler uses this as the "safe to sweep" gate.
+        self._last_strum_activity_ts: float = 0.0
+        if os.environ.get('SKETCHATONE_GC_DISABLE') == '1':
+            _gc.disable()
+            print(colored('[PERF] gc.disable() - auto GC off', Colors.CYAN))
+        else:
+            _gc_thresholds = os.environ.get('SKETCHATONE_GC_THRESHOLDS', '10000,500,50')
+            try:
+                _t0s = tuple(int(x) for x in _gc_thresholds.split(','))
+                if len(_t0s) == 3:
+                    _gc.set_threshold(*_t0s)
+                    if _perf_enabled:
+                        print(colored(
+                            f'[PERF] gc.set_threshold{_t0s}', Colors.CYAN,
+                        ))
+            except ValueError:
+                print(colored(
+                    f'[PERF] ignored SKETCHATONE_GC_THRESHOLDS={_gc_thresholds!r}',
+                    Colors.YELLOW,
+                ))
+        # Idle GC scheduler thread. Wakes every ~150 ms; if no strum has
+        # happened in the last ``idle_after_ms`` and no collection has run
+        # recently, it kicks a gen-0 or (less often) gen-1 collect. This
+        # keeps the young-generation working set small so the next scheduled
+        # sweep during active play is cheap or unnecessary.
+        self._gc_idle_stop = threading.Event()
+        self._gc_idle_thread: Optional[threading.Thread] = None
+        if os.environ.get('SKETCHATONE_GC_IDLE_DISABLE') != '1' \
+                and os.environ.get('SKETCHATONE_GC_DISABLE') != '1':
+            self._gc_idle_thread = threading.Thread(
+                target=self._gc_idle_loop, name='sketchatone-gc-idle', daemon=True,
+            )
+            self._gc_idle_thread.start()
+            if _perf_enabled:
+                print(colored('[PERF] idle GC scheduler on', Colors.CYAN))
 
         # TabletClient composition (initialized when a device is discovered)
         self.tablet_client: Optional[TabletClient] = None
@@ -570,7 +814,18 @@ class StrummerWebSocketServer:
 
         # Register event bus listener
         self.event_bus.on_combined_event(self._broadcast_combined_event)
-    
+
+        # One-shot startup sweep: after all imports, config loading, and
+        # wiring, a lot of transient objects have been promoted to gen-2.
+        # Draining them now (while still on the main thread, before the
+        # tablet reader starts) means the first idle sweep the scheduler
+        # runs isn't the 200-300 ms catch-up sweep we observed.
+        if os.environ.get('SKETCHATONE_GC_DISABLE') != '1':
+            try:
+                self._gc.collect(2)
+            except Exception:
+                pass
+
     def _setup_notes(self) -> None:
         """Set up notes from config"""
         base_notes = []
@@ -1215,7 +1470,13 @@ class StrummerWebSocketServer:
         Callback for when strummer notes change.
         Broadcasts config update to all clients.
         """
+        _t0 = time.perf_counter()
+        # Chord change implies the user is about to strum: block the idle
+        # GC scheduler from firing a sweep in the next ~120 ms window, so
+        # we don't collide with the strum that follows the chord button.
+        self._last_strum_activity_ts = _t0
         self.broadcast_config()
+        self._perf.mark_now('notes_changed.cb', _t0)
 
     def broadcast_config(self, is_saved_state: bool = False) -> None:
         """
@@ -1225,11 +1486,63 @@ class StrummerWebSocketServer:
             is_saved_state: True when config represents the saved state (after load/save),
                            False for updates (default)
         """
+        _t0 = time.perf_counter()
         message = {
             'type': 'config',
             'data': self._get_config_data(is_saved_state)
         }
         self._broadcast(json.dumps(message))
+        self._perf.mark_now('broadcast.config', _t0)
+
+    def _gc_idle_loop(self) -> None:
+        """Cooperative garbage collector. Runs a gen-0 (and occasionally
+        gen-1) sweep only when the user has been idle for a short window,
+        so the stop-the-world pause is inaudible. Rationale: the default
+        auto-GC picks its collection moment based on allocation count, and
+        will happily fire mid-strum when the young generation happens to
+        cross a threshold - producing a 50-100 ms GIL freeze that starves
+        the pen HID reader. By eagerly draining gen-0/gen-1 during silence,
+        we keep the working set small enough that the next auto-triggered
+        sweep during play is cheap (or unnecessary).
+
+        Thread-safety: reads ``_last_strum_activity_ts`` without a lock. On
+        CPython, single float attribute reads/writes are atomic under the
+        GIL, and a torn/stale value here just means we skip a sweep for
+        one tick - which is harmless.
+        """
+        # Tunables kept simple; measured defaults chosen for a ~4ms pen
+        # cadence where anything above ~15 ms is audible. Two separate
+        # idle thresholds because gen-0 is always cheap (< 5 ms) but
+        # gen-1 can be expensive (100-300 ms). A short brain-pause
+        # between strums (~300 ms) should never trigger gen-1: if it
+        # overruns and the user resumes play, the pen reader is frozen
+        # for the tail of the sweep and the first stroke hitches.
+        gen0_idle_ms = 120.0      # pen quiet this long -> safe for gen-0
+        gen1_idle_ms = 750.0      # gen-1 only after the user is really done
+        tick_ms = 100.0           # scheduler wake interval
+        # Only escalate to gen-1 after this many consecutive gen-0
+        # sweeps at gen1-idle. Prevents back-to-back gen-1 sweeps and
+        # gives auto-GC's own threshold a chance to fire cheaply first.
+        gen1_every_n_gen0 = 5
+        gen0_count = 0
+        gc = self._gc
+        while not self._gc_idle_stop.wait(tick_ms / 1000.0):
+            now = time.perf_counter()
+            last = self._last_strum_activity_ts
+            idle_ms = (now - last) * 1000.0 if last != 0.0 else float('inf')
+            if idle_ms < gen0_idle_ms:
+                # User is active or just paused briefly - do nothing.
+                gen0_count = 0
+                continue
+            _t = now
+            if idle_ms >= gen1_idle_ms and gen0_count >= gen1_every_n_gen0:
+                gc.collect(1)
+                gen0_count = 0
+                self._perf.mark_now('gc.idle_sweep_gen1', _t)
+            else:
+                gc.collect(0)
+                gen0_count += 1
+                self._perf.mark_now('gc.idle_sweep_gen0', _t)
 
     def _broadcast_action_event(self, event: Dict[str, Any]) -> None:
         """
@@ -1258,18 +1571,45 @@ class StrummerWebSocketServer:
         Handle a raw keyboard press: learn the key when detection is on,
         update state, dispatch a ``key:<char>`` action, and emit a synthetic
         tablet event so the UI can show pressed-key indicators.
+
+        Drops OS auto-repeat: if the key is already marked pressed, the
+        event is a repeat from the OS's typematic timer (~30 Hz on macOS,
+        higher on Linux). Every repeat would re-fire the action rule,
+        allocate a new chord, and schedule broadcasts - all on the
+        keyboard listener thread, which starves the pen HID reader on
+        the same interpreter and shows up as strums that pause and then
+        flush in a burst. Mirrors the aux-HID button semantics (which
+        don't auto-repeat) so a held key means "press once".
         """
+        _t_all = time.perf_counter()
+        # Chord-change keys imply the user is about to strum: gate the
+        # idle GC scheduler even before the auto-repeat check, so a held
+        # key still blocks sweeps in the "about to strum" window.
+        self._last_strum_activity_ts = _t_all
         self._maybe_learn_device_key(key)
         button_id = f'key:{key}'
+        if self.keyboard_button_states.get(button_id):
+            return
         self.keyboard_button_states[button_id] = True
+        _t = time.perf_counter()
         self.actions.handle_button_event(button_id, 'press')
+        self._perf.mark_now('kbd.press.action', _t)
+        _t = time.perf_counter()
         self._emit_keyboard_tablet_event()
+        self._perf.mark_now('kbd.press.emit', _t)
+        self._perf.mark_now('kbd.press.total', _t_all)
 
     def _handle_keyboard_key_release(self, key: str) -> None:
+        _t_all = time.perf_counter()
         button_id = f'key:{key}'
         self.keyboard_button_states[button_id] = False
+        _t = time.perf_counter()
         self.actions.handle_button_event(button_id, 'release')
+        self._perf.mark_now('kbd.release.action', _t)
+        _t = time.perf_counter()
         self._emit_keyboard_tablet_event()
+        self._perf.mark_now('kbd.release.emit', _t)
+        self._perf.mark_now('kbd.release.total', _t_all)
 
     def _emit_keyboard_tablet_event(self) -> None:
         """
@@ -1592,7 +1932,14 @@ class StrummerWebSocketServer:
             # Persist every config change immediately so it survives a
             # restart. The Save/Revert affordances have been retired; all
             # in-memory mutations round-trip to disk right away.
-            self._persist_config_to_file()
+            # Exception: the live strumming chord changes frequently
+            # during play (UI chord buttons, MIDI-driven progressions)
+            # and writing the full config on every press adds enough
+            # synchronous I/O to stall the WS/tablet loop and cause
+            # buffered-then-released strums. It's transient play state,
+            # so we intentionally skip persistence for it.
+            if path != 'strummer.strumming.chord':
+                self._persist_config_to_file()
 
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
@@ -2220,10 +2567,22 @@ class StrummerWebSocketServer:
 
     def on_tablet_event(self, tablet_event: TabletEvent) -> None:
         """Handle a normalized tablet event from the TabletClient."""
+        _t_all = time.perf_counter()
+        if self._perf.enabled:
+            _last = self._perf_last_event_ts
+            self._perf_last_event_ts = _t_all
+            if _last > 0.0:
+                self._perf.mark_now('tablet.gap', _last)
         try:
             x = float(tablet_event.x)
             y = float(tablet_event.y)
             pressure = float(tablet_event.pressure)
+            # Feed the idle GC scheduler: any pen contact or non-zero
+            # pressure counts as active play, and blocks the sweeper from
+            # firing until the user pauses. Cheap - a bool check + one
+            # attribute write on the pen thread per sample.
+            if pressure > 0.0 or tablet_event.state == 'contact':
+                self._last_strum_activity_ts = _t_all
             tilt_x = float(tablet_event.tiltX)
             tilt_y = float(tablet_event.tiltY)
             tilt_xy = float(tablet_event.tiltXY)
@@ -2240,23 +2599,35 @@ class StrummerWebSocketServer:
 
             # Stylus button transitions
             if primary_button and not self.button_state['primaryButtonPressed']:
+                _t = time.perf_counter()
                 self.actions.handle_button_event('button:primary', 'press')
+                self._perf.mark_now('stylus.press', _t)
             if not primary_button and self.button_state['primaryButtonPressed']:
+                _t = time.perf_counter()
                 self.actions.handle_button_event('button:primary', 'release')
+                self._perf.mark_now('stylus.release', _t)
             if secondary_button and not self.button_state['secondaryButtonPressed']:
+                _t = time.perf_counter()
                 self.actions.handle_button_event('button:secondary', 'press')
+                self._perf.mark_now('stylus.press', _t)
             if not secondary_button and self.button_state['secondaryButtonPressed']:
+                _t = time.perf_counter()
                 self.actions.handle_button_event('button:secondary', 'release')
+                self._perf.mark_now('stylus.release', _t)
             self.button_state['primaryButtonPressed'] = primary_button
             self.button_state['secondaryButtonPressed'] = secondary_button
 
             # Auxiliary (express-key) transitions: diff HID scan codes as `code:<n>`
             current_aux_codes: Set[int] = set(raw_aux_codes)
             for code in current_aux_codes - self.prev_aux_codes:
+                _t = time.perf_counter()
                 self.actions.handle_button_event(f'code:{code}', 'press')
+                self._perf.mark_now('aux.press', _t)
                 self._maybe_learn_device_button(code)
             for code in self.prev_aux_codes - current_aux_codes:
+                _t = time.perf_counter()
                 self.actions.handle_button_event(f'code:{code}', 'release')
+                self._perf.mark_now('aux.release', _t)
             self.prev_aux_codes = current_aux_codes
 
             # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
@@ -2310,7 +2681,9 @@ class StrummerWebSocketServer:
                 secondaryButtonPressed=secondary_button,
                 auxCodes=raw_aux_codes,
             )
+            _t = time.perf_counter()
             self.event_bus.emit_tablet_event(tablet_data)
+            self._perf.mark_now('bus.emit_tablet', _t)
 
             # Update strummer/slider bounds (use normalized 0-1 range)
             self.strummer.update_bounds(1.0, 1.0)
@@ -2325,7 +2698,9 @@ class StrummerWebSocketServer:
                 return
 
             # Process strum
+            _t = time.perf_counter()
             event = self.strummer.strum(strum_x, pressure)
+            self._perf.mark_now('strum.compute', _t)
 
             # Get note repeater state from actions
             repeater_config = self.actions.get_repeater_config()
@@ -2376,11 +2751,13 @@ class StrummerWebSocketServer:
                             note_to_play = note_obj
                             if transpose_enabled:
                                 note_to_play = note_obj.transpose(transpose_semitones)
+                            _t = time.perf_counter()
                             self.backend.send_note(
                                 note=note_to_play,
                                 velocity=velocity,
                                 duration=current_note_duration
                             )
+                            self._perf.mark_now('midi.send_note', _t)
                             self.notes_played += 1
 
                         strum_notes.append(StrumNoteEventData(
@@ -2470,11 +2847,13 @@ class StrummerWebSocketServer:
                             note_to_play = note_obj
                             if transpose_enabled:
                                 note_to_play = note_obj.transpose(transpose_semitones)
+                            _t = time.perf_counter()
                             self.backend.send_note(
                                 note=note_to_play,
                                 velocity=repeat_velocity,
                                 duration=current_note_duration
                             )
+                            self._perf.mark_now('midi.send_note_repeat', _t)
 
                     self.repeater_state['last_repeat_time'] = current_time
 
@@ -2482,6 +2861,8 @@ class StrummerWebSocketServer:
             import traceback
             print(colored(f'Error processing packet: {e}', Colors.RED))
             traceback.print_exc()
+        finally:
+            self._perf.mark_now('tablet.proc', _t_all)
 
     def _clear_controller_state(self) -> None:
         """
@@ -2935,10 +3316,23 @@ class StrummerWebSocketServer:
                     continue
 
                 try:
+                    # Wire perf probe into the HID reader thread so we can
+                    # tell whether stalls are inside hid.read() (OS/driver)
+                    # or between reads (GIL contention from another thread).
+                    if self._perf.enabled:
+                        _mark = self._perf.mark_now
+                        client.reader.perf_hook = _mark
+                        for _aux in client.aux_readers:
+                            _aux.perf_hook = _mark
                     client.start(
                         on_event=self.on_tablet_event,
                         on_disconnect=self.handle_tablet_disconnect,
                     )
+                    # Aux readers are constructed inside client.start(), so
+                    # attach the hook to any that appeared after startup too.
+                    if self._perf.enabled:
+                        for _aux in client.aux_readers:
+                            _aux.perf_hook = self._perf.mark_now
                 except Exception as e:
                     print(colored(f'Tablet reader error: {e}', Colors.RED))
                     import traceback

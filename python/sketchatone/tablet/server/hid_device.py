@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
@@ -196,6 +197,13 @@ def pick_digitizer_interface(devices: List[DiscoveredDevice]) -> Optional[Discov
 class HidReader:
     """Reads HID input reports in a background thread."""
 
+    # Optional perf probe. When set (by the server if instrumentation is
+    # enabled), each iteration of ``_run`` records timings into this
+    # collector under the ``hid.read``, ``hid.read_gap`` and
+    # ``hid.dispatch`` buckets. Kept as an instance attribute so unit
+    # tests can construct readers without touching global state.
+    perf_hook: Optional[Callable[[str, float], None]] = None
+
     def __init__(self, device: DiscoveredDevice):
         self.device = device
         self._dev: Optional[hid.device] = None
@@ -286,7 +294,12 @@ class HidReader:
         # both standard digitizer and vendor interfaces; hidapi returns
         # only the bytes the device actually sent.
         buffer_size = max(64, self.device.match.identifier.input_report_length or 0)
+        perf = self.perf_hook
+        _last_read_end: float = 0.0
         while not self._stop.is_set():
+            _read_start = time.perf_counter() if perf else 0.0
+            if perf and _last_read_end > 0.0:
+                perf('hid.read_gap', _last_read_end)
             try:
                 data = self._dev.read(buffer_size, timeout_ms=500)
             except OSError:
@@ -294,7 +307,13 @@ class HidReader:
                 if self._on_disconnect:
                     self._on_disconnect()
                 return
+            if perf:
+                # Split by outcome so idle 500ms timeouts don't pollute
+                # the active-read p95/max we actually care about.
+                perf('hid.read_active' if data else 'hid.read_idle', _read_start)
             if not data:
+                if perf:
+                    _last_read_end = time.perf_counter()
                 continue
             if log.isEnabledFor(logging.DEBUG):
                 # Collapse high-rate streams: only log when the report id
@@ -305,11 +324,15 @@ class HidReader:
                 if key != self._last_log_key:
                     log.debug("report: %s", bytes(data).hex())
                     self._last_log_key = key
+            _dispatch_start = time.perf_counter() if perf else 0.0
             try:
                 if self._on_report:
                     self._on_report(bytes(data))
             except Exception:  # pragma: no cover - never let callback kill the thread
                 log.exception("on_report callback raised")
+            if perf:
+                perf('hid.dispatch', _dispatch_start)
+                _last_read_end = time.perf_counter()
 
     def stop(self) -> None:
         self._stop.set()
