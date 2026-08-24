@@ -47,6 +47,8 @@ LIGHT: Dict[str, RGBA] = {
     'BLUE_900': hex_to_rgba('#1e3a8a'),
     'STATUS_CONNECTED':    hex_to_rgba('#16a34a'),
     'STATUS_DISCONNECTED': hex_to_rgba('#a1a1aa'),
+    'DANGER_BG':           hex_to_rgba('#7f1d1d'),  # red-900 — used to flag MIDI loopback rows
+    'DANGER_TEXT':         hex_to_rgba('#fecaca'),  # red-200 — readable on DANGER_BG
 }
 
 DARK: Dict[str, RGBA] = {
@@ -67,6 +69,8 @@ DARK: Dict[str, RGBA] = {
     'BLUE_900': hex_to_rgba('#dbeafe'),
     'STATUS_CONNECTED':    hex_to_rgba('#22c55e'),
     'STATUS_DISCONNECTED': hex_to_rgba('#52525b'),
+    'DANGER_BG':           hex_to_rgba('#7f1d1d'),
+    'DANGER_TEXT':         hex_to_rgba('#fecaca'),
 }
 
 PALETTES: Dict[str, Dict[str, RGBA]] = {'light': LIGHT, 'dark': DARK}

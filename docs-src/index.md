@@ -36,9 +36,9 @@ This also has proven to work on my MPC One+, but in a different way. We can put 
 powers the Rasperry Pi also acts like a pure MIDI connection.
 
 This has been a fun project to build, and I hope even more fun to play with. Again it's a side project, so there will probably be issues.
-And don't go running out to buy a drawing tablet just for this before you know what you're getting into. I created another project called [Blankslate](https://github.com/bengfarrell/blankslate) to
-read and create tablet configurations to use in this project. Ideally, you could buy a (HID compatible) tablet, and configure with that tool and it would work. But, I've only done this with two tablets so far, so this is definitely
-going to be a "wait and see how this goes" scenario.
+And don't go running out to buy a drawing tablet just for this before you know what you're getting into. Sketchatone uses tablet definitions from
+[OpenTabletDriver](https://opentabletdriver.net/) to interpret raw HID packets, so in theory any HID-compatible tablet with an OTD configuration
+should work. In practice I've only tested this with a handful of tablets so far, so this is definitely going to be a "wait and see how this goes" scenario.
 
 That said, the [XP Pen Deco 640](https://www.amazon.com/Deco-640-Sensitivity-Battery-Free-Designing/dp/B0D6XZF9N4/ref=sr_1_1?crid=1QT60WWQ1ANSQ&dib=eyJ2IjoiMSJ9.Aueq6JTmdMyj52fBxsLVtYBcCZ0kU6jQZmy2KvarfJpdkrf_bka6_T1-QoIEExZVYxmw--BqeAc1VWFJ0ZbTOrmSuLREgbtu4SH9BAcNmDBjFYStFq5iz8LzK8oErNY7WVVHYilEb9wFiIdk53_vdpmicYNWIeTG12y0DcySLFf__9zErRC7sqg5uEYFGwecWjRBK2BOkg1TdQSgLGP4kCR-yD1iB8SAvk7qWrRZ6FY.DJHualLy3DNoOye9friyB930lUcpUtWPY8ddd7oeSbI&dib_tag=se&keywords=XP+Pen+deco+640&qid=1771825273&sprefix=xp+pen+deco+640%2Caps%2C190&sr=8-1) 
 is a great one to get started with. The configuration is already included with this project, the side buttons don't require elevated permissions, and it's only $30!
@@ -66,14 +66,14 @@ If you end up trying this project out, I hope you have fun playing!
 
 ## Architecture
 
-Sketchatone is built on top of [**blankslate**](https://github.com/bengfarrell/blankslate), a universal HID tablet configuration toolkit. Blankslate handles:
+Sketchatone reads raw HID packets directly from graphics tablets and translates them into musical events. The tablet layer handles:
 
 - HID device detection and reading
 - Hot-plug detection
-- Byte-to-value mapping
+- Byte-to-value mapping (using [OpenTabletDriver](https://opentabletdriver.net/) tablet definitions)
 - Device auto-detection from config files
 
-Sketchatone adds the musical layer:
+The musical layer on top adds:
 
 - Strummer logic (converting position to note triggers)
 - MIDI output (rtmidi and JACK backends)

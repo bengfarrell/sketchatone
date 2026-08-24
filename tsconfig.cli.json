@@ -9,7 +9,7 @@
     "moduleResolution": "NodeNext",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "types": ["node"]
+    "types": ["node", "w3c-web-usb"]
   },
   "include": [
     "src/cli/**/*.ts",
@@ -17,7 +17,8 @@
     "src/utils/**/*.ts",
     "src/models/**/*.ts",
     "src/types/**/*.ts",
-    "src/midi/**/*.ts"
+    "src/midi/**/*.ts",
+    "src/tablet/**/*.ts"
   ],
   "exclude": [
     "node_modules",

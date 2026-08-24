@@ -1,0 +1,139 @@
+#!/bin/bash
+# Sketchatone interactive configuration menu (webapp variant).
+# Wraps the individual setup helpers so users don't have to remember
+# each command name. Safe to re-run; each option is idempotent.
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        print_error "This menu must be run as root (use sudo sketchatone-configure)"
+        exit 1
+    fi
+}
+
+pause() {
+    echo ""
+    read -r -p "Press Enter to return to the menu..." _
+}
+
+autostart_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ Autostart mode
+==========================================
+Controls how the sketchatone service is launched at boot.
+
+  1) usb-trigger  Start when a supported tablet is plugged in (recommended
+                  for appliance use — no idle background process).
+  2) always-on    Enable the systemd service so it starts on every boot.
+  3) manual       Disable auto-start. Run `sketchatone` by hand.
+  b) Back
+HDR
+    echo ""
+    read -r -p "Choose [1-3, b]: " choice
+    case "$choice" in
+        1) sketchatone-setup --mode usb-trigger ;;
+        2) sketchatone-setup --mode always-on ;;
+        3) sketchatone-setup --mode manual ;;
+        b|B|"") return ;;
+        *) print_error "Invalid choice: $choice" ;;
+    esac
+    pause
+}
+
+usb_gadget_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ USB MIDI Gadget
+==========================================
+Configures the Pi's USB-C port as a USB MIDI device so it can be plugged
+into external MIDI hardware (e.g. an Akai MPC) as if it were a MIDI
+controller. Requires a Pi 4 or 5 and a reboot to take effect.
+HDR
+    echo ""
+    if [ ! -x /usr/bin/sketchatone-setup-usb-gadget ]; then
+        print_error "sketchatone-setup-usb-gadget is not installed."
+        pause
+        return
+    fi
+    read -r -p "Run USB MIDI gadget setup now? [y/N]: " confirm
+    case "$confirm" in
+        y|Y|yes|YES) sketchatone-setup-usb-gadget ;;
+        *) print_info "Skipped." ;;
+    esac
+    pause
+}
+
+boot_trim_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ Boot-time trimming
+==========================================
+Masks unused services (Bluetooth, ModemManager, cups, etc.), converts
+ssh.service to socket activation, and patches /boot/firmware/config.txt
+and cmdline.txt for a faster boot. Intended for dedicated appliance
+installs on Pi OS Lite. Undo with `sudo sketchatone-boot-trim --restore`.
+
+  1) Install boot-trim
+  2) Restore defaults
+  b) Back
+HDR
+    echo ""
+    if [ ! -x /usr/bin/sketchatone-boot-trim ]; then
+        print_error "sketchatone-boot-trim is not installed."
+        pause
+        return
+    fi
+    read -r -p "Choose [1-2, b]: " choice
+    case "$choice" in
+        1) sketchatone-boot-trim --install ;;
+        2) sketchatone-boot-trim --restore ;;
+        b|B|"") return ;;
+        *) print_error "Invalid choice: $choice" ;;
+    esac
+    pause
+}
+
+main_menu() {
+    while true; do
+        clear
+        cat << 'HDR'
+==========================================
+ Sketchatone Configuration
+==========================================
+  1) Autostart mode      (usb-trigger / always-on / manual)
+  2) USB MIDI Gadget     (Pi as a USB MIDI device)
+  3) Boot-time trimming  (faster boot on Pi OS Lite)
+  s) Show current status
+  q) Quit
+HDR
+        echo ""
+        read -r -p "Choose [1-3, s, q]: " choice
+        case "$choice" in
+            1) autostart_menu ;;
+            2) usb_gadget_menu ;;
+            3) boot_trim_menu ;;
+            s|S) clear; sketchatone-setup --status; pause ;;
+            q|Q|"") echo ""; exit 0 ;;
+            *) print_error "Invalid choice: $choice"; sleep 1 ;;
+        esac
+    done
+}
+
+check_root
+main_menu

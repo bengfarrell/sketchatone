@@ -84,9 +84,24 @@ export class ActionRulesConfigComponent extends LitElement {
   @property({ type: Object })
   pressedButtons: Set<ButtonId> = new Set();
 
-  /** Number of tablet buttons available */
-  @property({ type: Number })
-  buttonCount: number = 8;
+  /** HID scan codes for auxiliary tablet buttons the user has already observed
+   * (either currently pressed or referenced by loaded rules/groups). Shown in the
+   * button dropdown alongside stylus buttons so users can edit existing bindings
+   * without having to re-detect the physical press. */
+  @property({ type: Object })
+  knownAuxCodes: Set<number> = new Set();
+
+  /** Normalized keyboard characters the user has already observed. Shown in the
+   * button dropdown alongside tablet buttons so `key:<char>` bindings can be
+   * edited without having to re-press the key. */
+  @property({ type: Object })
+  knownKeys: Set<string> = new Set();
+
+  /** Map from button ID (e.g. "code:66049", "key:a") to a friendly display
+   * label. When a mapping is present, the UI shows the friendly name in chips
+   * and dropdown options instead of the raw identifier. */
+  @property({ type: Object })
+  buttonLabels: Record<string, string> = {};
 
   /** Whether stylus has primary button */
   @property({ type: Boolean })
@@ -110,15 +125,12 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private editingId: string | null = null;
 
-  @state()
-  private detecting: boolean = false;
-
   // Unified action form state
   @state()
   private formTargetType: ActionTargetType = 'button';
 
   @state()
-  private formButton: ButtonId = 'button:1';
+  private formButton: ButtonId = 'button:primary';
 
   @state()
   private formGroupId: string = '';
@@ -218,15 +230,6 @@ export class ActionRulesConfigComponent extends LitElement {
   updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
 
-    // Handle button detection
-    if (changedProperties.has('pressedButtons') && this.detecting) {
-      const pressed = Array.from(this.pressedButtons);
-      if (pressed.length > 0) {
-        this.formButton = pressed[0];
-        this.detecting = false;
-      }
-    }
-
     // Notify parent when form open/close state or title changes so the
     // host can swap the panel header (e.g., show back button + form title).
     if (changedProperties.has('formMode') || changedProperties.has('formTargetType')) {
@@ -253,12 +256,43 @@ export class ActionRulesConfigComponent extends LitElement {
     return 'Add Action';
   }
 
+  /** Get the human-readable label for a button ID (falls back to the raw ID). */
+  private formatButtonLabel(id: ButtonId): string {
+    const mapped = this.buttonLabels[id];
+    if (mapped) return mapped;
+    if (id === 'button:primary') return 'Stylus Primary';
+    if (id === 'button:secondary') return 'Stylus Secondary';
+    if (id.startsWith('key:')) return `Key ${id.slice(4).toUpperCase()}`;
+    return id;
+  }
+
   private getAvailableButtons(): ButtonId[] {
     const buttons: ButtonId[] = [];
     if (this.hasPrimaryButton) buttons.push('button:primary');
     if (this.hasSecondaryButton) buttons.push('button:secondary');
-    for (let i = 1; i <= this.buttonCount; i++) {
-      buttons.push(`button:${i}` as ButtonId);
+    // Collect aux HID codes and key characters from known sets plus any
+    // referenced by existing rules/groups so previously-bound entries remain
+    // editable even when the source device isn't currently attached.
+    const codes = new Set<number>(this.knownAuxCodes);
+    const keys = new Set<string>(this.knownKeys);
+    if (this.config) {
+      const collect = (id: ButtonId) => {
+        if (id.startsWith('code:')) {
+          const n = parseInt(id.slice(5), 10);
+          if (!isNaN(n)) codes.add(n);
+        } else if (id.startsWith('key:')) {
+          const k = id.slice(4);
+          if (k) keys.add(k);
+        }
+      };
+      for (const rule of this.config.rules) collect(rule.button);
+      for (const group of this.config.groups) for (const b of group.buttons) collect(b);
+    }
+    for (const code of Array.from(codes).sort((a, b) => a - b)) {
+      buttons.push(`code:${code}` as ButtonId);
+    }
+    for (const key of Array.from(keys).sort()) {
+      buttons.push(`key:${key}` as ButtonId);
     }
     return buttons;
   }
@@ -330,7 +364,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formMode = 'add-action';
     this.editingId = null;
     this.formTargetType = targetType;
-    this.formButton = 'button:1';
+    this.formButton = 'button:primary';
     this.formGroupId = this.config?.groups[0]?.id ?? '';
     this.formAction = 'none';
     this.formTrigger = 'release';
@@ -411,11 +445,6 @@ export class ActionRulesConfigComponent extends LitElement {
   public closeForm() {
     this.formMode = 'none';
     this.editingId = null;
-    this.detecting = false;
-  }
-
-  private startDetecting() {
-    this.detecting = true;
   }
 
   private handleActionChange(e: Event) {
@@ -619,7 +648,7 @@ export class ActionRulesConfigComponent extends LitElement {
                     <div class="rule-top-row">
                       <span class="status-dot ${this.isRuleTriggered(rule.id) ? 'active' : ''}"></span>
                       <span class="rule-type-badge button">Button</span>
-                      <span class="rule-button-id">${rule.button}</span>
+                      <span class="rule-button-id">${this.formatButtonLabel(rule.button)}</span>
                       <span class="rule-trigger">${rule.trigger ?? 'release'}</span>
                       <div class="rule-actions">
                         <sketch-button variant="quiet" size="s" @click=${() => this.openEditButtonRuleForm(rule)}>
@@ -721,7 +750,7 @@ export class ActionRulesConfigComponent extends LitElement {
                     ${group.buttons.map((btn) => {
                       const isPressed = this.pressedButtons.has(btn);
                       return html`<span class="button-chip ${isPressed ? 'pressed' : ''}"
-                        >${btn}</span
+                        >${this.formatButtonLabel(btn)}</span
                       >`;
                     })}
                   </div>
@@ -845,14 +874,9 @@ export class ActionRulesConfigComponent extends LitElement {
           ${this.formTargetType === 'button' ? html`
             <div class="form-field">
               <label class="sketch-label">Button</label>
-              <div class="form-row">
-                <select class="native-select" .value=${live(this.formButton)} @change=${(e: Event) => (this.formButton = (e.target as HTMLSelectElement).value as ButtonId)}>
-                  ${availableButtons.map((btn) => html`<option value="${btn}" ?selected=${btn === this.formButton}>${btn}</option>`)}
-                </select>
-                <sketch-button variant="quiet" size="s" class="detect-btn ${this.detecting ? 'detecting' : ''}" title="${this.detecting ? 'Press a button on the device...' : 'Detect button'}" @click=${this.startDetecting}>
-                  <sketch-icon slot="icon" name="crosshairs"></sketch-icon>
-                </sketch-button>
-              </div>
+              <select class="native-select" .value=${live(this.formButton)} @change=${(e: Event) => (this.formButton = (e.target as HTMLSelectElement).value as ButtonId)}>
+                ${availableButtons.map((btn) => html`<option value="${btn}" ?selected=${btn === this.formButton}>${this.formatButtonLabel(btn)}</option>`)}
+              </select>
             </div>
 
             <div class="form-field">
@@ -966,14 +990,13 @@ export class ActionRulesConfigComponent extends LitElement {
           </div>
 
           <div class="form-field">
-            <label class="sketch-label">Buttons (click to toggle, or press on device)</label>
+            <label class="sketch-label">Buttons (click to toggle)</label>
             <div class="group-buttons">
               ${availableButtons.map((btn) => {
                 const isSelected = this.formGroupButtons.includes(btn);
-                const isDetected = this.pressedButtons.has(btn);
                 return html`
-                  <span class="button-chip ${isSelected ? 'selected' : ''} ${isDetected ? 'detected' : ''}" @click=${() => this.toggleGroupButton(btn)} style="cursor: pointer">
-                    ${btn}
+                  <span class="button-chip ${isSelected ? 'selected' : ''}" @click=${() => this.toggleGroupButton(btn)} style="cursor: pointer">
+                    ${this.formatButtonLabel(btn)}
                   </span>
                 `;
               })}

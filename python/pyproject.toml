@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sketchatone"
-version = "0.3.0.dev24"
+version = "0.3.0.dev39"
 description = "Sketchatone - Python implementation"
 requires-python = ">=3.8"
 license = {text = "CC-BY-NC-SA-4.0"}
@@ -35,7 +35,8 @@ dependencies = [
     "python-rtmidi>=1.5.0",
     "evdev>=1.6.0; sys_platform == 'linux'",
     "pynput>=1.7.0; sys_platform == 'darwin' or sys_platform == 'win32'",
-    "blankslate @ git+https://github.com/bengfarrell/blankslate.git#subdirectory=python",
+    "hidapi>=0.14.0",
+    "pyusb>=1.2.0",
 ]
 
 [project.optional-dependencies]
@@ -74,6 +75,7 @@ exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 "sketchatone.ui" = ["assets/*.png"]
+"sketchatone.tablet.otd" = ["configs/**/*.json"]
 
 [tool.black]
 line-length = 100

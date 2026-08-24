@@ -14,6 +14,33 @@ try:
 except ImportError:
     rtmidi = None
 
+# ALSA/CoreMIDI client name for every MidiIn instance we create. Matches
+# the output client name in rtmidi_backend so we present as a single
+# "Sketchatone" client in other apps' MIDI pickers, and so the
+# "sketchatone" entry in midi_input_exclude filters our own output when
+# ALSA echoes it back as a listenable input.
+CLIENT_NAME = 'Sketchatone'
+
+
+def _release_rtmidi(instance) -> None:
+    """
+    Close and destroy an rtmidi MidiIn/MidiOut so its ALSA sequencer client
+    is released immediately. close_port() alone leaves the client alive
+    until GC runs, which causes leaked "Sketchatone" clients to accumulate
+    in every other app's MIDI list on each toggle.
+    """
+    if instance is None:
+        return
+    try:
+        instance.close_port()
+    except Exception:
+        pass
+    try:
+        if hasattr(instance, 'delete'):
+            instance.delete()
+    except Exception:
+        pass
+
 
 class MidiInputPort(TypedDict):
     """MIDI input port info"""
@@ -173,7 +200,7 @@ class RtMidiInput:
             # Create a fresh MidiIn instance to force port list refresh
             # On macOS, rtmidi sometimes caches the port list, so we need to
             # create a new instance each time to see newly connected devices
-            temp_in = rtmidi.MidiIn()
+            temp_in = rtmidi.MidiIn(name=CLIENT_NAME)
 
             # Small delay to allow the system to enumerate devices
             # This helps on macOS where device detection can be delayed
@@ -188,17 +215,7 @@ class RtMidiInput:
             print(f"[RtMidiInput] Failed to get available ports: {e}")
             return []
         finally:
-            # Explicitly delete C++ instance to prevent ALSA client leak
-            if temp_in is not None:
-                try:
-                    # Call delete() to immediately release the ALSA sequencer client
-                    # Without this, ALSA clients accumulate until hitting the 192 limit
-                    # (seen as "Cannot allocate memory" errors)
-                    if hasattr(temp_in, 'delete'):
-                        temp_in.delete()
-                    del temp_in
-                except Exception:
-                    pass
+            _release_rtmidi(temp_in)
 
     def connect_all(self, exclude_ports: Optional[List[str]] = None) -> bool:
         """
@@ -213,9 +230,11 @@ class RtMidiInput:
             self.disconnect()
 
             # Get available ports
-            temp_in = rtmidi.MidiIn()
-            port_count = temp_in.get_port_count()
-            del temp_in
+            temp_in = rtmidi.MidiIn(name=CLIENT_NAME)
+            try:
+                port_count = temp_in.get_port_count()
+            finally:
+                _release_rtmidi(temp_in)
 
             if port_count == 0:
                 print("[RtMidiInput] No MIDI input ports available")
@@ -226,7 +245,7 @@ class RtMidiInput:
 
             # Connect to each port
             for i in range(port_count):
-                midi_in = rtmidi.MidiIn()
+                midi_in = rtmidi.MidiIn(name=CLIENT_NAME)
                 port_name = midi_in.get_port_name(i)
 
                 # Check if this port should be excluded
@@ -238,7 +257,7 @@ class RtMidiInput:
                         break
 
                 if should_exclude:
-                    del midi_in
+                    _release_rtmidi(midi_in)
                     continue
 
                 # Set up callback with port info
@@ -268,12 +287,17 @@ class RtMidiInput:
             print(f"[RtMidiInput] Failed to connect to all ports: {e}")
             return False
 
-    def connect_multiple(self, port_ids: List[int]) -> bool:
+    def connect_multiple(self, port_ids: List[int],
+                         exclude_ports: Optional[List[str]] = None) -> bool:
         """
         Connect to multiple specific MIDI input ports by their IDs.
 
         Args:
             port_ids: List of port indices to connect to
+            exclude_ports: Case-insensitive substring patterns; any port whose
+                name matches is silently skipped. Guards against a stale
+                saved config that still references our own MidiOut client or
+                another known-bad port even after the picker has hidden it.
 
         Returns:
             True if at least one port was connected successfully
@@ -287,14 +311,17 @@ class RtMidiInput:
                 return False
 
             # Get available ports
-            temp_in = rtmidi.MidiIn()
-            port_count = temp_in.get_port_count()
-            del temp_in
+            temp_in = rtmidi.MidiIn(name=CLIENT_NAME)
+            try:
+                port_count = temp_in.get_port_count()
+            finally:
+                _release_rtmidi(temp_in)
 
             if port_count == 0:
                 print("[RtMidiInput] No MIDI input ports available")
                 return False
 
+            exclude_ports = exclude_ports or []
             connected_count = 0
 
             # Connect to each specified port
@@ -303,8 +330,20 @@ class RtMidiInput:
                     print(f"[RtMidiInput] Skipping invalid port index: {port_id}")
                     continue
 
-                midi_in = rtmidi.MidiIn()
+                midi_in = rtmidi.MidiIn(name=CLIENT_NAME)
                 port_name = midi_in.get_port_name(port_id)
+
+                # Same substring rule as connect_all so behaviour is symmetric.
+                should_exclude = False
+                for pattern in exclude_ports:
+                    if pattern and pattern.lower() in port_name.lower():
+                        print(f"[RtMidiInput] Skipping port {port_id}: {port_name} "
+                              f"(matches exclude pattern '{pattern}')")
+                        should_exclude = True
+                        break
+                if should_exclude:
+                    _release_rtmidi(midi_in)
+                    continue
 
                 # Set up callback with port info
                 midi_in.set_callback(self._create_callback(port_id, port_name))
@@ -324,6 +363,10 @@ class RtMidiInput:
             self._current_input_name = f"Selected ports ({connected_count})"
             self._connect_all_mode = False
             self._last_requested_port = port_ids  # Store list for reconnection
+            # Reuse the same slot connect_all uses; _attempt_reconnection
+            # only reads it in the connect_all branch, but keeping it in sync
+            # means hot-swap-triggered reconnects honour the same list.
+            self._last_exclude_ports = list(exclude_ports)
             with self._lock:
                 self._notes = []
 
@@ -344,12 +387,12 @@ class RtMidiInput:
             # Close existing connections
             self.disconnect()
 
-            midi_in = rtmidi.MidiIn()
+            midi_in = rtmidi.MidiIn(name=CLIENT_NAME)
             port_count = midi_in.get_port_count()
 
             if port_count == 0:
                 print("[RtMidiInput] No MIDI input ports available")
-                del midi_in
+                _release_rtmidi(midi_in)
                 return False
 
             port_index = 0
@@ -360,7 +403,7 @@ class RtMidiInput:
                     port_index = input_port
                 else:
                     print(f"[RtMidiInput] Invalid port index: {input_port}")
-                    del midi_in
+                    _release_rtmidi(midi_in)
                     return False
             elif isinstance(input_port, str):
                 # Find port by name (partial match)
@@ -376,7 +419,7 @@ class RtMidiInput:
                     print("[RtMidiInput] Available ports:")
                     for i in range(port_count):
                         print(f"  {i}: {midi_in.get_port_name(i)}")
-                    del midi_in
+                    _release_rtmidi(midi_in)
                     return False
 
             port_name = midi_in.get_port_name(port_index)
@@ -408,10 +451,7 @@ class RtMidiInput:
         self._stop_hot_swap_monitoring()
 
         for midi_in in self._midi_inputs.values():
-            try:
-                midi_in.close_port()
-            except Exception:
-                pass
+            _release_rtmidi(midi_in)
         self._midi_inputs.clear()
         self._connected_ports = []
 
@@ -538,11 +578,7 @@ class RtMidiInput:
                     for port_id in list(self._midi_inputs.keys()):
                         port_info = next((p for p in self._connected_ports if p['id'] == port_id), None)
                         if port_info and port_info['name'] in disconnected:
-                            try:
-                                self._midi_inputs[port_id].close_port()
-                                del self._midi_inputs[port_id]
-                            except Exception:
-                                pass
+                            _release_rtmidi(self._midi_inputs.pop(port_id, None))
 
                     # Update connected ports list
                     self._connected_ports = [p for p in self._connected_ports if p['name'] not in disconnected]
@@ -593,7 +629,8 @@ class RtMidiInput:
                 # Check if it's a list of port IDs
                 if isinstance(self._last_requested_port, list):
                     print(f"[RtMidiInput] Attempting to reconnect to ports: {self._last_requested_port}")
-                    success = self.connect_multiple(self._last_requested_port)
+                    success = self.connect_multiple(self._last_requested_port,
+                                                    exclude_ports=self._last_exclude_ports)
                 else:
                     print(f"[RtMidiInput] Attempting to reconnect to: {self._last_requested_port}")
                     success = self.connect(self._last_requested_port)

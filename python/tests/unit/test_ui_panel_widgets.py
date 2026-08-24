@@ -19,6 +19,7 @@ from sketchatone.ui.panel_widgets import (
     PARAMETER_MAPPING_SPECS,
     ActionRulesPanel,
     ChordProgressionsPanel,
+    DeviceButtonsPanel,
     EventRateTracker,
     EventsPanel,
     GroupsPanel,
@@ -35,6 +36,7 @@ from sketchatone.ui.panel_widgets import (
     compute_dirty,
     extract_action_rules,
     extract_chord_progressions,
+    extract_device_buttons,
     extract_parameter_mapping,
     extract_server_state,
     extract_slide,
@@ -165,6 +167,12 @@ class TestMakePanel:
             ServerSettingsPanel,
         )
 
+    def test_device_buttons_panel_factory(self):
+        assert isinstance(
+            make_panel('deviceButtons', 'Device Buttons', bridge=None),
+            DeviceButtonsPanel,
+        )
+
 
 class TestEventsPanelSubscription:
     def test_tablet_event_updates_header_and_values(self):
@@ -214,8 +222,8 @@ class TestPerformancePanelSubscription:
         b._emit('config', self._config_event(
             rules=[
                 {'button': 'button:primary', 'action': 'mute'},
-                {'button': 'button:1', 'action': 'C-major'},
-                {'button': 'button:2', 'action': 'A-minor'},
+                {'button': 'code:1', 'action': 'C-major'},
+                {'button': 'code:2', 'action': 'A-minor'},
             ],
         ))
         assert set(panel._stylus_chips.keys()) == {'primary'}
@@ -226,11 +234,11 @@ class TestPerformancePanelSubscription:
         panel = PerformancePanel(bridge=b)
         b._emit('config', self._config_event(
             rules=[
-                {'button': 'button:1', 'action': 'C-major'},
+                {'button': 'code:1', 'action': 'C-major'},
                 {'button': 'button:primary', 'action': 'mute'},
             ],
         ))
-        ev = TabletEventData(primaryButtonPressed=True, buttons={'button1': True})
+        ev = TabletEventData(primaryButtonPressed=True, auxCodes=[1])
         b._emit('tablet', ev)
         assert panel._button_chips[1]._active is True
         assert panel._stylus_chips['primary']._active is True
@@ -791,13 +799,9 @@ class TestComputeDirty:
 
 def _make_server_bridge():
     b = UIBridge()
-    b._save_calls = 0  # type: ignore[attr-defined]
     b._load_calls = []  # type: ignore[attr-defined]
     b._create_calls = []  # type: ignore[attr-defined]
     b._throttle_calls = []  # type: ignore[attr-defined]
-
-    def _save():
-        b._save_calls += 1  # type: ignore[attr-defined]
 
     def _load(name):
         b._load_calls.append(name)  # type: ignore[attr-defined]
@@ -807,7 +811,6 @@ def _make_server_bridge():
 
     def _set_throttle(value):
         b._throttle_calls.append(value)  # type: ignore[attr-defined]
-    b.save_config = _save  # type: ignore[assignment]
     b.load_config = _load  # type: ignore[assignment]
     b.create_config = _create  # type: ignore[assignment]
     b.set_throttle = _set_throttle  # type: ignore[assignment]
@@ -828,11 +831,11 @@ def _emit_server_config(b: UIBridge, *, current='default.json',
 
 
 class TestServerSettingsPanel:
-    def test_initial_save_button_disabled(self):
+    def test_initial_state_has_no_current_config(self):
         b = _make_server_bridge()
         panel = ServerSettingsPanel(bridge=b)
-        assert panel._save_btn.disabled is True
         assert panel._current_name is None
+        assert '(none)' in panel._status.text
 
     def test_config_event_populates_list_and_marks_active(self):
         b = _make_server_bridge()
@@ -846,43 +849,11 @@ class TestServerSettingsPanel:
         assert any(n.startswith('● ') and 'default.json' in n for n in names)
         assert any(n.startswith('○ ') and 'jazz.json' in n for n in names)
 
-    def test_saved_state_clears_dirty(self):
+    def test_config_event_updates_status_label(self):
         b = _make_server_bridge()
         panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b)
-        assert panel._dirty is False
-        assert panel._save_btn.disabled is True
-
-    def test_unsaved_change_enables_save(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        # First broadcast establishes the saved snapshot.
-        _emit_server_config(b, is_saved=True)
-        # A subsequent update broadcast carries a mutated config but
-        # isSavedState=False; the panel should flip dirty + enable save.
-        _emit_server_config(b, is_saved=False, extra={'mutated': True})
-        assert panel._dirty is True
-        assert panel._save_btn.disabled is False
-        assert '•' in panel._status.text
-
-    def test_save_button_triggers_bridge(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, is_saved=True)
-        _emit_server_config(b, is_saved=False, extra={'mutated': True})
-        panel._save_btn.dispatch('on_release')
-        assert b._save_calls == 1
-
-    def test_save_disabled_when_clean(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, is_saved=True)
-        # Disabled button should not invoke save_config when clicked
-        # (Kivy still dispatches on_release on disabled buttons in tests,
-        # so guard via our own enabled state):
-        if not panel._save_btn.disabled:
-            panel._save_btn.dispatch('on_release')
-        assert b._save_calls == 0
+        _emit_server_config(b, current='jazz.json')
+        assert panel._status.text == 'Current: jazz.json'
 
     def test_clicking_config_loads_it(self):
         b = _make_server_bridge()
@@ -1561,3 +1532,180 @@ class TestChordProgressionsPanel:
         panel = make_panel('chordProgressions', 'Chord Progressions',
                            bridge=None)
         assert isinstance(panel, ChordProgressionsPanel)
+
+
+
+def _emit_device_buttons(bridge: UIBridge, *, buttons=None, keys=None):
+    bridge._emit('config', {
+        'config': {'deviceButtons': {
+            'buttons': list(buttons or []),
+            'keys': list(keys or []),
+        }},
+    })
+
+
+class TestExtractDeviceButtons:
+    def test_missing_payload_returns_empty(self):
+        assert extract_device_buttons(None) == {'buttons': [], 'keys': []}
+
+    def test_extracts_buttons_and_keys(self):
+        out = extract_device_buttons({'config': {'deviceButtons': {
+            'buttons': [{'code': 331, 'name': 'Big'}],
+            'keys': [{'key': 'a', 'name': 'Alpha'}],
+        }}})
+        assert out == {'buttons': [{'code': 331, 'name': 'Big'}],
+                       'keys': [{'key': 'a', 'name': 'Alpha'}]}
+
+    def test_supplies_default_names_when_missing(self):
+        out = extract_device_buttons({'config': {'deviceButtons': {
+            'buttons': [{'code': 42}],
+            'keys': [{'key': 'q'}],
+        }}})
+        assert out['buttons'] == [{'code': 42, 'name': 'Button 42'}]
+        assert out['keys'] == [{'key': 'q', 'name': 'Key Q'}]
+
+    def test_skips_malformed_entries(self):
+        out = extract_device_buttons({'config': {'deviceButtons': {
+            'buttons': [{'code': 'nope'}, None, {'code': 7, 'name': 'ok'}],
+            'keys': [{'key': ''}, 'bad', {'key': 'z'}],
+        }}})
+        assert [b['code'] for b in out['buttons']] == [7]
+        assert [k['key'] for k in out['keys']] == ['z']
+
+
+class TestDeviceButtonsPanel:
+    def test_config_event_populates_lists(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b,
+            buttons=[{'code': 5, 'name': 'A'}],
+            keys=[{'key': 'x', 'name': 'X'}])
+        assert panel._buttons == [{'code': 5, 'name': 'A'}]
+        assert panel._keys == [{'key': 'x', 'name': 'X'}]
+
+    def test_delete_button_by_index(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b, buttons=[
+            {'code': 1, 'name': 'A'},
+            {'code': 2, 'name': 'B'},
+        ])
+        panel._delete_button(0)
+        assert b._cfg_calls[-1] == (
+            'deviceButtons.buttons', [{'code': 2, 'name': 'B'}])
+
+    def test_delete_key_by_index(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b, keys=[
+            {'key': 'a', 'name': 'A'},
+            {'key': 'b', 'name': 'B'},
+        ])
+        panel._delete_key(1)
+        assert b._cfg_calls[-1] == (
+            'deviceButtons.keys', [{'key': 'a', 'name': 'A'}])
+
+    def test_delete_out_of_range_is_noop(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b, buttons=[{'code': 1, 'name': 'A'}])
+        panel._delete_button(9)
+        assert b._cfg_calls == []
+
+    def test_clear_buttons(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b, buttons=[{'code': 1, 'name': 'A'}])
+        panel._clear_buttons()
+        assert b._cfg_calls[-1] == ('deviceButtons.buttons', [])
+
+    def test_clear_keys(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        _emit_device_buttons(b, keys=[{'key': 'z', 'name': 'Z'}])
+        panel._clear_keys()
+        assert b._cfg_calls[-1] == ('deviceButtons.keys', [])
+
+    def test_toggle_detection_calls_bridge(self):
+        b = _make_cfg_bridge()
+        calls: list = []
+        b.set_button_detection = calls.append  # type: ignore[assignment]
+        panel = DeviceButtonsPanel(bridge=b)
+        panel._toggle_detection()
+        assert calls == [True]
+        panel._detecting = True
+        panel._toggle_detection()
+        assert calls == [True, False]
+
+    def test_detection_state_event_updates_flag(self):
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        b._emit('button-detection-state', {'enabled': True})
+        assert panel._detecting is True
+        b._emit('button-detection-state', {'enabled': False})
+        assert panel._detecting is False
+
+    def test_unmount_disables_active_detection(self):
+        # Panels persist across tab switches; leaving detection on while
+        # navigating away would keep learning stray inputs. When the
+        # widget is detached and detection is currently on, the panel
+        # must turn it off via the bridge.
+        b = _make_cfg_bridge()
+        calls: list = []
+        b.set_button_detection = calls.append  # type: ignore[assignment]
+        panel = DeviceButtonsPanel(bridge=b)
+        b._emit('button-detection-state', {'enabled': True})
+        panel.on_parent(panel, None)
+        assert calls == [False]
+
+    def test_unmount_is_noop_when_detection_off(self):
+        b = _make_cfg_bridge()
+        calls: list = []
+        b.set_button_detection = calls.append  # type: ignore[assignment]
+        panel = DeviceButtonsPanel(bridge=b)
+        panel.on_parent(panel, None)
+        assert calls == []
+
+    def test_render_sweep_across_states(self):
+        # Full-layout smoke test: initial empty + idle, populated + idle,
+        # populated + detecting. Walks the widget tree so any layout
+        # regression in the builder helpers surfaces here.
+        from kivy.uix.label import Label
+
+        def label_texts(widget) -> list:
+            out: list = []
+            for child in getattr(widget, 'children', ()):
+                if isinstance(child, Label):
+                    out.append(child.text)
+                out.extend(label_texts(child))
+            return out
+
+        b = _make_cfg_bridge()
+        panel = DeviceButtonsPanel(bridge=b)
+        # Empty + idle: section headers, both empty-row hints, no footer.
+        texts = label_texts(panel)
+        assert 'TABLET BUTTONS' in texts
+        assert 'KEYBOARD KEYS' in texts
+        assert any('Detect' in t for t in texts)
+        assert any('No buttons observed' in t for t in texts)
+        assert any('No keys observed' in t for t in texts)
+
+        # Populated + idle: rows render with code + name; footer clears appear.
+        _emit_device_buttons(b,
+            buttons=[{'code': 331, 'name': 'Big'}],
+            keys=[{'key': 'a', 'name': 'Alpha'}])
+        texts = label_texts(panel)
+        assert 'code:331' in texts and 'Big' in texts
+        assert 'key:a' in texts and 'Alpha' in texts
+        button_texts = [c.text for c in panel.walk()
+                        if isinstance(c, Button) and c.text]
+        assert 'Clear Buttons' in button_texts
+        assert 'Clear Keys' in button_texts
+
+        # Populated + detecting: pill flips label + hint.
+        b._emit('button-detection-state', {'enabled': True})
+        texts = label_texts(panel)
+        assert any('Listening' in t for t in texts)
+        button_texts = [c.text for c in panel.walk()
+                        if isinstance(c, Button) and c.text]
+        assert 'Stop Detecting' in button_texts

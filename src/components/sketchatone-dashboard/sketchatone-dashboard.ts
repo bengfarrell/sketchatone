@@ -14,8 +14,8 @@ import { styles } from './sketchatone-dashboard.styles.js';
 // Spectrum components
 import '../../design-system/components/sketch-dialog.js';
 
-// Blankslate visualizer components
-import 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
+// Tablet visualizer component
+import '../tablet-visualizer/tablet-visualizer.js';
 
 // Strum visualizer components
 import '../strum-visualizers/curve-visualizer.js';
@@ -38,6 +38,9 @@ import '../server-settings-panel/server-settings-panel.js';
 // Chord progressions component
 import '../chord-progression-creator/chord-progression-creator.js';
 
+// Device buttons management panel
+import '../device-buttons-panel/device-buttons-panel.js';
+
 // Panel visibility management
 import './panel-toggle-bar.js';
 import {
@@ -49,12 +52,12 @@ import {
   savePanelVisibility
 } from './panel-visibility.js';
 
-// Blankslate utilities
+// Tablet data utilities
 import {
   normalizeTabletData,
   formatValue,
   type TabletData,
-} from 'blankslate';
+} from '../../utils/tablet-data.js';
 
 // Local WebSocket client with config update support
 import {
@@ -118,6 +121,9 @@ export class SketchatoneDashboard extends LitElement {
   private pressedButtons: Set<number> = new Set();
 
   @state()
+  private pressedKeys: Set<string> = new Set();
+
+  @state()
   private lastPressedButton: number | null = null;
 
   @state()
@@ -150,9 +156,6 @@ export class SketchatoneDashboard extends LitElement {
 
   @state()
   private newConfigName = '';
-
-  // Track saved config state for dirty detection
-  private savedConfigSnapshot: string | null = null;
 
   // Panel visibility state (persisted to localStorage)
   @state()
@@ -194,6 +197,9 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private midiPassthroughConnections: Array<{ inputPort: number | string; outputPort: number | string }> = [];
 
+  @state()
+  private loopbackInputPortIds: Array<number | string> = [];
+
   // Version info
   @state()
   private serverVersion: string | null = null;
@@ -209,6 +215,11 @@ export class SketchatoneDashboard extends LitElement {
 
   @state()
   private groupsFormState: { open: boolean; title: string } = { open: false, title: '' };
+
+  // Ephemeral server-side flag mirrored from 'button-detection-state' broadcasts.
+  // When true, the server is auto-appending unknown aux codes to deviceButtons.
+  @state()
+  private detectingDeviceButtons: boolean = false;
 
   // UI version injected at build time
   private readonly uiVersion = __UI_VERSION__;
@@ -265,10 +276,6 @@ export class SketchatoneDashboard extends LitElement {
       // Update config management state
       this.currentConfigName = config.currentConfigName;
       this.availableConfigs = config.availableConfigs ?? [];
-      // Only update snapshot when this is a saved state (after load/save/create), not after updates
-      if (config.isSavedState) {
-        this.savedConfigSnapshot = config.config ? JSON.stringify(config.config) : null;
-      }
     });
 
     this.client.onCombinedEvent((data: CombinedEventData) => {
@@ -296,6 +303,7 @@ export class SketchatoneDashboard extends LitElement {
       this.currentMidiInputPorts = devices.currentInputPorts;
       this.currentMidiOutputPort = devices.currentOutputPort;
       this.midiPassthroughConnections = devices.passthroughConnections ?? [];
+      this.loopbackInputPortIds = devices.loopbackInputPortIds ?? [];
 
       // Update MIDI Input panel status based on whether any input ports are connected
       this.serverMidiConnected = devices.currentInputPorts.length > 0;
@@ -353,6 +361,12 @@ export class SketchatoneDashboard extends LitElement {
       }
     });
 
+    // Mirror the server's ephemeral button-detection flag so the panel button
+    // reflects the true state (including across multiple browser tabs).
+    this.client.on('button-detection-state', (data: any) => {
+      this.detectingDeviceButtons = Boolean(data?.enabled);
+    });
+
   }
 
   private handleTabletData(data: CombinedEventData) {
@@ -362,9 +376,11 @@ export class SketchatoneDashboard extends LitElement {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.tabletData = normalizeTabletData(data as any);
 
-    // Extract pressed buttons from individual button fields
-    // The server sends button1, button2, etc. as booleans
+    // Extract pressed auxiliary tablet buttons from the auxCodes array (HID scan codes)
     this.pressedButtons = this.extractButtonsFromData(data);
+
+    // Extract pressed keyboard keys from the pressedKeys array
+    this.pressedKeys = this.extractKeysFromData(data);
 
     // Track last pressed button for display
     if (this.pressedButtons.size > 0) {
@@ -386,6 +402,7 @@ export class SketchatoneDashboard extends LitElement {
 
     // Create event for display
     const event: StrumTabletEvent = {
+      type: 'tablet-data',
       timestamp: Date.now(),
       x: this.tabletData.x,
       y: this.tabletData.y,
@@ -395,15 +412,9 @@ export class SketchatoneDashboard extends LitElement {
       tiltXY: this.tabletData.tiltXY,
       primaryButtonPressed: this.tabletData.primaryButtonPressed,
       secondaryButtonPressed: this.tabletData.secondaryButtonPressed,
-      state: data.state,
+      state: data.state === 'out-of-range' ? 'none' : data.state,
+      auxCodes: Array.isArray(data.auxCodes) ? [...data.auxCodes] : [],
     };
-    // Dynamically include all tablet hardware button states
-    for (let i = 1; i <= 30; i++) {
-      const buttonKey = `button${i}` as keyof typeof data;
-      if (data[buttonKey] !== undefined) {
-        (event as unknown as Record<string, unknown>)[`button${i}`] = data[buttonKey];
-      }
-    }
 
     // Check for strum data in the combined event
     if (data.strum) {
@@ -531,13 +542,6 @@ export class SketchatoneDashboard extends LitElement {
     a.download = 'strummer-config.json';
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  /**
-   * Save configuration to the server's config file
-   */
-  private handleSaveConfig(): void {
-    this.client.saveConfig();
   }
 
   /**
@@ -694,27 +698,30 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
-   * Check if the current config has unsaved changes
+   * Extract pressed tablet hardware buttons from combined event data.
+   * The server sends `auxCodes: number[]` — raw HID scan codes of the buttons
+   * that are currently held.
    */
-  private get hasUnsavedChanges(): boolean {
-    if (!this.strummerConfig?.config || !this.savedConfigSnapshot) return false;
-    const currentSnapshot = JSON.stringify(this.strummerConfig.config);
-    return currentSnapshot !== this.savedConfigSnapshot;
+  private extractButtonsFromData(data: CombinedEventData): Set<number> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const codes = (data as any).auxCodes;
+    if (Array.isArray(codes)) {
+      return new Set<number>(codes.filter((n) => typeof n === 'number'));
+    }
+    return new Set<number>();
   }
 
   /**
-   * Extract pressed tablet hardware buttons from combined event data
-   * The server sends button1, button2, etc. as boolean fields
+   * Extract currently-held keyboard keys from combined event data. The server
+   * sends `pressedKeys: string[]` with normalized characters (e.g. "a", "1").
    */
-  private extractButtonsFromData(data: CombinedEventData): Set<number> {
-    const pressed = new Set<number>();
+  private extractKeysFromData(data: CombinedEventData): Set<string> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d = data as any;
-    // Dynamically check all button properties (supports tablets with any number of buttons)
-    for (let i = 1; i <= 30; i++) {
-      if (d[`button${i}`]) pressed.add(i);
+    const keys = (data as any).pressedKeys;
+    if (Array.isArray(keys)) {
+      return new Set<string>(keys.filter((k) => typeof k === 'string' && k.length > 0));
     }
-    return pressed;
+    return new Set<string>();
   }
 
   /**
@@ -797,6 +804,76 @@ export class SketchatoneDashboard extends LitElement {
   private getActionRulesConfig(): ActionRulesConfig | undefined {
     if (!this.fullConfig?.strummer?.actionRules) return undefined;
     return ActionRulesConfig.fromDict(this.fullConfig.strummer.actionRules as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Read the persisted device-buttons list from the loaded config.
+   */
+  private getDeviceButtons(): { code: number; name: string }[] {
+    const raw = (this.fullConfig as any)?.deviceButtons?.buttons;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((b: any) => typeof b?.code === 'number').map((b: any) => ({
+      code: b.code,
+      name: typeof b.name === 'string' && b.name.length > 0 ? b.name : `Button ${b.code}`,
+    }));
+  }
+
+  /** Set of persisted aux HID codes; used by action-rules-config for chip/dropdown visibility. */
+  private getDeviceButtonCodes(): Set<number> {
+    return new Set(this.getDeviceButtons().map(b => b.code));
+  }
+
+  /**
+   * Read the persisted device-keys list from the loaded config.
+   */
+  private getDeviceKeys(): { key: string; name: string }[] {
+    const raw = (this.fullConfig as any)?.deviceButtons?.keys;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((k: any) => typeof k?.key === 'string' && k.key.length > 0)
+      .map((k: any) => ({
+        key: k.key,
+        name: typeof k.name === 'string' && k.name.length > 0 ? k.name : `Key ${(k.key as string).toUpperCase()}`,
+      }));
+  }
+
+  /** Set of persisted keyboard-key characters; used by action-rules-config for chip/dropdown visibility. */
+  private getDeviceKeyChars(): Set<string> {
+    return new Set(this.getDeviceKeys().map(k => k.key));
+  }
+
+  /** Map from ButtonId (e.g. "code:66049", "key:a") to friendly name. */
+  private getDeviceButtonLabels(): Record<string, string> {
+    const labels: Record<string, string> = {};
+    for (const b of this.getDeviceButtons()) {
+      labels[`code:${b.code}`] = b.name;
+    }
+    for (const k of this.getDeviceKeys()) {
+      labels[`key:${k.key}`] = k.name;
+    }
+    return labels;
+  }
+
+  /**
+   * Handle update-config events from the device-buttons panel.
+   */
+  private handleDeviceButtonsUpdate(e: CustomEvent) {
+    const { path, value } = e.detail as { path: string; value: unknown };
+    this.updateConfig(path, value);
+  }
+
+  /**
+   * Handle toggle-button-detection events from the device-buttons panel.
+   * Sends the request to the server; the resulting state is applied via the
+   * 'button-detection-state' broadcast subscription.
+   */
+  private handleToggleButtonDetection(e: CustomEvent) {
+    const { enabled } = e.detail as { enabled: boolean };
+    if (this.client instanceof StrummerWebSocketClient) {
+      this.client.setButtonDetection(enabled);
+    } else {
+      this.detectingDeviceButtons = enabled;
+    }
   }
 
   /**
@@ -916,9 +993,13 @@ export class SketchatoneDashboard extends LitElement {
     if (this.tabletData.secondaryButtonPressed) {
       buttonIds.add('button:secondary');
     }
-    // Add tablet buttons
-    for (const buttonNum of this.pressedButtons) {
-      buttonIds.add(`button:${buttonNum}` as ButtonId);
+    // Add auxiliary tablet buttons (identified by raw HID scan code)
+    for (const code of this.pressedButtons) {
+      buttonIds.add(`code:${code}` as ButtonId);
+    }
+    // Add keyboard keys (identified by character)
+    for (const key of this.pressedKeys) {
+      buttonIds.add(`key:${key}` as ButtonId);
     }
     return buttonIds;
   }
@@ -1081,9 +1162,6 @@ export class SketchatoneDashboard extends LitElement {
                     `)}
                   </select>
                 ` : ''}
-                <sketch-button size="s" variant="primary" ?disabled=${!this.websocketConnected || !this.hasUnsavedChanges} @click=${this.handleSaveConfig}>
-                  Save
-                </sketch-button>
                 <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected} @click=${() => { this.newConfigName = ''; this.showNewConfigDialog = true; }} title="New Config">
                   <sketch-icon slot="icon" name="add"></sketch-icon>
                 </sketch-button>
@@ -1508,7 +1586,9 @@ export class SketchatoneDashboard extends LitElement {
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .triggeredActions=${this.triggeredActions}
-                .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
+                .knownAuxCodes=${this.getDeviceButtonCodes()}
+                .knownKeys=${this.getDeviceKeyChars()}
+                .buttonLabels=${this.getDeviceButtonLabels()}
                 .hasPrimaryButton=${true}
                 .hasSecondaryButton=${true}
                 @config-change=${this.handleActionRulesConfigChange}
@@ -1539,12 +1619,28 @@ export class SketchatoneDashboard extends LitElement {
                 .config=${this.getActionRulesConfig()}
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
-                .buttonCount=${this.strummerConfig?.deviceCapabilities?.buttonCount ?? 8}
+                .knownAuxCodes=${this.getDeviceButtonCodes()}
+                .knownKeys=${this.getDeviceKeyChars()}
+                .buttonLabels=${this.getDeviceButtonLabels()}
                 .hasPrimaryButton=${true}
                 .hasSecondaryButton=${true}
                 @config-change=${this.handleActionRulesConfigChange}
                 @form-state-change=${(e: CustomEvent) => (this.groupsFormState = e.detail)}
               ></action-rules-config>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Device Buttons Panel -->
+          ${vis.deviceButtons ? html`
+            <dashboard-panel title="Device Buttons" panelId="deviceButtons" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('deviceButtons')}>
+              <device-buttons-panel
+                .buttons=${this.getDeviceButtons()}
+                .keys=${this.getDeviceKeys()}
+                .detecting=${this.detectingDeviceButtons}
+                @update-config=${this.handleDeviceButtonsUpdate}
+                @toggle-button-detection=${this.handleToggleButtonDetection}
+              ></device-buttons-panel>
             </dashboard-panel>
           ` : ''}
 
@@ -1592,6 +1688,7 @@ export class SketchatoneDashboard extends LitElement {
                 .currentInputPorts=${this.currentMidiInputPorts}
                 .currentOutputPort=${this.currentMidiOutputPort}
                 .passthroughConnections=${this.midiPassthroughConnections}
+                .loopbackInputPortIds=${this.loopbackInputPortIds}
                 @refresh-devices=${this.handleMidiDevicesRefresh}
                 @apply-devices=${this.handleMidiDevicesApply}>
               </midi-devices-config>

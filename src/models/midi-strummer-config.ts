@@ -21,55 +21,35 @@ import { StrumReleaseConfig } from './strummer-features.js';
 
 /**
  * Keyboard input configuration data
+ *
+ * The global keyboard listener emits `key:<char>` events directly; per-key
+ * labels live under `deviceButtons.keys`. This section only gates whether
+ * the listener runs at all.
  */
 export interface KeyboardConfigData {
-  /** Map keyboard keys to button IDs (e.g., {"1": "button:1", "2": "button:2"}) */
-  mappings: Record<string, string>;
+  /** When true, the global keyboard listener starts with the server. */
+  enabled: boolean;
 }
 
-/**
- * Default keyboard configuration
- */
 export const DEFAULT_KEYBOARD_CONFIG: KeyboardConfigData = {
-  mappings: {},
+  enabled: true,
 };
 
-/**
- * Keyboard configuration class
- *
- * The presence of this config section enables the keyboard listener.
- * To disable, remove the "keyboard" section from config or set mappings to empty.
- */
 export class KeyboardConfig implements KeyboardConfigData {
-  mappings: Record<string, string>;
+  enabled: boolean;
 
   constructor(data: Partial<KeyboardConfigData> = {}) {
-    this.mappings = data.mappings ?? { ...DEFAULT_KEYBOARD_CONFIG.mappings };
+    this.enabled = data.enabled ?? DEFAULT_KEYBOARD_CONFIG.enabled;
   }
 
-  /**
-   * Keyboard is enabled if there are any mappings
-   */
-  get enabled(): boolean {
-    return Object.keys(this.mappings).length > 0;
-  }
-
-  /**
-   * Create from dictionary
-   */
   static fromDict(data: Record<string, unknown>): KeyboardConfig {
     return new KeyboardConfig({
-      mappings: data.mappings as Record<string, string> | undefined,
+      enabled: (data.enabled ?? DEFAULT_KEYBOARD_CONFIG.enabled) as boolean,
     });
   }
 
-  /**
-   * Convert to dictionary for JSON serialization
-   */
   toDict(): KeyboardConfigData {
-    return {
-      mappings: this.mappings,
-    };
+    return { enabled: this.enabled };
   }
 }
 
@@ -201,6 +181,8 @@ export interface MidiConfigData {
   useVirtualPorts: boolean;
   /** List of port name patterns to exclude from MIDI input auto-connect */
   inputExclude: string[];
+  /** List of port name patterns to hide from the MIDI output picker (case-insensitive substring match) */
+  outputExclude: string[];
   /** Name for JACK client (default: "sketchatone") */
   jackClientName: string;
   /** JACK auto-connect mode (default: "chain0") */
@@ -228,6 +210,17 @@ export const DEFAULT_MIDI_INPUT_EXCLUDE: string[] = [
 ];
 
 /**
+ * Default MIDI output exclusion patterns.
+ * Hides our own MidiIn client from the output picker so users can't
+ * accidentally route Sketchatone into itself (the loopback footgun).
+ * Midi Through is intentionally NOT excluded here: it's a legitimate
+ * output target for chaining into another app.
+ */
+export const DEFAULT_MIDI_OUTPUT_EXCLUDE: string[] = [
+  'sketchatone',      // Our own MidiIn client (shows up as a writable sink)
+];
+
+/**
  * Default MIDI configuration
  */
 export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
@@ -238,6 +231,7 @@ export const DEFAULT_MIDI_CONFIG: MidiConfigData = {
   channel: 0,
   useVirtualPorts: false,
   inputExclude: DEFAULT_MIDI_INPUT_EXCLUDE,
+  outputExclude: DEFAULT_MIDI_OUTPUT_EXCLUDE,
   jackClientName: 'sketchatone',
   jackAutoConnect: 'chain0',
   defaultNoteDuration: 1.5,
@@ -256,6 +250,7 @@ export class MidiConfig implements MidiConfigData {
   channel: number;
   useVirtualPorts: boolean;
   inputExclude: string[];
+  outputExclude: string[];
   jackClientName: string;
   jackAutoConnect: string | null;
   defaultNoteDuration: number;
@@ -270,6 +265,7 @@ export class MidiConfig implements MidiConfigData {
     this.channel = data.channel ?? DEFAULT_MIDI_CONFIG.channel;
     this.useVirtualPorts = data.useVirtualPorts ?? DEFAULT_MIDI_CONFIG.useVirtualPorts;
     this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
+    this.outputExclude = data.outputExclude ?? [...DEFAULT_MIDI_OUTPUT_EXCLUDE];
     this.jackClientName = data.jackClientName ?? DEFAULT_MIDI_CONFIG.jackClientName;
     this.jackAutoConnect = data.jackAutoConnect ?? DEFAULT_MIDI_CONFIG.jackAutoConnect;
     this.defaultNoteDuration = data.defaultNoteDuration ?? DEFAULT_MIDI_CONFIG.defaultNoteDuration;
@@ -292,6 +288,7 @@ export class MidiConfig implements MidiConfigData {
       channel: data.channel as number | undefined,
       useVirtualPorts: (data.use_virtual_ports ?? data.useVirtualPorts) as boolean | undefined,
       inputExclude: (data.input_exclude ?? data.inputExclude ?? data.midi_input_exclude ?? data.midiInputExclude) as string[] | undefined,
+      outputExclude: (data.output_exclude ?? data.outputExclude ?? data.midi_output_exclude ?? data.midiOutputExclude) as string[] | undefined,
       jackClientName: (data.jack_client_name ?? data.jackClientName ?? 'sketchatone') as string,
       jackAutoConnect: (data.jack_auto_connect ?? data.jackAutoConnect ?? 'chain0') as string | null | undefined,
       defaultNoteDuration: (data.default_note_duration ?? data.defaultNoteDuration ?? data.note_duration ?? data.noteDuration) as number | undefined,
@@ -312,11 +309,86 @@ export class MidiConfig implements MidiConfigData {
       channel: this.channel,
       useVirtualPorts: this.useVirtualPorts,
       inputExclude: this.inputExclude,
+      outputExclude: this.outputExclude,
       jackClientName: this.jackClientName,
       jackAutoConnect: this.jackAutoConnect,
       defaultNoteDuration: this.defaultNoteDuration,
       midiInterMessageDelay: this.midiInterMessageDelay,
       midiPassthrough: this.midiPassthrough,
+    };
+  }
+}
+
+/**
+ * A single physical device button with its HID scan code and a user-editable name
+ */
+export interface DeviceButtonData {
+  code: number;
+  name: string;
+}
+
+/**
+ * A single keyboard key captured by the global keyboard listener, with a
+ * user-editable name. Referenced by action rules as `key:<char>`.
+ */
+export interface DeviceKeyData {
+  key: string;
+  name: string;
+}
+
+/**
+ * Device buttons configuration data
+ */
+export interface DeviceButtonsConfigData {
+  /** Ordered list of known device buttons (HID aux codes) */
+  buttons: DeviceButtonData[];
+  /** Ordered list of known keyboard keys */
+  keys: DeviceKeyData[];
+}
+
+export const DEFAULT_DEVICE_BUTTONS_CONFIG: DeviceButtonsConfigData = {
+  buttons: [],
+  keys: [],
+};
+
+/**
+ * Device buttons configuration class
+ */
+export class DeviceButtonsConfig implements DeviceButtonsConfigData {
+  buttons: DeviceButtonData[];
+  keys: DeviceKeyData[];
+
+  constructor(data: Partial<DeviceButtonsConfigData> = {}) {
+    this.buttons = data.buttons ? data.buttons.map(b => ({ code: b.code, name: b.name })) : [];
+    this.keys = data.keys ? data.keys.map(k => ({ key: k.key, name: k.name })) : [];
+  }
+
+  static fromDict(data: Record<string, unknown>): DeviceButtonsConfig {
+    const rawButtons = (data.buttons ?? []) as Array<Record<string, unknown>>;
+    const buttons: DeviceButtonData[] = rawButtons
+      .filter(b => typeof b.code === 'number')
+      .map(b => ({
+        code: b.code as number,
+        name: (typeof b.name === 'string' && b.name.length > 0)
+          ? (b.name as string)
+          : `Button ${(b.code as number)}`,
+      }));
+    const rawKeys = (data.keys ?? []) as Array<Record<string, unknown>>;
+    const keys: DeviceKeyData[] = rawKeys
+      .filter(k => typeof k.key === 'string' && (k.key as string).length > 0)
+      .map(k => ({
+        key: k.key as string,
+        name: (typeof k.name === 'string' && k.name.length > 0)
+          ? (k.name as string)
+          : `Key ${(k.key as string).toUpperCase()}`,
+      }));
+    return new DeviceButtonsConfig({ buttons, keys });
+  }
+
+  toDict(): DeviceButtonsConfigData {
+    return {
+      buttons: this.buttons.map(b => ({ code: b.code, name: b.name })),
+      keys: this.keys.map(k => ({ key: k.key, name: k.name })),
     };
   }
 }
@@ -329,6 +401,7 @@ export interface MidiStrummerConfigData {
   midi: MidiConfigData;
   keyboard?: KeyboardConfigData;
   server: ServerConfigData;
+  deviceButtons: DeviceButtonsConfigData;
 }
 
 /**
@@ -345,17 +418,20 @@ export class MidiStrummerConfig {
   private _midi: MidiConfig;
   private _keyboard: KeyboardConfig;
   private _server: ServerConfig;
+  private _deviceButtons: DeviceButtonsConfig;
 
   constructor(data: {
     strummer?: StrummerConfig;
     midi?: MidiConfig;
     keyboard?: KeyboardConfig;
     server?: ServerConfig;
+    deviceButtons?: DeviceButtonsConfig;
   } = {}) {
     this._strummer = data.strummer ?? new StrummerConfig();
     this._midi = data.midi ?? new MidiConfig();
     this._keyboard = data.keyboard ?? new KeyboardConfig();
     this._server = data.server ?? new ServerConfig();
+    this._deviceButtons = data.deviceButtons ?? new DeviceButtonsConfig();
   }
 
   // Strummer config accessors
@@ -449,6 +525,11 @@ export class MidiStrummerConfig {
     return this._server.deviceFindingPollInterval;
   }
 
+  // Device buttons accessor
+  get deviceButtons(): DeviceButtonsConfig {
+    return this._deviceButtons;
+  }
+
   // Backward compatibility properties
   get pressureThreshold(): number {
     return this._strummer.pressureThreshold;
@@ -502,6 +583,7 @@ export class MidiStrummerConfig {
     let midiData: Record<string, unknown>;
     let keyboardData: Record<string, unknown>;
     let serverData: Record<string, unknown>;
+    const deviceButtonsData = (data.device_buttons ?? data.deviceButtons ?? {}) as Record<string, unknown>;
 
     if (hasStrummerKey) {
       // Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...} }
@@ -516,11 +598,13 @@ export class MidiStrummerConfig {
       keyboardData = (data.keyboard ?? {}) as Record<string, unknown>;
       serverData = (data.server ?? {}) as Record<string, unknown>;
 
-      // Everything else goes to strummer (excluding midi, keyboard, and server)
+      // Everything else goes to strummer (excluding midi, keyboard, server, deviceButtons)
       strummerData = { ...data };
       delete strummerData.midi;
       delete strummerData.keyboard;
       delete strummerData.server;
+      delete strummerData.device_buttons;
+      delete strummerData.deviceButtons;
     }
 
     return new MidiStrummerConfig({
@@ -536,6 +620,9 @@ export class MidiStrummerConfig {
       server: Object.keys(serverData).length > 0
         ? ServerConfig.fromDict(serverData)
         : new ServerConfig(),
+      deviceButtons: Object.keys(deviceButtonsData).length > 0
+        ? DeviceButtonsConfig.fromDict(deviceButtonsData)
+        : new DeviceButtonsConfig(),
     });
   }
 
@@ -556,12 +643,10 @@ export class MidiStrummerConfig {
       strummer: this._strummer.toDict(),
       midi: this._midi.toDict(),
       server: this._server.toDict(),
+      deviceButtons: this._deviceButtons.toDict(),
     };
 
-    // Only include keyboard config if it has mappings
-    if (this._keyboard.enabled) {
-      result.keyboard = this._keyboard.toDict();
-    }
+    result.keyboard = this._keyboard.toDict();
 
     return result;
   }

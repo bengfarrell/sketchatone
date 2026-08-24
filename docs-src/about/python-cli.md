@@ -20,8 +20,6 @@ pip install -e .
 ```
 
 > **Note:** The `pip install --upgrade pip setuptools` step is required if your venv ships with an older pip (< 21.3). Editable installs of this project need pip ≥ 21.3 and setuptools ≥ 64, since the project uses `pyproject.toml` without a `setup.py`.
->
-> The `pip install -e .` step will also fetch and build [blankslate](https://github.com/bengfarrell/blankslate) from GitHub, since it's declared as a git dependency in `pyproject.toml`. No separate clone is required.
 
 ### Optional: JACK MIDI backend
 
@@ -57,7 +55,7 @@ python -m sketchatone.cli.midi_strummer [options]
 to start the Kivy app:
 ```bash
 sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
-    -s public/configs/default.json
+    -c public/configs/default.json
 ```
 
 To enable hot reload of the UI while editing (rebuilds the widget tree in place on save via [Kaki](https://github.com/tito/kaki), keeping the bridge/WebSocket/HID reader alive across reloads), first install the optional extra:
@@ -69,9 +67,9 @@ pip install -e ".[hotreload]"
 then pass `--hot-reload`:
 
 ```bash
-sudo ./venv/bin/python -u -m sketchatone.cli.ui \                      
+sudo ./venv/bin/python -u -m sketchatone.cli.ui \
     --hot-reload --throttle 33 \
-    -s public/configs/default.json \
+    -c public/configs/default.json \
     --enable-ws
 ```
 

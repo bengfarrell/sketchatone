@@ -27,7 +27,7 @@ class TestUIBridgeSubscription:
     def test_event_names_are_documented(self):
         assert set(EVENT_NAMES) == {
             'device-status', 'tablet', 'strum', 'combined', 'config',
-            'midi-devices', 'midi-input',
+            'midi-devices', 'midi-input', 'button-detection-state',
         }
 
     def test_on_unknown_event_raises(self):
@@ -213,50 +213,9 @@ class TestUIBridgeDeviceResolution:
         assert b._poll_ms is not None
         assert b._poll_ms > 0
 
-    def test_dev_mode_skips_resolution(self):
-        b = UIBridge(dev_mode=True)
-        path, search_dir = b._resolve_device_config()
-        assert path is None and search_dir is None
-
-    def test_explicit_config_routes_through_resolver(self, monkeypatch):
-        # ``-c`` may be a file or a directory; either way it must go
-        # through ``resolve_device_config_path`` so directory paths get
-        # scanned for a matching device instead of being opened as a
-        # file (which would IsADirectoryError downstream).
-        captured = {}
-
-        def fake_resolve(device_path, base_dir=None, poll_ms=None, **_kwargs):
-            captured['device_path'] = device_path
-            captured['base_dir'] = base_dir
-            captured['poll_ms'] = poll_ms
-            return ('/resolved/cfg.json', '/resolved/devices')
-
-        monkeypatch.setattr(bridge_mod, 'resolve_device_config_path', fake_resolve)
-        b = UIBridge(tablet_config_path='/tmp/devices', search_dir='/tmp/base')
-        path, search_dir = b._resolve_device_config()
-        assert captured == {
-            'device_path': '/tmp/devices',
-            'base_dir': '/tmp/base',
-            'poll_ms': b._poll_ms,
-        }
-        assert path == '/resolved/cfg.json'
-        assert search_dir == '/resolved/devices'
-
-    def test_no_config_calls_resolver_with_poll(self, monkeypatch):
-        captured = {}
-
-        def fake_resolve(device_path, base_dir=None, poll_ms=None, **_kwargs):
-            captured['device_path'] = device_path
-            captured['base_dir'] = base_dir
-            captured['poll_ms'] = poll_ms
-            return ('/auto/cfg.json', '/auto/devices')
-
-        monkeypatch.setattr(bridge_mod, 'resolve_device_config_path', fake_resolve)
-        b = UIBridge(poll_ms=1234)
-        path, search_dir = b._resolve_device_config()
-        assert captured == {'device_path': None, 'base_dir': None, 'poll_ms': 1234}
-        assert path == '/auto/cfg.json'
-        assert search_dir == '/auto/devices'
+    # Device-path resolution is now handled inside the server's reader
+    # thread via ``TabletClient.discover()``; the bridge no longer owns
+    # any config-resolution logic.
 
 
 
@@ -538,3 +497,58 @@ class TestUIBridgeSetThrottle:
         b = UIBridge()
         # No loop, no server — must not raise.
         b.set_throttle(60)
+
+
+class TestUIBridgeButtonDetection:
+    """Ephemeral device-button learning flag mirrored on both sides."""
+
+    def _wired(self):
+        b = UIBridge()
+        srv = _FakeServer({})
+        srv.detecting_device_buttons = False  # type: ignore[attr-defined]
+        srv.broadcast_calls = 0  # type: ignore[attr-defined]
+
+        def _bcast():
+            srv.broadcast_calls += 1  # type: ignore[attr-defined]
+        srv._broadcast_button_detection_state = _bcast  # type: ignore[attr-defined]
+        b._server = srv  # type: ignore[assignment]
+        b._loop = _FakeLoop()  # type: ignore[assignment]
+        return b, srv
+
+    def test_new_subscriber_receives_current_state_immediately(self):
+        b = UIBridge()
+        received: list = []
+        b.on('button-detection-state', received.append)
+        assert received == [{'enabled': False}]
+
+    def test_on_button_detection_updates_cache_and_emits(self):
+        b = UIBridge()
+        received: list = []
+        b.on('button-detection-state', received.append)
+        b._on_button_detection(True)
+        # First payload is the replay (False), second is the new state.
+        assert received == [{'enabled': False}, {'enabled': True}]
+        assert b._last_button_detection is True
+
+    def test_late_subscriber_receives_latest_cached_state(self):
+        b = UIBridge()
+        b._on_button_detection(True)
+        received: list = []
+        b.on('button-detection-state', received.append)
+        assert received == [{'enabled': True}]
+
+    def test_set_button_detection_flips_flag_and_broadcasts(self):
+        b, srv = self._wired()
+        b.set_button_detection(True)
+        assert srv.detecting_device_buttons is True
+        assert srv.broadcast_calls == 1
+
+    def test_set_button_detection_coerces_truthy(self):
+        b, srv = self._wired()
+        b.set_button_detection('yes')  # type: ignore[arg-type]
+        assert srv.detecting_device_buttons is True
+
+    def test_set_button_detection_noop_without_loop(self):
+        # No loop, no server — must not raise.
+        b = UIBridge()
+        b.set_button_detection(True)

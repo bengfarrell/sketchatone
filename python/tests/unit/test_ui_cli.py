@@ -31,7 +31,6 @@ class TestUICliArgParser:
     def test_defaults(self):
         args = ui_cli.build_arg_parser().parse_args([])
         assert args.config is None
-        assert args.strummer_config is None
         assert args.enable_ws is False
         assert args.ws_port == 8081
         assert args.throttle == 150
@@ -50,30 +49,13 @@ class TestUICliArgParser:
         assert args.dev is True
 
     def test_short_config_flag(self):
-        args = ui_cli.build_arg_parser().parse_args(['-c', '/tmp/x.json'])
-        assert args.config == '/tmp/x.json'
+        args = ui_cli.build_arg_parser().parse_args(['-c', '/tmp/cfg.json'])
+        assert args.config == '/tmp/cfg.json'
 
     def test_long_config_flag(self):
-        args = ui_cli.build_arg_parser().parse_args(['--config', '/tmp/x.json'])
-        assert args.config == '/tmp/x.json'
-
-    def test_short_strummer_config_flag(self):
-        args = ui_cli.build_arg_parser().parse_args(['-s', '/tmp/cfg.json'])
-        assert args.strummer_config == '/tmp/cfg.json'
-        assert args.config is None
-
-    def test_long_strummer_config_flag(self):
         args = ui_cli.build_arg_parser().parse_args(
-            ['--strummer-config', '/tmp/cfg.json'])
-        assert args.strummer_config == '/tmp/cfg.json'
-
-    def test_config_and_strummer_config_are_independent(self):
-        args = ui_cli.build_arg_parser().parse_args([
-            '-c', '/devices/huion.json',
-            '-s', '/configs/my.json',
-        ])
-        assert args.config == '/devices/huion.json'
-        assert args.strummer_config == '/configs/my.json'
+            ['--config', '/tmp/cfg.json'])
+        assert args.config == '/tmp/cfg.json'
 
     def test_ws_port_override(self):
         args = ui_cli.build_arg_parser().parse_args(['--ws-port', '9000'])
@@ -98,36 +80,36 @@ class TestUICliArgParser:
         assert args.hot_reload is True
 
 
-class TestResolveStrummerConfig:
-    """`-s` resolves relative paths against cwd, then the repo root."""
+class TestResolveConfig:
+    """`-c` resolves relative paths against cwd, then the repo root."""
 
     def test_none_passes_through(self):
-        assert ui_cli._resolve_strummer_config(None) is None
+        assert ui_cli._resolve_config(None) is None
 
     def test_absolute_existing_path_returns_as_is(self, tmp_path):
         target = tmp_path / 'cfg.json'
         target.write_text('{}')
-        resolved = ui_cli._resolve_strummer_config(str(target))
+        resolved = ui_cli._resolve_config(str(target))
         assert resolved == str(target)
 
     def test_relative_path_resolves_against_cwd(self, tmp_path, monkeypatch):
         (tmp_path / 'cfg.json').write_text('{}')
         monkeypatch.chdir(tmp_path)
-        resolved = ui_cli._resolve_strummer_config('cfg.json')
+        resolved = ui_cli._resolve_config('cfg.json')
         assert resolved == str((tmp_path / 'cfg.json').resolve())
 
     def test_relative_path_falls_back_to_repo_root(self, monkeypatch, tmp_path):
         # cwd has no match; the resolver should try _REPO_ROOT.
         monkeypatch.chdir(tmp_path)
         # public/configs/default.json ships at the repo root.
-        resolved = ui_cli._resolve_strummer_config('public/configs/default.json')
+        resolved = ui_cli._resolve_config('public/configs/default.json')
         expected = os.path.join(ui_cli._REPO_ROOT, 'public/configs/default.json')
         assert resolved == expected
         assert os.path.isfile(resolved)
 
     def test_missing_path_exits_with_message(self, capsys):
         with pytest.raises(SystemExit) as excinfo:
-            ui_cli._resolve_strummer_config('does/not/exist.json')
+            ui_cli._resolve_config('does/not/exist.json')
         assert excinfo.value.code == 1
         captured = capsys.readouterr()
         assert 'not found' in captured.out.lower()
@@ -221,7 +203,7 @@ class TestHotReloadApp:
         monkeypatch.setitem(_sys.modules, 'sketchatone.ui.hotreload', None)
 
         rc = ui_app.run_app(
-            config=None, ws_port=None, throttle_ms=150, fullscreen=False,
+            ws_port=None, throttle_ms=150, fullscreen=False,
             hot_reload=True,
         )
         assert rc == 1

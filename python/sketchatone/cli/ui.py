@@ -53,18 +53,7 @@ os.environ.setdefault('KIVY_TEXT', 'sdl2')
 # Add parent directory to path for imports (matches sibling CLI modules)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-try:
-    from blankslate.cli.tablet_reader_base import Colors, colored
-except ImportError:
-    # Soft fallback so the CLI still runs in environments where blankslate
-    # is unavailable (e.g. early dev machines without the vendored dep).
-    class Colors:  # type: ignore[no-redef]
-        YELLOW = ''
-        CYAN = ''
-        GRAY = ''
-
-    def colored(text: str, _color: str = '', bold: bool = False) -> str:  # type: ignore[no-redef]
-        return text
+from sketchatone.cli._ansi import Colors, colored
 
 
 # Repo root: __file__ is python/sketchatone/cli/ui.py, four dirname()s up
@@ -73,11 +62,11 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
 
 
-def _resolve_strummer_config(path: str | None) -> str | None:
-    """Resolve a ``--strummer-config`` value to an absolute path.
+def _resolve_config(path: str | None) -> str | None:
+    """Resolve a ``--config`` value to an absolute path.
 
     Falls back to the repo root when a relative path doesn't exist
-    in the current directory, so ``-s public/configs/default.json``
+    in the current directory, so ``-c public/configs/default.json``
     works the same from the repo root and from ``python/``. Exits
     with a clear message if no candidate file exists.
     """
@@ -93,7 +82,7 @@ def _resolve_strummer_config(path: str | None) -> str | None:
     else:
         tried = (path,)
     print(colored(
-        f'❌ Strummer config not found: {path!r}',
+        f'❌ Config not found: {path!r}',
         Colors.YELLOW, bold=True))
     for candidate in tried:
         print(colored(f'   tried: {candidate}', Colors.GRAY))
@@ -112,14 +101,12 @@ validate packaging and the deployment pipeline.
     )
     parser.add_argument(
         '-c', '--config',
-        help='Path to tablet device descriptor JSON (e.g. public/configs/devices/huion-inspiroy2m.json) '
-             'or a directory to scan for the connected device. For the strummer config '
-             '(actions, slide, strumming) use --strummer-config instead.'
-    )
-    parser.add_argument(
-        '-s', '--strummer-config',
-        help='Path to strummer config JSON (actions, slide, strumming). '
-             'Defaults to dist/public/configs/default.json when not specified.'
+        dest='config',
+        metavar='PATH',
+        help='Combined config file path (strummer, MIDI, and server settings). '
+             'The UI reads the strummer/actions/slide sections; MIDI and '
+             'server sections are ignored. Defaults to '
+             'dist/public/configs/default.json when not specified.'
     )
     parser.add_argument(
         '--enable-ws',
@@ -170,7 +157,6 @@ validate packaging and the deployment pipeline.
 
 
 def run_app(
-    config: str | None,
     ws_port: int | None,
     throttle_ms: int,
     fullscreen: bool,
@@ -253,7 +239,6 @@ def run_app(
         return 1
 
     return _ui_run_app(
-        config=config,
         ws_port=ws_port,
         throttle_ms=throttle_ms,
         fullscreen=fullscreen,
@@ -271,7 +256,6 @@ def main() -> None:
     if args.dry_run:
         print(colored('sketchatone-ui: dry run', Colors.YELLOW, bold=True))
         print(colored(f'  config           = {args.config!r}', Colors.GRAY))
-        print(colored(f'  strummer-config  = {args.strummer_config!r}', Colors.GRAY))
         print(colored(f'  enable-ws        = {args.enable_ws}', Colors.GRAY))
         print(colored(f'  ws-port          = {effective_ws_port}', Colors.GRAY))
         print(colored(f'  throttle         = {args.throttle}', Colors.GRAY))
@@ -281,12 +265,12 @@ def main() -> None:
         print(colored(f'  hot-reload       = {args.hot_reload}', Colors.GRAY))
         sys.exit(0)
 
-    strummer_config = _resolve_strummer_config(args.strummer_config)
+    config_path = _resolve_config(args.config)
 
     sys.exit(run_app(
-        args.config, effective_ws_port, args.throttle, args.fullscreen,
+        effective_ws_port, args.throttle, args.fullscreen,
         poll_ms=args.poll, dev_mode=args.dev,
-        strummer_config=strummer_config,
+        strummer_config=config_path,
         hot_reload=args.hot_reload,
     ))
 

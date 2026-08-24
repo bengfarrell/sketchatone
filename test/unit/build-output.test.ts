@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const DIST_DIR = resolve(__dirname, '../../dist/public');
-const ENTRY_HTMLS = ['index.html', 'web.html'];
+const ENTRY_HTMLS = ['index.html'];
 
 const buildIsPresent = existsSync(resolve(DIST_DIR, 'index.html'));
 

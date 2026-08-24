@@ -54,18 +54,16 @@ hiddenimports = [
     'sketchatone.models.note',
     'sketchatone.models.server_config',
     'sketchatone.utils',
-    # Blankslate modules (tablet reading)
-    'blankslate',
-    'blankslate.cli',
-    'blankslate.cli.tablet_reader_base',
-    'blankslate.utils',
-    'blankslate.utils.finddevice',
-    'blankslate.models',
+    # Tablet reading modules
+    'sketchatone.tablet',
+    'sketchatone.tablet.tablet_client',
+    'sketchatone.tablet.otd',
+    'sketchatone.tablet.otd.config_loader',
+    'sketchatone.tablet.server',
 ]
 
 # Collect all submodules for key packages
 hiddenimports += collect_submodules('sketchatone')
-hiddenimports += collect_submodules('blankslate')
 
 a = Analysis(
     ['sketchatone/cli/server.py'],

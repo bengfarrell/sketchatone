@@ -226,7 +226,7 @@ class Actions(EventEmitter):
         Handle a button event using the action rules configuration.
 
         Args:
-            button_id: The button identifier (e.g., "button:primary", "button:1")
+            button_id: The button identifier (e.g., "button:primary", "code:70")
             trigger: The trigger type ('press', 'release', or 'hold')
 
         Returns:

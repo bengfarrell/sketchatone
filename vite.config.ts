@@ -23,24 +23,13 @@ export default defineConfig({
       '@lit/reactive-element',
     ],
   },
-  optimizeDeps: {
-    // Include blankslate for pre-bundling from node_modules
-    include: ['blankslate'],
-  },
   build: {
     outDir: 'dist/public',
     emptyOutDir: true,
     rollupOptions: {
       input: {
         tablet: resolve(__dirname, 'index.html'),
-        web: resolve(__dirname, 'web.html'),
       },
-      // Externalize Node.js-only modules that shouldn't be bundled for browser
-      // This is needed because blankslate's main export includes mockbytes which uses 'fs'
-      external: [
-        'fs',
-        'path',
-      ],
     },
   },
   server: {

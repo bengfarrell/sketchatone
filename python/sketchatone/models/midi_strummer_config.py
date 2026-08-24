@@ -13,6 +13,7 @@ from .strummer_config import StrummerConfig
 from .midi_config import MidiConfig
 from .keyboard_config import KeyboardConfig
 from .server_config import ServerConfig
+from .device_buttons_config import DeviceButtonsConfig
 
 
 @dataclass
@@ -39,6 +40,9 @@ class MidiStrummerConfig:
 
     # Server settings
     server: ServerConfig = field(default_factory=ServerConfig)
+
+    # Persisted device buttons (with auto-discovery toggle)
+    device_buttons: DeviceButtonsConfig = field(default_factory=DeviceButtonsConfig)
 
     # Convenience properties for backward compatibility
     @property
@@ -137,19 +141,24 @@ class MidiStrummerConfig:
         # Check if this is nested format (has 'strummer' key) or flat format
         has_strummer_key = 'strummer' in data and isinstance(data.get('strummer'), dict)
 
+        device_buttons_data = data.get('device_buttons', data.get('deviceButtons', {})) or {}
+
         if has_strummer_key:
-            # Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...} }
+            # Nested format: { strummer: {...}, midi: {...}, keyboard: {...}, server: {...}, deviceButtons: {...} }
             strummer_data = data.get('strummer', {})
             midi_data = data.get('midi', {})
             keyboard_data = data.get('keyboard', {})
             server_data = data.get('server', {})
         else:
             # Flat format: { note_duration: {...}, note_repeater: {...}, midi: {...}, keyboard: {...}, server: {...} }
-            # Extract midi, keyboard, and server, pass everything else to StrummerConfig
+            # Extract midi, keyboard, server, deviceButtons; pass everything else to StrummerConfig
             midi_data = data.get('midi', {})
             keyboard_data = data.get('keyboard', {})
             server_data = data.get('server', {})
-            strummer_data = {k: v for k, v in data.items() if k not in ('midi', 'keyboard', 'server')}
+            strummer_data = {
+                k: v for k, v in data.items()
+                if k not in ('midi', 'keyboard', 'server', 'device_buttons', 'deviceButtons')
+            }
 
         # Load strummer config
         strummer = StrummerConfig.from_dict(strummer_data) if strummer_data else StrummerConfig()
@@ -163,7 +172,16 @@ class MidiStrummerConfig:
         # Load server config
         server = ServerConfig.from_dict(server_data) if server_data else ServerConfig()
 
-        return cls(strummer=strummer, midi=midi, keyboard=keyboard, server=server)
+        # Load device buttons config
+        device_buttons = (
+            DeviceButtonsConfig.from_dict(device_buttons_data)
+            if device_buttons_data else DeviceButtonsConfig()
+        )
+
+        return cls(
+            strummer=strummer, midi=midi, keyboard=keyboard,
+            server=server, device_buttons=device_buttons,
+        )
 
     @classmethod
     def from_json_file(cls, path: str) -> 'MidiStrummerConfig':
@@ -203,12 +221,11 @@ class MidiStrummerConfig:
         result = {
             'strummer': self.strummer.to_dict(),
             'midi': self.midi.to_dict(),
-            'server': self.server.to_dict()
+            'server': self.server.to_dict(),
+            'deviceButtons': self.device_buttons.to_dict(),
         }
 
-        # Only include keyboard config if it has mappings
-        if self.keyboard.enabled:
-            result['keyboard'] = self.keyboard.to_dict()
+        result['keyboard'] = self.keyboard.to_dict()
 
         return result
 

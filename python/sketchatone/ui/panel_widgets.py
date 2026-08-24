@@ -466,16 +466,12 @@ class EventsPanel(BoxLayout):
         sec = bool(getattr(ev, 'secondaryButtonPressed', False))
         self._set_chip_active(self._button_chips['primary'], prim)
         self._set_chip_active(self._button_chips['secondary'], sec)
-        buttons = getattr(ev, 'buttons', None) or {}
-        pressed_n: Optional[int] = None
-        for i in range(1, 9):
-            if buttons.get(f'button{i}'):
-                pressed_n = i
-                break
+        aux_codes = list(getattr(ev, 'auxCodes', None) or [])
+        pressed_code: Optional[int] = aux_codes[0] if aux_codes else None
         tablet_chip = self._button_chips['tablet']
         dash = '\u2014'
-        tablet_chip.text = f'TABLET {pressed_n if pressed_n else dash}'
-        self._set_chip_active(tablet_chip, pressed_n is not None)
+        tablet_chip.text = f'TABLET {pressed_code if pressed_code is not None else dash}'
+        self._set_chip_active(tablet_chip, pressed_code is not None)
         on, off = '\u25cf', '\u25cb'
         self._buttons.text = (
             f'Primary: {on if prim else off}   '
@@ -763,12 +759,9 @@ class PerformancePanel(BoxLayout):
             pressed.add('primary')
         if getattr(ev, 'secondaryButtonPressed', False):
             pressed.add('secondary')
-        for key, val in (getattr(ev, 'buttons', {}) or {}).items():
-            if val and isinstance(key, str) and key.startswith('button'):
-                try:
-                    pressed.add(int(key[len('button'):]))
-                except ValueError:
-                    continue
+        for code in (getattr(ev, 'auxCodes', None) or []):
+            if isinstance(code, int):
+                pressed.add(code)
         if pressed != self._pressed:
             self._pressed = pressed
             self._refresh_active_states()
@@ -1188,6 +1181,7 @@ class MidiDevicesPanel(BoxLayout):
         self._current_output_id: Any = None
         self._current_inputs: set = set()
         self._passthrough: list = []
+        self._loopback_input_ids: set = set()
 
         header = BoxLayout(orientation='horizontal', size_hint_y=None,
                            height=theme.INPUT_HEIGHT, spacing=theme.SPACE_2)
@@ -1256,6 +1250,7 @@ class MidiDevicesPanel(BoxLayout):
         self._current_inputs = set(current_input_ids)
         self._current_output_id = current_output_id
         self._passthrough = list(data.get('passthroughConnections') or [])
+        self._loopback_input_ids = set(data.get('loopbackInputPortIds') or [])
 
         self._current_output = None
         for p in output_ports:
@@ -1263,9 +1258,21 @@ class MidiDevicesPanel(BoxLayout):
                 self._current_output = p.get('name')
                 break
 
-        self._status.text = (
+        base_status = (
             f'{len(input_ports)} input · {len(output_ports)} output'
         )
+        if self._loopback_input_ids:
+            # Loopback: currently-connected input(s) echo our output back
+            # into _update_notes_from_midi_input. Turn off the flagged
+            # (red) input row to break the cycle.
+            self._status.text = (
+                f'[color=fecaca]{base_status}   '
+                f"Warning: Sketchatone's MIDI output is also being used as "
+                f'input which can cause a feedback loop and cause problems[/color]'
+            )
+            self._status.markup = True
+        else:
+            self._status.text = base_status
         self._populate_outputs(output_ports, current_output_id)
         self._populate_inputs(input_ports, self._current_inputs)
 
@@ -1275,6 +1282,9 @@ class MidiDevicesPanel(BoxLayout):
         if not ports:
             items.add_widget(_empty_row('No output ports'))
             return
+        # The active output row is warned when at least one connected
+        # input shares its name — same signal as the header warning.
+        output_warned = bool(self._loopback_input_ids)
         for port in ports:
             pid = port.get('id')
             name = port.get('name', '?')
@@ -1284,7 +1294,8 @@ class MidiDevicesPanel(BoxLayout):
                 is_active = pid == current_id
                 row = _device_row(
                     name, pid, is_active,
-                    on_toggle=lambda new, n=name: self._toggle_output(n, new))
+                    on_toggle=lambda new, n=name: self._toggle_output(n, new),
+                    warning=is_active and output_warned)
                 items.add_widget(row)
 
     def _populate_inputs(self, ports: list, current_ids: set) -> None:
@@ -1308,6 +1319,7 @@ class MidiDevicesPanel(BoxLayout):
                 passthrough_active=pt_active,
                 on_passthrough_toggle=(
                     lambda new, i=pid: self._toggle_passthrough(i, new)),
+                warning=pid in self._loopback_input_ids,
             )
             items.add_widget(row)
 
@@ -1461,7 +1473,8 @@ def _device_row(name: str, port_id: Any, active: bool,
                 on_toggle, *,
                 passthrough_visible: bool = False,
                 passthrough_active: bool = False,
-                on_passthrough_toggle=None) -> BoxLayout:
+                on_passthrough_toggle=None,
+                warning: bool = False) -> BoxLayout:
     """Web-UI-style MIDI device card: toggle switch on the left, device
     name above an ``Index: <id>`` caption on the right. The card has a
     neutral rounded background to give each item card-like shape; the
@@ -1472,13 +1485,18 @@ def _device_row(name: str, port_id: Any, active: bool,
     web inputs list which exposes per-input passthrough toggles when an
     output port is selected). The row exposes ``toggle_switch`` and
     ``passthrough_switch`` references so callers/tests can address each
-    control unambiguously."""
+    control unambiguously.
+
+    When ``warning`` is true the card background switches to
+    ``theme.DANGER_BG`` and the name/index labels flip to
+    ``theme.DANGER_TEXT`` — used by the MIDI devices panel to flag
+    ports involved in an active loopback."""
     row_h = 76 if passthrough_visible else 52
     row = BoxLayout(orientation='horizontal', size_hint_y=None,
                     height=row_h, spacing=theme.SPACE_3,
                     padding=(theme.SPACE_3, theme.SPACE_2))
     with row.canvas.before:
-        Color(*theme.BG_SURFACE_ALT)
+        Color(*(theme.DANGER_BG if warning else theme.BG_SURFACE_ALT))
         bg = RoundedRectangle(pos=row.pos, size=row.size,
                               radius=[theme.SPACE_2])
 
@@ -1499,13 +1517,15 @@ def _device_row(name: str, port_id: Any, active: bool,
     row.add_widget(switch_wrap)
 
     info = BoxLayout(orientation='vertical', padding=(0, theme.SPACE_1))
+    name_color = theme.DANGER_TEXT if warning else theme.TEXT_PRIMARY
+    idx_color = theme.DANGER_TEXT if warning else theme.TEXT_MUTED
     name_lbl = Label(
-        text=name, color=theme.TEXT_PRIMARY, font_size='10sp',
+        text=name, color=name_color, font_size='10sp',
         halign='left', valign='middle',
     )
     name_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
     idx_lbl = Label(
-        text=f'Index: {port_id}', color=theme.TEXT_MUTED, font_size='8sp',
+        text=f'Index: {port_id}', color=idx_color, font_size='8sp',
         halign='left', valign='top',
     )
     idx_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
@@ -2653,15 +2673,15 @@ def extract_button_mappings(config_event: Any) -> dict:
     def push(button_id: Any, action_text: str) -> None:
         if not isinstance(button_id, str):
             return
-        bid = button_id[len('button:'):] if button_id.startswith('button:') else button_id
-        if bid in ('primary', 'secondary'):
-            stylus.append({'kind': bid, 'action': action_text})
+        if button_id in ('button:primary', 'button:secondary'):
+            stylus.append({'kind': button_id[len('button:'):], 'action': action_text})
             return
-        try:
-            num = int(bid)
-        except ValueError:
-            return
-        buttons.append({'buttonNum': num, 'action': action_text})
+        if button_id.startswith('code:'):
+            try:
+                num = int(button_id[len('code:'):])
+            except ValueError:
+                return
+            buttons.append({'buttonNum': num, 'action': action_text})
 
     for rule in rules['rules']:
         push(rule.get('button'), format_action(rule.get('action')))
@@ -4535,6 +4555,249 @@ class GroupsPanel(BoxLayout):
         self._bridge.set_config('strummer.actionRules', dict(self._full))
 
 
+def extract_device_buttons(config_event: Any) -> dict:
+    """Pull ``deviceButtons`` (``{buttons, keys}``) from a config event."""
+    if not isinstance(config_event, dict):
+        return {'buttons': [], 'keys': []}
+    cfg = config_event.get('config') or {}
+    section = cfg.get('deviceButtons') or {}
+    if not isinstance(section, dict):
+        return {'buttons': [], 'keys': []}
+    buttons: list = []
+    for entry in section.get('buttons') or []:
+        if not isinstance(entry, dict):
+            continue
+        code = entry.get('code')
+        if not isinstance(code, int):
+            continue
+        name = entry.get('name')
+        buttons.append({'code': code,
+                        'name': name if isinstance(name, str) and name
+                        else f'Button {code}'})
+    keys: list = []
+    for entry in section.get('keys') or []:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get('key')
+        if not isinstance(key, str) or not key:
+            continue
+        name = entry.get('name')
+        keys.append({'key': key,
+                     'name': name if isinstance(name, str) and name
+                     else f'Key {key.upper()}'})
+    return {'buttons': buttons, 'keys': keys}
+
+
+class DeviceButtonsPanel(BoxLayout):
+    """Read-only view of persisted tablet buttons + keyboard keys.
+
+    Mirrors the web ``<device-buttons-panel>`` layout: an Input Detection
+    toggle at the top, followed by a Tablet Buttons list and a Keyboard
+    Keys list with per-row delete affordances and bulk clear actions.
+    Rename is omitted because the kiosk has no keyboard for text entry.
+    """
+
+    def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
+        super().__init__(orientation='vertical', spacing=theme.SPACE_2, **kwargs)
+        self._bridge = bridge
+        self._buttons: list = []
+        self._keys: list = []
+        self._detecting: bool = False
+
+        self._body = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        self.add_widget(self._body)
+        self._render()
+
+        if bridge is not None:
+            bridge.on('config', self._on_config)
+            bridge.on('button-detection-state', self._on_detection_state)
+
+    def on_parent(self, _widget, parent) -> None:  # type: ignore[override]
+        # Panels persist across tab switches (``PanelArea`` just re-parents
+        # them). When we're detached and detection is still on, turn it off
+        # so stray HID / keyboard events don't keep populating the config
+        # while the user is on another panel.
+        if parent is None and self._detecting and self._bridge is not None:
+            self._bridge.set_button_detection(False)
+
+    # ---- Bridge events ------------------------------------------------
+
+    def _on_config(self, payload: Any) -> None:
+        data = extract_device_buttons(payload)
+        self._buttons = data['buttons']
+        self._keys = data['keys']
+        self._render()
+
+    def _on_detection_state(self, payload: Any) -> None:
+        enabled = bool((payload or {}).get('enabled', False)) \
+            if isinstance(payload, dict) else False
+        if enabled == self._detecting:
+            return
+        self._detecting = enabled
+        self._render()
+
+    # ---- Render -------------------------------------------------------
+
+    def _render(self) -> None:
+        # Detection row stays pinned to the top and the Clear-all footer
+        # to the bottom so they remain reachable regardless of how many
+        # buttons/keys have been captured; the lists in between scroll
+        # once the combined content exceeds the panel height.
+        self._body.clear_widgets()
+        self._body.add_widget(self._build_detection_row())
+
+        scroll = ScrollView(do_scroll_x=False, bar_width=4)
+        content = BoxLayout(orientation='vertical', size_hint_y=None,
+                            spacing=theme.SPACE_2)
+        content.bind(minimum_height=content.setter('height'))
+        content.add_widget(_form_field_label('TABLET BUTTONS'))
+        content.add_widget(self._build_button_list())
+        content.add_widget(_form_field_label('KEYBOARD KEYS'))
+        content.add_widget(self._build_key_list())
+        scroll.add_widget(content)
+        self._body.add_widget(scroll)
+
+        if self._buttons or self._keys:
+            self._body.add_widget(self._build_footer())
+
+    def _build_detection_row(self) -> BoxLayout:
+        row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                        height=theme.CONTROL_HEIGHT + 2 * theme.SPACE_2,
+                        spacing=theme.SPACE_2,
+                        padding=(theme.SPACE_2, theme.SPACE_2))
+        _filled_rect_bg(row, theme.BG_SURFACE)
+        hint = Label(
+            text=('Listening… press a tablet button or keyboard key to add it.'
+                  if self._detecting
+                  else 'Press Detect, then press a button or key to capture it.'),
+            color=theme.TEXT_SECONDARY, font_size='9sp',
+            halign='left', valign='middle',
+        )
+        hint.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        row.add_widget(hint)
+        pill_r = theme.CONTROL_HEIGHT // 2
+        label = 'Stop Detecting' if self._detecting else 'Detect New Inputs'
+        row.add_widget(_accent_button(
+            label, self._toggle_detection,
+            width=160, height=theme.CONTROL_HEIGHT,
+            font_size='11sp', radius=pill_r,
+        ))
+        return row
+
+    def _build_button_list(self) -> BoxLayout:
+        wrap = BoxLayout(orientation='vertical', size_hint_y=None,
+                         spacing=theme.SPACE_1)
+        wrap.bind(minimum_height=wrap.setter('height'))
+        if not self._buttons:
+            wrap.add_widget(_empty_row(
+                'No buttons observed yet. Press a button on your tablet.'))
+            return wrap
+        for i, btn in enumerate(self._buttons):
+            wrap.add_widget(self._make_button_row(i, btn))
+        return wrap
+
+    def _build_key_list(self) -> BoxLayout:
+        wrap = BoxLayout(orientation='vertical', size_hint_y=None,
+                         spacing=theme.SPACE_1)
+        wrap.bind(minimum_height=wrap.setter('height'))
+        if not self._keys:
+            wrap.add_widget(_empty_row(
+                'No keys observed yet. Press a keyboard key.'))
+            return wrap
+        for i, key in enumerate(self._keys):
+            wrap.add_widget(self._make_key_row(i, key))
+        return wrap
+
+    def _make_button_row(self, index: int, btn: dict) -> BoxLayout:
+        return self._make_entry_row(
+            code_text=f"code:{btn['code']}",
+            name_text=btn['name'],
+            on_delete=lambda i=index: self._delete_button(i),
+        )
+
+    def _make_key_row(self, index: int, key: dict) -> BoxLayout:
+        return self._make_entry_row(
+            code_text=f"key:{key['key']}",
+            name_text=key['name'],
+            on_delete=lambda i=index: self._delete_key(i),
+        )
+
+    def _make_entry_row(self, code_text: str, name_text: str,
+                        on_delete) -> BoxLayout:
+        row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                        height=ROW_ICON_SIZE + 2 * theme.SPACE_1,
+                        spacing=theme.SPACE_2,
+                        padding=(theme.SPACE_2, theme.SPACE_1))
+        _filled_rect_bg(row, theme.BG_SURFACE)
+        code_lbl = Label(
+            text=code_text, color=theme.TEXT_MUTED, font_size='9sp',
+            size_hint_x=None, width=90,
+            halign='left', valign='middle',
+        )
+        code_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        name_lbl = Label(
+            text=name_text, color=theme.TEXT_PRIMARY, font_size='9.5sp',
+            halign='left', valign='middle',
+        )
+        name_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        row.add_widget(code_lbl)
+        row.add_widget(name_lbl)
+        row.add_widget(_trash_button(on_delete))
+        return row
+
+    def _build_footer(self) -> BoxLayout:
+        row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                        height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
+        row.add_widget(Widget())
+        pill_r = theme.CONTROL_HEIGHT // 2
+        if self._buttons:
+            row.add_widget(_secondary_button(
+                'Clear Buttons', self._clear_buttons,
+                width=130, height=theme.CONTROL_HEIGHT,
+                font_size='11sp', radius=pill_r,
+            ))
+        if self._keys:
+            row.add_widget(_secondary_button(
+                'Clear Keys', self._clear_keys,
+                width=110, height=theme.CONTROL_HEIGHT,
+                font_size='11sp', radius=pill_r,
+            ))
+        return row
+
+    # ---- User actions -------------------------------------------------
+
+    def _toggle_detection(self) -> None:
+        if self._bridge is None:
+            return
+        self._bridge.set_button_detection(not self._detecting)
+
+    def _delete_button(self, index: int) -> None:
+        if self._bridge is None:
+            return
+        if index < 0 or index >= len(self._buttons):
+            return
+        remaining = [dict(b) for i, b in enumerate(self._buttons) if i != index]
+        self._bridge.set_config('deviceButtons.buttons', remaining)
+
+    def _delete_key(self, index: int) -> None:
+        if self._bridge is None:
+            return
+        if index < 0 or index >= len(self._keys):
+            return
+        remaining = [dict(k) for i, k in enumerate(self._keys) if i != index]
+        self._bridge.set_config('deviceButtons.keys', remaining)
+
+    def _clear_buttons(self) -> None:
+        if self._bridge is None:
+            return
+        self._bridge.set_config('deviceButtons.buttons', [])
+
+    def _clear_keys(self) -> None:
+        if self._bridge is None:
+            return
+        self._bridge.set_config('deviceButtons.keys', [])
+
+
 class ChordProgressionsPanel(BoxLayout):
     """Editor for ``strummer.chordProgressions`` (name -> list of chords).
 
@@ -4986,13 +5249,12 @@ def compute_dirty(current_config: Any, saved_snapshot: Optional[str]) -> bool:
 
 
 class ServerSettingsPanel(BoxLayout):
-    """Config save/load surface.
+    """Config load surface.
 
     Lists every ``.json`` file in the server's config directory, marks
-    the active one, and lets the user switch between them. A Save button
-    persists the current in-memory config; it stays disabled while the
-    config matches the last saved snapshot (mirrors the web dashboard's
-    dirty-tracking).
+    the active one, and lets the user switch between them. Every config
+    edit auto-persists on the backend, so this panel exposes no explicit
+    Save; a richer config-management surface is planned to replace it.
     """
 
     def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
@@ -5000,8 +5262,6 @@ class ServerSettingsPanel(BoxLayout):
         self._bridge = bridge
         self._current_name: Optional[str] = None
         self._available: list = []
-        self._saved_snapshot: Optional[str] = None
-        self._dirty: bool = False
         self._throttle_ms: int = 150
 
         self.add_widget(self._build_header_row())
@@ -5016,7 +5276,7 @@ class ServerSettingsPanel(BoxLayout):
     # ---- Rows ---------------------------------------------------------
 
     def _build_header_row(self) -> GridLayout:
-        """Status + Save | Throttle stepper, packed into a 2-column grid."""
+        """Status | Throttle stepper, packed into a 2-column grid."""
         form = _two_col_form()
 
         status_cell = BoxLayout(orientation='horizontal', size_hint_y=None,
@@ -5027,15 +5287,6 @@ class ServerSettingsPanel(BoxLayout):
         )
         self._status.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         status_cell.add_widget(self._status)
-        self._save_btn = Button(
-            text='Save', size_hint=(None, None), size=(96, theme.CONTROL_HEIGHT),
-            background_normal='', background_down='',
-            background_color=theme.BG_SURFACE_ALT,
-            color=theme.TEXT_MUTED, font_size='9.5sp',
-            disabled=True,
-        )
-        self._save_btn.bind(on_release=lambda *_: self._save())
-        status_cell.add_widget(self._save_btn)
         form.add_widget(status_cell)
 
         self._throttle_stepper = _NumberStepper(
@@ -5091,30 +5342,12 @@ class ServerSettingsPanel(BoxLayout):
         state = extract_server_state(payload)
         self._current_name = state['currentConfigName']
         self._available = state['availableConfigs']
-        if state['isSavedState']:
-            self._refresh_snapshot(state['config'])
-        self._dirty = compute_dirty(state['config'], self._saved_snapshot)
         self._throttle_ms = state['throttleMs']
         self._throttle_stepper.set_value(self._throttle_ms)
         self._sync_header()
         self._populate_list()
 
-    def _refresh_snapshot(self, config: Any) -> None:
-        import json
-        if config is None:
-            self._saved_snapshot = None
-            return
-        try:
-            self._saved_snapshot = json.dumps(config, sort_keys=True)
-        except (TypeError, ValueError):
-            self._saved_snapshot = None
-
     # ---- User actions -------------------------------------------------
-
-    def _save(self) -> None:
-        if self._bridge is None or self._current_name is None:
-            return
-        self._bridge.save_config()
 
     def _load(self, name: str) -> None:
         if self._bridge is None or name == self._current_name:
@@ -5142,14 +5375,7 @@ class ServerSettingsPanel(BoxLayout):
 
     def _sync_header(self) -> None:
         name = self._current_name or '(none)'
-        marker = ' •' if self._dirty else ''
-        self._status.text = f'Current: {name}{marker}'
-        can_save = self._bridge is not None and self._current_name is not None and self._dirty
-        self._save_btn.disabled = not can_save
-        self._save_btn.color = theme.TEXT_PRIMARY if can_save else theme.TEXT_MUTED
-        self._save_btn.background_color = (
-            theme.ACCENT_BG if can_save else theme.BG_SURFACE_ALT
-        )
+        self._status.text = f'Current: {name}'
 
     def _populate_list(self) -> None:
         self._list_items.clear_widgets()
@@ -5185,6 +5411,8 @@ def make_panel(panel_id: str, label: str, bridge: Optional[UIBridge]) -> BoxLayo
         return ActionRulesPanel(bridge=bridge)
     if panel_id == 'groups':
         return GroupsPanel(bridge=bridge)
+    if panel_id == 'deviceButtons':
+        return DeviceButtonsPanel(bridge=bridge)
     if panel_id == 'chordProgressions':
         return ChordProgressionsPanel(bridge=bridge)
     if panel_id == 'serverSettings':

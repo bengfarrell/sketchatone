@@ -6,11 +6,11 @@ A CLI tool that reads tablet events via HID and outputs MIDI notes.
 Combines the Strummer with MIDI backends (rtmidi or JACK).
 
 Usage:
+    # Auto-detect device
+    python -m sketchatone.cli.midi_strummer
+
     # Using combined config file (strummer, MIDI, and server settings)
     python -m sketchatone.cli.midi_strummer -c config.json
-
-    # Auto-detect device from default config directory
-    python -m sketchatone.cli.midi_strummer
 
     # Override specific settings via CLI
     python -m sketchatone.cli.midi_strummer -c config.json --jack --channel 1
@@ -22,7 +22,7 @@ import argparse
 import sys
 import os
 import time
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Set, Union
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -35,89 +35,9 @@ from sketchatone.models.midi_strummer_config import MidiStrummerConfig
 from sketchatone.models.note import Note, NoteObject
 from sketchatone.midi.bridge import MidiStrummerBridge
 from sketchatone.midi.protocol import MidiBackendProtocol
-
-# Import blankslate's TabletReaderBase
-try:
-    from blankslate.cli.tablet_reader_base import TabletReaderBase, Colors, colored
-    from blankslate.utils.finddevice import find_config_for_device
-except ImportError:
-    print("Error: blankslate package not found.")
-    print("Make sure blankslate is installed: pip install -e ../blankslate/python")
-    sys.exit(1)
-
-# Default config directory for device configs (relative to python/ directory)
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices')
-
-
-def resolve_device_config_path(
-    device_path: str | None,
-    base_dir: str | None = None,
-    default_dir: str = DEFAULT_CONFIG_DIR
-) -> str:
-    """
-    Resolve device config path - if it's a directory or None, search for matching config.
-
-    Supports:
-    - Absolute paths (e.g., /opt/sketchatone/configs/devices)
-    - Relative paths resolved from base_dir (e.g., "devices" relative to config file location)
-    - Direct file paths (e.g., /opt/sketchatone/configs/devices/xp-pen.json)
-
-    Args:
-        device_path: Device config path (file, directory, or None)
-        base_dir: Base directory for resolving relative paths (e.g., config file's directory)
-        default_dir: Default directory to search if device_path is None and base_dir is None
-
-    Returns:
-        Resolved config file path
-
-    Raises:
-        SystemExit: If no matching config is found
-    """
-    # Resolve the path
-    if device_path is None:
-        # No device path specified, use default directory
-        search_dir = os.path.abspath(default_dir)
-    elif os.path.isabs(device_path):
-        # Absolute path - use as-is
-        if device_path.endswith('.json'):
-            # Direct file path
-            if not os.path.exists(device_path):
-                print(colored(f'Error: Device config file not found: {device_path}', Colors.RED))
-                sys.exit(1)
-            return device_path
-        else:
-            # Directory path
-            search_dir = device_path
-    else:
-        # Relative path - resolve from base_dir or current directory
-        if base_dir:
-            resolved_path = os.path.join(base_dir, device_path)
-        else:
-            resolved_path = device_path
-        resolved_path = os.path.abspath(resolved_path)
-
-        if resolved_path.endswith('.json'):
-            # Direct file path
-            if not os.path.exists(resolved_path):
-                print(colored(f'Error: Device config file not found: {resolved_path}', Colors.RED))
-                sys.exit(1)
-            return resolved_path
-        else:
-            # Directory path
-            search_dir = resolved_path
-
-    # Validate directory exists
-    if not os.path.isdir(search_dir):
-        print(colored(f'Error: Device config directory not found: {search_dir}', Colors.RED))
-        sys.exit(1)
-
-    # Search for matching device config
-    found_config = find_config_for_device(search_dir)
-    if found_config:
-        return found_config
-    else:
-        print(colored(f'Error: No matching device config found in: {search_dir}', Colors.RED))
-        sys.exit(1)
+from sketchatone.tablet.tablet_client import TabletClient, wait_for_device
+from sketchatone.tablet.server.event_adapter import TabletEvent
+from sketchatone.cli._ansi import Colors, colored
 
 
 def create_bar(value: float, max_val: float, width: int) -> str:
@@ -142,16 +62,16 @@ def pad_line(content: str, target_len: int) -> str:
     return content + ' ' * padding
 
 
-class MidiStrummer(TabletReaderBase):
+class MidiStrummer:
     """
     MIDI Strummer that reads tablet input and outputs MIDI notes.
     """
 
     def __init__(
         self,
-        tablet_config_path: str,
         strummer_config_path: Optional[str] = None,
         live_mode: bool = False,
+        device_poll_interval: Optional[int] = None,
         # CLI overrides (take precedence over config file)
         use_jack: Optional[bool] = None,
         midi_channel: Optional[int] = None,
@@ -160,11 +80,14 @@ class MidiStrummer(TabletReaderBase):
         jack_client_name: Optional[str] = None,
         jack_auto_connect: Optional[str] = None
     ):
-        super().__init__(tablet_config_path, exit_on_stop=True)
         self.live_mode = live_mode
+        self.device_poll_interval = device_poll_interval
         self.last_event: Optional[Dict[str, Any]] = None
-        self.last_live_update = 0
+        self.last_live_update = 0.0
         self.notes_played = 0
+        self.packet_count = 0
+        self.is_running = False
+        self.tablet_client: Optional[TabletClient] = None
 
         # Load combined config from file or use defaults
         if strummer_config_path:
@@ -221,9 +144,8 @@ class MidiStrummer(TabletReaderBase):
             'secondaryButtonPressed': False
         }
 
-        # State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
-        self.tablet_button_state: Dict[str, bool] = {}
-        self.tablet_button_count: int = 8  # Default, updated when device connects
+        # State tracking for auxiliary hardware buttons - previous HID scan codes
+        self.prev_aux_codes: Set[int] = set()
 
         # State tracking for note repeater
         self.repeater_state = {
@@ -249,21 +171,6 @@ class MidiStrummer(TabletReaderBase):
 
         self.strummer.notes = notes
 
-    def _initialize_tablet_button_state(self) -> None:
-        """Initialize tablet button state based on device capabilities"""
-        capabilities = None
-        if hasattr(self, 'config_data') and self.config_data:
-            capabilities = self.config_data.get_capabilities()
-
-        self.tablet_button_count = capabilities.buttonCount if capabilities else 8
-
-        # Initialize button state for all buttons
-        self.tablet_button_state = {}
-        for i in range(1, self.tablet_button_count + 1):
-            self.tablet_button_state[f'button{i}'] = False
-
-        print(colored(f'  Tablet has {self.tablet_button_count} hardware buttons', Colors.GRAY))
-
     def _get_control_value(self, control: str, events: Dict[str, Any]) -> Optional[float]:
         """
         Get the control input value based on the control type.
@@ -280,13 +187,13 @@ class MidiStrummer(TabletReaderBase):
         elif control == "pressure":
             return float(events.get('pressure', 0))
         elif control == "tiltX":
-            # tiltX from blankslate is -1 to 1, normalize to 0-1
+            # tiltX from the tablet reader is -1 to 1, normalize to 0-1
             return (float(events.get('tiltX', 0)) + 1.0) / 2.0
         elif control == "tiltY":
-            # tiltY from blankslate is -1 to 1, normalize to 0-1
+            # tiltY from the tablet reader is -1 to 1, normalize to 0-1
             return (float(events.get('tiltY', 0)) + 1.0) / 2.0
         elif control == "tiltXY":
-            # tiltXY from blankslate is -1 to 1, normalize to 0-1
+            # tiltXY from the tablet reader is -1 to 1, normalize to 0-1
             return (float(events.get('tiltXY', 0)) + 1.0) / 2.0
         elif control == "xaxis":
             return float(events.get('x', 0.5))
@@ -376,9 +283,16 @@ class MidiStrummer(TabletReaderBase):
         print(colored('─' * 50, Colors.CYAN))
         print()
 
+    def _print_header(self, title: str) -> None:
+        print(colored('\n╔' + '═' * 60 + '╗', Colors.CYAN, bold=True))
+        print(colored('║', Colors.CYAN, bold=True) +
+              colored(f'  {title}'.ljust(60), Colors.WHITE, bold=True) +
+              colored('║', Colors.CYAN, bold=True))
+        print(colored('╚' + '═' * 60 + '╝\n', Colors.CYAN, bold=True))
+
     def start(self):
         """Start the MIDI strummer"""
-        self.print_header('MIDI Strummer')
+        self._print_header('MIDI Strummer')
         self.print_config_info()
 
         # Initialize MIDI
@@ -387,21 +301,26 @@ class MidiStrummer(TabletReaderBase):
             sys.exit(1)
         print(colored('✓ MIDI initialized', Colors.GREEN))
 
-        # Initialize tablet reader
-        print(colored('Initializing tablet reader...', Colors.GRAY))
-        self.initialize_reader_sync()
+        # Discover and attach tablet
+        print(colored('Discovering tablet...', Colors.GRAY))
+        if self.device_poll_interval is not None:
+            client = wait_for_device(
+                interval_ms=self.device_poll_interval,
+                on_waiting=lambda: print(colored('⚠ No tablet detected - waiting...', Colors.YELLOW)),
+            )
+        else:
+            client = TabletClient.discover()
+            if client is None:
+                raise RuntimeError('No tablet device found. Use --poll <ms> to wait for one.')
 
-        if not self.reader:
-            raise RuntimeError('Reader not initialized')
+        self.tablet_client = client
+        client.start(
+            on_event=self.handle_tablet_event,
+            on_disconnect=lambda: print(colored('\n[Tablet] Device disconnected', Colors.YELLOW)),
+        )
 
-        # Initialize button state based on device capabilities
-        self._initialize_tablet_button_state()
-
-        # Start reading
-        if hasattr(self.reader, 'start_reading'):
-            self.reader.start_reading(lambda data, report_id=None, interface_type=None: self.handle_packet(data, report_id, interface_type))
-
-        print(colored('✓ Started reading tablet data', Colors.GREEN))
+        caps = client.capabilities
+        print(colored(f'✓ Tablet connected: {caps.manufacturer} {caps.model}', Colors.GREEN))
         print(colored('Press Ctrl+C to stop\n', Colors.GRAY))
 
         self.is_running = True
@@ -422,6 +341,8 @@ class MidiStrummer(TabletReaderBase):
 
     def stop_sync(self):
         """Stop and clean up"""
+        self.is_running = False
+
         # Clean up MIDI
         if self.bridge:
             self.bridge.release_all()
@@ -429,65 +350,63 @@ class MidiStrummer(TabletReaderBase):
         if self.backend:
             self.backend.disconnect()
 
-        super().stop_sync()
+        if self.tablet_client is not None:
+            try:
+                self.tablet_client.stop()
+            except Exception:  # pragma: no cover - defensive shutdown
+                pass
+            self.tablet_client = None
 
-    def handle_packet(self, data: bytes, report_id: int = None, interface_type: str = None):
-        """Handle incoming HID packet"""
+    def handle_tablet_event(self, tablet_event: TabletEvent):
+        """Handle incoming tablet event from TabletClient"""
         try:
             self.packet_count += 1
 
-            # Process the data using the config
-            # Note: process_packet only takes data, it uses report_id internally from the data
-            events = self.process_packet(data)
-
             # Extract normalized values
-            x = float(events.get('x', 0))
-            y = float(events.get('y', 0))
-            pressure = float(events.get('pressure', 0))
-            state = str(events.get('state', 'unknown'))
+            x = tablet_event.x
+            y = tablet_event.y
+            pressure = tablet_event.pressure
+            state = 'out-of-range' if tablet_event.state == 'none' else tablet_event.state
+
+            # Build an events dict for _get_control_value compatibility
+            events: Dict[str, Any] = {
+                'x': x,
+                'y': y,
+                'pressure': pressure,
+                'tiltX': tablet_event.tiltX,
+                'tiltY': tablet_event.tiltY,
+                'tiltXY': tablet_event.tiltXY,
+            }
 
             # Handle stylus button presses
-            primary_pressed = bool(events.get('primaryButtonPressed', False))
-            secondary_pressed = bool(events.get('secondaryButtonPressed', False))
+            primary_pressed = tablet_event.primaryButtonPressed
+            secondary_pressed = tablet_event.secondaryButtonPressed
 
             # Handle stylus button presses via action rules
             # Detect button down events (transition from not pressed to pressed)
             if primary_pressed and not self.button_state['primaryButtonPressed']:
-                # Primary button just pressed
                 self.actions.handle_button_event('button:primary', 'press')
             if not primary_pressed and self.button_state['primaryButtonPressed']:
-                # Primary button just released
                 self.actions.handle_button_event('button:primary', 'release')
 
             if secondary_pressed and not self.button_state['secondaryButtonPressed']:
-                # Secondary button just pressed
                 self.actions.handle_button_event('button:secondary', 'press')
             if not secondary_pressed and self.button_state['secondaryButtonPressed']:
-                # Secondary button just released
                 self.actions.handle_button_event('button:secondary', 'release')
 
             # Update stylus button states
             self.button_state['primaryButtonPressed'] = primary_pressed
             self.button_state['secondaryButtonPressed'] = secondary_pressed
 
-            # Handle tablet hardware button presses via action rules (dynamic button count)
-            for i in range(1, self.tablet_button_count + 1):
-                button_key = f'button{i}'
-                button_pressed = bool(events.get(button_key, False))
-                was_pressed = self.tablet_button_state.get(button_key, False)
-
-                # Detect button down event (transition from not pressed to pressed)
-                if button_pressed and not was_pressed:
-                    # Button just pressed - execute 'press' action via action rules system
-                    self.actions.handle_button_event(f'button:{i}', 'press')
-
-                # Detect button up event (transition from pressed to not pressed)
-                if not button_pressed and was_pressed:
-                    # Button just released - execute 'release' action via action rules system
-                    self.actions.handle_button_event(f'button:{i}', 'release')
-
-                # Update tablet button state
-                self.tablet_button_state[button_key] = button_pressed
+            # Handle auxiliary hardware buttons via action rules using HID scan codes
+            current_aux_codes: Set[int] = set(tablet_event.auxCodes)
+            for code in current_aux_codes:
+                if code not in self.prev_aux_codes:
+                    self.actions.handle_button_event(f'code:{code}', 'press')
+            for code in self.prev_aux_codes:
+                if code not in current_aux_codes:
+                    self.actions.handle_button_event(f'code:{code}', 'release')
+            self.prev_aux_codes = current_aux_codes
 
             # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
             pitch_bend_cfg = self.config.strummer.pitch_bend
@@ -847,42 +766,35 @@ Examples:
         help='Live dashboard mode (updates in place)'
     )
 
+    parser.add_argument(
+        '--poll',
+        type=int,
+        default=None,
+        metavar='MS',
+        help='Poll interval in milliseconds for waiting for device. If not set, quit if no device found.'
+    )
+
     args = parser.parse_args()
 
-    # Load config early to get device path
-    config = None
+    # Validate config file if provided
     config_path = None
-    config_dir = None
     if args.config:
         config_path = os.path.abspath(args.config)
-        config_dir = os.path.dirname(config_path)
         if not os.path.exists(config_path):
             print(colored(f'Error: Config file not found: {config_path}', Colors.RED))
             sys.exit(1)
-        config = MidiStrummerConfig.from_json_file(config_path)
-
-    # Get device path from config (defaults to "devices" folder relative to config)
-    device_path = config.server.device if config else None
-
-    # Resolve device config path
-    # Use config file's directory as base for resolving relative device paths
-    device_config_path = resolve_device_config_path(
-        device_path,
-        base_dir=config_dir
-    )
 
     print(colored('=== MIDI Strummer ===', Colors.CYAN))
     if config_path:
         print(colored(f'Config: {config_path}', Colors.GRAY))
-    print(colored(f'Device config: {device_config_path}', Colors.GRAY))
     print()
 
     strummer = None
     try:
         strummer = MidiStrummer(
-            tablet_config_path=device_config_path,
             strummer_config_path=config_path,
             live_mode=args.live,
+            device_poll_interval=args.poll,
             # CLI overrides
             use_jack=args.jack if args.jack else None,
             midi_channel=args.channel - 1 if args.channel is not None else None,  # Convert 1-16 to 0-15

@@ -18,11 +18,9 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Import from blankslate CLI modules
-import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath } from 'blankslate/cli/tablet-reader-base.js';
-
-// Default config directory for device configs
-const DEFAULT_CONFIG_DIR = './public/configs/devices';
+// Vendored tablet client (composition-based OTD wrapper)
+import { TabletClient, waitForDevice } from '../tablet/tabletClient.js';
+import type { TabletEvent } from '../tablet/server/eventAdapter.js';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Actions } from '../core/actions.js';
 import { MidiStrummerConfig } from '../models/midi-strummer-config.js';
@@ -61,7 +59,9 @@ function padLine(content: string, targetLen: number): string {
 /**
  * MIDI Strummer that reads tablet input and outputs MIDI notes.
  */
-class MidiStrummer extends TabletReaderBase {
+class MidiStrummer {
+  private tabletClient: TabletClient | null = null;
+  private devicePollInterval: number | null;
   private liveMode: boolean;
   private lastEvent: StrummerEvent | null = null;
   private lastLiveUpdate = 0;
@@ -71,6 +71,7 @@ class MidiStrummer extends TabletReaderBase {
   private backend: MidiBackendProtocol | null = null;
   private bridge: MidiStrummerBridge | null = null;
   private actions: Actions;
+  private shutdownHandlersInstalled = false;
 
   // State tracking for stylus buttons
   private buttonState = {
@@ -78,9 +79,8 @@ class MidiStrummer extends TabletReaderBase {
     secondaryButtonPressed: false,
   };
 
-  // State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
-  private tabletButtonState: Record<string, boolean> = {};
-  private tabletButtonCount: number = 8; // Default, updated when device connects
+  // State tracking for auxiliary hardware buttons - previous HID scan codes
+  private prevAuxCodes: Set<number> = new Set();
 
   // State tracking for note repeater
   private repeaterState = {
@@ -94,18 +94,18 @@ class MidiStrummer extends TabletReaderBase {
   private lastPitchBendValue: number | null = null;
 
   constructor(
-    tabletConfigPath: string,
-    options: TabletReaderOptions & {
+    options: {
       strummerConfigPath?: string;
       liveMode?: boolean;
       // CLI overrides
       midiChannel?: number;
       midiPort?: string | number;
       noteDuration?: number;
+      devicePollInterval?: number | null;
     } = {}
   ) {
-    super(tabletConfigPath, options);
     this.liveMode = options.liveMode ?? false;
+    this.devicePollInterval = options.devicePollInterval ?? null;
 
     // Load combined config from file or use defaults
     if (options.strummerConfigPath) {
@@ -187,13 +187,13 @@ class MidiStrummer extends TabletReaderBase {
       case 'pressure':
         return inputs.pressure ?? 0;
       case 'tiltX':
-        // tiltX from blankslate is -1 to 1, normalize to 0-1
+        // tiltX is -1 to 1, normalize to 0-1
         return ((inputs.tiltX ?? 0) + 1.0) / 2.0;
       case 'tiltY':
-        // tiltY from blankslate is -1 to 1, normalize to 0-1
+        // tiltY is -1 to 1, normalize to 0-1
         return ((inputs.tiltY ?? 0) + 1.0) / 2.0;
       case 'tiltXY':
-        // tiltXY from blankslate is -1 to 1, normalize to 0-1
+        // tiltXY is -1 to 1, normalize to 0-1
         return ((inputs.tiltXY ?? 0) + 1.0) / 2.0;
       case 'xaxis':
         return inputs.x ?? 0.5;
@@ -254,63 +254,45 @@ class MidiStrummer extends TabletReaderBase {
     console.log();
   }
 
-  protected handlePacket(data: Uint8Array): void {
+  /**
+   * Handle a tablet event from the TabletClient. Diffs stylus + aux buttons,
+   * emits actions, updates the strummer/repeater, and (in live mode) redraws
+   * the dashboard.
+   */
+  private onTabletEvent(tabletEvent: TabletEvent): void {
     try {
-      this.packetCount++;
+      const { x, y, pressure, tiltX, tiltY, tiltXY,
+        primaryButtonPressed, secondaryButtonPressed, auxCodes: rawAuxCodes } = tabletEvent;
+      const state: 'hover' | 'contact' | 'out-of-range' =
+        tabletEvent.state === 'none' ? 'out-of-range' : tabletEvent.state;
 
-      // Process the data using the config
-      const events = this.processPacket(data);
-
-      // Extract normalized values
-      const normalized = normalizeTabletEvent(events);
-      const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
-
-      // Handle stylus button presses via action rules
-      // Detect button down events (transition from not pressed to pressed)
+      // Stylus button transitions
       if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
-        // Primary button just pressed
         this.actions.handleButtonEvent('button:primary', 'press');
-      }
-      if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
-        // Primary button just released
+      } else if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
         this.actions.handleButtonEvent('button:primary', 'release');
       }
-
       if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
-        // Secondary button just pressed
         this.actions.handleButtonEvent('button:secondary', 'press');
-      }
-      if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
-        // Secondary button just released
+      } else if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
         this.actions.handleButtonEvent('button:secondary', 'release');
       }
-
-      // Update stylus button states
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses via action rules (dynamic button count)
-      for (let i = 1; i <= this.tabletButtonCount; i++) {
-        const buttonKey = `button${i}` as keyof typeof normalized;
-        const buttonPressed = Boolean(normalized[buttonKey]);
-        const stateKey = `button${i}`;
-        const wasPressed = this.tabletButtonState[stateKey] ?? false;
-
-        // Detect button down event (transition from not pressed to pressed)
-        if (buttonPressed && !wasPressed) {
-          // Button just pressed - execute 'press' action via action rules system
-          this.actions.handleButtonEvent(`button:${i}`, 'press');
+      // Auxiliary (express-key) transitions: diff HID scan codes as `code:<n>`.
+      const currentAuxCodes = new Set<number>(rawAuxCodes);
+      for (const code of currentAuxCodes) {
+        if (!this.prevAuxCodes.has(code)) {
+          this.actions.handleButtonEvent(`code:${code}`, 'press');
         }
-
-        // Detect button up event (transition from pressed to not pressed)
-        if (!buttonPressed && wasPressed) {
-          // Button just released - execute 'release' action via action rules system
-          this.actions.handleButtonEvent(`button:${i}`, 'release');
-        }
-
-        // Update tablet button state
-        this.tabletButtonState[stateKey] = buttonPressed;
       }
+      for (const code of this.prevAuxCodes) {
+        if (!currentAuxCodes.has(code)) {
+          this.actions.handleButtonEvent(`code:${code}`, 'release');
+        }
+      }
+      this.prevAuxCodes = currentAuxCodes;
 
       // Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
       const pitchBendCfg = this.config.pitchBend;
@@ -382,8 +364,9 @@ class MidiStrummer extends TabletReaderBase {
         tiltXY,
         primaryButtonPressed,
         secondaryButtonPressed,
-        state: state as 'hover' | 'contact' | 'out-of-range',
-        timestamp: Date.now(),
+        state,
+        timestamp: tabletEvent.timestamp || Date.now(),
+        auxCodes: rawAuxCodes.slice(),
       };
       strummerEventBus.emitTabletEvent(tabletEventData);
 
@@ -537,7 +520,7 @@ class MidiStrummer extends TabletReaderBase {
       }
     } catch (e) {
       if (!this.liveMode) {
-        console.error(chalk.red(`Error processing packet: ${e}`));
+        console.error(chalk.red(`Error processing tablet event: ${e}`));
       }
     }
   }
@@ -678,20 +661,22 @@ class MidiStrummer extends TabletReaderBase {
     process.stdout.write(HIDE_CURSOR + MOVE_HOME + content);
   }
 
-  /**
-   * Initialize tablet button state based on device capabilities
-   */
-  private initializeTabletButtonState(): void {
-    const capabilities = this.configData?.getCapabilities();
-    this.tabletButtonCount = capabilities?.buttonCount ?? 8;
+  private printHeader(title: string): void {
+    console.log(chalk.cyan.bold('\n╔' + '═'.repeat(60) + '╗'));
+    console.log(chalk.cyan.bold('║') + chalk.white.bold(`  ${title}`.padEnd(60)) + chalk.cyan.bold('║'));
+    console.log(chalk.cyan.bold('╚' + '═'.repeat(60) + '╝\n'));
+  }
 
-    // Initialize button state for all buttons
-    this.tabletButtonState = {};
-    for (let i = 1; i <= this.tabletButtonCount; i++) {
-      this.tabletButtonState[`button${i}`] = false;
-    }
-
-    console.log(chalk.gray(`  Tablet has ${this.tabletButtonCount} hardware buttons`));
+  private setupShutdownHandlers(): void {
+    if (this.shutdownHandlersInstalled) return;
+    this.shutdownHandlersInstalled = true;
+    const shutdown = async (): Promise<void> => {
+      await this.stop();
+      process.stdout.write('\x1b[?25h');
+      process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   }
 
   async start(): Promise<void> {
@@ -705,23 +690,32 @@ class MidiStrummer extends TabletReaderBase {
     }
     console.log(chalk.green('✓ MIDI initialized'));
 
-    // Initialize tablet reader
-    console.log(chalk.gray('Initializing tablet reader...'));
-    await this.initializeReader();
+    // Discover and attach tablet
+    console.log(chalk.gray('Discovering tablet...'));
+    const pollInterval = this.devicePollInterval;
+    const client = pollInterval != null
+      ? await waitForDevice({
+          intervalMs: pollInterval,
+          onWaiting: () => console.log(chalk.yellow('⚠ No tablet detected - waiting...')),
+        })
+      : await TabletClient.discover();
 
-    if (!this.reader) {
-      throw new Error('Reader not initialized');
+    if (!client) {
+      throw new Error('No tablet device found. Use --poll <ms> to wait for one.');
     }
 
-    // Initialize button state based on device capabilities
-    this.initializeTabletButtonState();
-
-    // Start reading
-    this.reader.startReading((data) => {
-      this.handlePacket(data);
+    this.tabletClient = client;
+    await client.start({
+      onEvent: (event) => this.onTabletEvent(event),
+      onDisconnect: () => {
+        console.log(chalk.yellow('\n[Tablet] Device disconnected'));
+        this.prevAuxCodes.clear();
+      },
     });
 
-    console.log(chalk.green('✓ Started reading tablet data'));
+    const caps = client.capabilities;
+    console.log(chalk.green(`✓ Tablet connected: ${caps.manufacturer} ${caps.model}`));
+    console.log(chalk.gray(`  Aux buttons: ${caps.auxButtonCount}, pen buttons: ${caps.penButtonCount}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
     if (this.liveMode) {
@@ -729,11 +723,16 @@ class MidiStrummer extends TabletReaderBase {
       process.stdout.write('\x1b[2J\x1b[H');
     }
 
-    // Set up shutdown handlers
     this.setupShutdownHandlers();
   }
 
   async stop(): Promise<void> {
+    // Stop tablet client
+    if (this.tabletClient) {
+      try { this.tabletClient.stop(); } catch { /* ignore */ }
+      this.tabletClient = null;
+    }
+
     // Clean up MIDI
     if (this.bridge) {
       this.bridge.releaseAll();
@@ -745,8 +744,6 @@ class MidiStrummer extends TabletReaderBase {
 
     // Clean up event bus
     strummerEventBus.cleanup();
-
-    await super.stop();
   }
 }
 
@@ -756,55 +753,49 @@ async function main(): Promise<void> {
   program
     .name('midi-strummer')
     .description('MIDI Strummer - tablet input to MIDI output')
-    .option('-t, --tablet-config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
     .option('-s, --strummer-config <path>', 'Path to strummer/MIDI config JSON file')
     .option('--channel <number>', 'MIDI channel (1-16, overrides config)', parseInt)
     .option('-p, --port <port>', 'MIDI output port name or index (overrides config)')
     .option('-d, --duration <seconds>', 'Note duration in seconds (overrides config)', parseFloat)
     .option('-l, --live', 'Live dashboard mode (updates in place)')
+    .option('--poll <ms>', 'Poll interval in milliseconds for waiting for device. If not set, quit if no device found.', parseInt)
     .addHelpText(
       'after',
       `
 Examples:
-  # Auto-detect tablet from default config directory
+  # Auto-detect tablet
   npm run midi-strummer
 
-  # Auto-detect tablet from specific directory
-  npm run midi-strummer -- -t ./configs/
-
-  # Basic usage with specific config file
-  npm run midi-strummer -- -t tablet.json
-
   # With combined strummer+MIDI config file
-  npm run midi-strummer -- -t tablet.json -s strummer.json
+  npm run midi-strummer -- -s strummer.json
 
   # Override MIDI channel
-  npm run midi-strummer -- -t tablet.json --channel 1
+  npm run midi-strummer -- --channel 1
 
   # Specify MIDI port by index
-  npm run midi-strummer -- -t tablet.json -p 2
+  npm run midi-strummer -- -p 2
 
   # Specify MIDI port by name
-  npm run midi-strummer -- -t tablet.json -p "IAC Driver"
+  npm run midi-strummer -- -p "IAC Driver"
 
   # Live dashboard mode
-  npm run midi-strummer -- -t tablet.json --live
+  npm run midi-strummer -- --live
+
+  # Wait indefinitely for a device, polling every 2 seconds
+  npm run midi-strummer -- --poll 2000
 `
     );
 
   program.parse();
 
   const options = program.opts<{
-    tabletConfig?: string;
     strummerConfig?: string;
     channel?: number;
     port?: string;
     duration?: number;
     live?: boolean;
+    poll?: number;
   }>();
-
-  // Resolve tablet config path (handles auto-detection from directory)
-  const tabletConfigPath = resolveConfigPath(options.tabletConfig ?? DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_DIR);
 
   if (options.strummerConfig) {
     const strummerConfigPath = path.resolve(options.strummerConfig);
@@ -831,14 +822,14 @@ Examples:
     midiChannel = options.channel - 1; // Convert 1-16 to 0-15
   }
 
-  let strummer: MidiStrummer | null = null;
   try {
-    strummer = new MidiStrummer(tabletConfigPath, {
+    const strummer = new MidiStrummer({
       strummerConfigPath: options.strummerConfig ? path.resolve(options.strummerConfig) : undefined,
       liveMode: options.live,
       midiChannel,
       midiPort,
       noteDuration: options.duration,
+      devicePollInterval: options.poll ?? null,
     });
 
     await strummer.start();

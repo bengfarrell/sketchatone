@@ -11,7 +11,7 @@ type ThemeColor = 'light' | 'dark';
  * Sketchatone Tablet App (WebSocket Mode)
  *
  * WebSocket-only tablet viewer. Receives pre-processed tablet events
- * via WebSocket from a server running blankslate's tablet-websocket CLI.
+ * via WebSocket from the Sketchatone tablet server CLI.
  *
  * No WebHID support, no config loading needed - all data comes from the socket.
  */

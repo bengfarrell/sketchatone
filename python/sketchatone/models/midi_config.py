@@ -21,6 +21,15 @@ DEFAULT_MIDI_INPUT_EXCLUDE: List[str] = [
     'Midi Through',     # ALSA Midi Through (loopback)
 ]
 
+# Case-insensitive substring patterns hidden from the *output* picker.
+# Defaults to our own client so users can't accidentally route Sketchatone's
+# output into its own MidiIn — the loopback that produces a note storm.
+# Midi Through is intentionally NOT here: it's a legitimate output target
+# for chaining into another app even though it must never be a self-input.
+DEFAULT_MIDI_OUTPUT_EXCLUDE: List[str] = [
+    'sketchatone',      # Our own MidiIn port (shows up as a writable sink)
+]
+
 
 # How incoming MIDI notes drive the strummer strings.
 #   'direct'      : held MIDI notes become the strummer notes (1:1)
@@ -49,7 +58,10 @@ class MidiConfig:
         midi_output_backend: Which MIDI system to use ("rtmidi" or "jack")
         midi_output_id: MIDI output port - can be index (0, 1, 2) or name string, None = port 0
         midi_input_id: MIDI input port selection - can be index or name string, None = auto-connect all
-        midi_input_exclude: List of port name patterns to exclude from auto-connect (case-insensitive substring match)
+        midi_input_exclude: List of port name patterns to exclude from the input picker
+            and from auto-connect (case-insensitive substring match)
+        midi_output_exclude: List of port name patterns to exclude from the output picker
+            (case-insensitive substring match; hides our own MidiIn client by default)
         midi_passthrough: List of MIDI passthrough connections (input port -> output port)
         jack_client_name: Name for JACK client (default: "sketchatone")
         jack_auto_connect: JACK auto-connect mode (default: "chain0")
@@ -63,6 +75,7 @@ class MidiConfig:
     midi_input_id: Optional[Union[int, str]] = None
     input_mode: MidiInputMode = DEFAULT_MIDI_INPUT_MODE
     midi_input_exclude: List[str] = field(default_factory=lambda: DEFAULT_MIDI_INPUT_EXCLUDE.copy())
+    midi_output_exclude: List[str] = field(default_factory=lambda: DEFAULT_MIDI_OUTPUT_EXCLUDE.copy())
     midi_passthrough: List[MidiPassthroughConnection] = field(default_factory=list)
     jack_client_name: str = "sketchatone"
     jack_auto_connect: Optional[str] = "chain0"
@@ -77,6 +90,12 @@ class MidiConfig:
         exclude_list = data.get('midi_input_exclude', data.get('midiInputExclude'))
         if exclude_list is None:
             exclude_list = DEFAULT_MIDI_INPUT_EXCLUDE.copy()
+
+        # For midi_output_exclude, same story — fall back to defaults so we
+        # always hide our own MidiIn client from the output picker.
+        output_exclude_list = data.get('midi_output_exclude', data.get('midiOutputExclude'))
+        if output_exclude_list is None:
+            output_exclude_list = DEFAULT_MIDI_OUTPUT_EXCLUDE.copy()
 
         # Get inter-message delay
         delay = data.get('midi_inter_message_delay', data.get('midiInterMessageDelay', 0))
@@ -94,6 +113,7 @@ class MidiConfig:
             midi_input_id=data.get('midi_input_id', data.get('midiInputId')),
             input_mode=input_mode,
             midi_input_exclude=exclude_list,
+            midi_output_exclude=output_exclude_list,
             midi_passthrough=passthrough,
             jack_client_name=data.get('jack_client_name', data.get('jackClientName', 'sketchatone')),
             jack_auto_connect=data.get('jack_auto_connect', data.get('jackAutoConnect', 'chain0')),
@@ -116,6 +136,7 @@ class MidiConfig:
             'midiInputId': self.midi_input_id,
             'inputMode': self.input_mode,
             'midiInputExclude': self.midi_input_exclude,
+            'midiOutputExclude': self.midi_output_exclude,
             'midiPassthrough': self.midi_passthrough,
             'jackClientName': self.jack_client_name,
             'jackAutoConnect': self.jack_auto_connect,

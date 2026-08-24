@@ -2,12 +2,15 @@
  * Tablet Event Types
  *
  * Shared TypeScript types for tablet events used by both the WebSocket server
- * and frontend client. These types match blankslate's tablet-websocket-server format.
+ * and frontend client. These types match the sketchatone tablet-websocket-server format.
  */
 
 /**
- * Tablet event data - matches blankslate's TabletEventData format
- * This is the canonical format for tablet events sent over WebSocket
+ * Tablet event data - the canonical format for tablet events sent over WebSocket.
+ *
+ * Auxiliary (express-key) buttons are reported as raw HID scan codes in the
+ * `auxCodes` array rather than as per-button booleans, so tablets with any
+ * button count report in one uniform shape.
  */
 export interface TabletEventData {
   x: number;
@@ -20,19 +23,10 @@ export interface TabletEventData {
   secondaryButtonPressed: boolean;
   state: 'hover' | 'contact' | 'out-of-range';
   timestamp: number;
-  // Tablet hardware button states
-  tabletButtons?: number;
-  // Explicit button properties for backward compatibility (optional)
-  button1?: boolean;
-  button2?: boolean;
-  button3?: boolean;
-  button4?: boolean;
-  button5?: boolean;
-  button6?: boolean;
-  button7?: boolean;
-  button8?: boolean;
-  // Additional buttons (button9, button10, etc.) are accessed dynamically
-  // Use (data as Record<string, unknown>)[`button${n}`] for buttons > 8
+  /** HID scan codes for currently-held tablet hardware buttons. */
+  auxCodes: number[];
+  /** Normalized keyboard characters currently held (source of `key:<char>` events). */
+  pressedKeys?: string[];
 }
 
 /**
@@ -60,8 +54,6 @@ export interface StrumEventData {
 /**
  * Combined event data - tablet data with optional strum data merged in.
  * This is the primary event format sent over WebSocket.
- * Blankslate can read the tablet fields directly, while sketchatone
- * can also read the strum field when present.
  */
 export interface CombinedEventData extends TabletEventData {
   strum?: StrumEventData;
@@ -89,14 +81,19 @@ export interface DeviceStatusData {
 export type ServerMessageType = 'tablet' | 'config' | 'status' | 'midi-devices';
 
 /**
- * Device capabilities from blankslate tablet configuration
+ * Device capabilities from the matched OTD tablet configuration.
+ *
+ * `auxButtonCount` is advisory: the server reports actual buttons as
+ * observed HID scan codes in `TabletEventData.auxCodes`. Consumers
+ * should treat it as a hint for sizing UI grids only.
  */
 export interface DeviceCapabilities {
-  hasButtons: boolean;
-  buttonCount: number;
-  hasPressure: boolean;
+  name: string;
+  manufacturer: string;
+  model: string;
+  auxButtonCount: number;
+  penButtonCount: number;
   pressureLevels: number;
-  hasTilt: boolean;
   resolution: {
     x: number;
     y: number;
@@ -114,7 +111,7 @@ export interface ServerConfigData {
   config?: Record<string, unknown>;
   /** Server version (Python/Node.js service version) */
   serverVersion?: string;
-  /** Device capabilities from blankslate tablet configuration */
+  /** Device capabilities from the matched OTD tablet configuration */
   deviceCapabilities?: DeviceCapabilities;
   /** Current config file name (without path) */
   currentConfigName?: string;
@@ -176,12 +173,13 @@ export interface MidiDevicesData {
   outputPorts: MidiDevicePort[];
   currentInputPort: string | number | null;
   currentOutputPort: string | number | null;
+  loopbackInputPortIds?: Array<string | number>;
 }
 
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service' | 'set-button-detection';
 
 /**
  * Set throttle client message
@@ -283,6 +281,16 @@ export interface RestartServiceMessage {
 }
 
 /**
+ * Set button detection client message
+ * Toggles the ephemeral server-side flag that auto-appends unknown aux codes
+ * to `deviceButtons.buttons`. Never persisted; resets on server restart.
+ */
+export interface SetButtonDetectionMessage {
+  type: 'set-button-detection';
+  enabled: boolean;
+}
+
+/**
  * MIDI devices response message from server
  */
 export interface MidiDevicesMessage {
@@ -293,11 +301,11 @@ export interface MidiDevicesMessage {
 /**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage;
+export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage | SetButtonDetectionMessage;
 
 /**
  * Tablet data for visualization components
- * This matches the externalTabletData property expected by blankslate's TabletVisualizer
+ * Matches the externalTabletData property expected by TabletVisualizer
  */
 export interface TabletVisualizerData {
   x: number;

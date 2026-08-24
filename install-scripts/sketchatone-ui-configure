@@ -1,0 +1,118 @@
+#!/bin/bash
+# Sketchatone UI interactive configuration menu (Kivy variant).
+# Wraps the autostart and boot-trim helpers so users don't have to
+# remember each command name. Safe to re-run; each option is idempotent.
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        print_error "This menu must be run as root (use sudo sketchatone-ui-configure)"
+        exit 1
+    fi
+}
+
+pause() {
+    echo ""
+    read -r -p "Press Enter to return to the menu..." _
+}
+
+autostart_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ Autostart on tty1
+==========================================
+Configures the Pi to log into tty1 and launch the Kivy UI fullscreen via
+SDL2's kmsdrm backend (no Wayland compositor). Also generates udev rules
+for supported tablets and adds the login user to the render/input/video/
+tty/plugdev groups so keyboard (evdev) and tablet (hidraw) capture work
+without root.
+
+  1) Install autostart
+  2) Uninstall autostart
+  b) Back
+HDR
+    echo ""
+    if [ ! -x /usr/bin/sketchatone-ui-setup-autostart ]; then
+        print_error "sketchatone-ui-setup-autostart is not installed."
+        pause
+        return
+    fi
+    read -r -p "Choose [1-2, b]: " choice
+    case "$choice" in
+        1) sketchatone-ui-setup-autostart --install ;;
+        2) sketchatone-ui-setup-autostart --uninstall ;;
+        b|B|"") return ;;
+        *) print_error "Invalid choice: $choice" ;;
+    esac
+    pause
+}
+
+boot_trim_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ Boot-time trimming
+==========================================
+Masks unused services (Bluetooth, ModemManager, cups, etc.), converts
+ssh.service to socket activation, and patches /boot/firmware/config.txt
+and cmdline.txt for a faster boot. Intended for dedicated appliance
+installs on Pi OS Lite. Undo with
+`sudo sketchatone-ui-boot-trim --restore`.
+
+  1) Install boot-trim
+  2) Restore defaults
+  b) Back
+HDR
+    echo ""
+    if [ ! -x /usr/bin/sketchatone-ui-boot-trim ]; then
+        print_error "sketchatone-ui-boot-trim is not installed."
+        pause
+        return
+    fi
+    read -r -p "Choose [1-2, b]: " choice
+    case "$choice" in
+        1) sketchatone-ui-boot-trim --install ;;
+        2) sketchatone-ui-boot-trim --restore ;;
+        b|B|"") return ;;
+        *) print_error "Invalid choice: $choice" ;;
+    esac
+    pause
+}
+
+main_menu() {
+    while true; do
+        clear
+        cat << 'HDR'
+==========================================
+ Sketchatone UI Configuration
+==========================================
+  1) Autostart on tty1   (kmsdrm fullscreen + udev + user groups)
+  2) Boot-time trimming  (faster boot on Pi OS Lite)
+  q) Quit
+HDR
+        echo ""
+        read -r -p "Choose [1-2, q]: " choice
+        case "$choice" in
+            1) autostart_menu ;;
+            2) boot_trim_menu ;;
+            q|Q|"") echo ""; exit 0 ;;
+            *) print_error "Invalid choice: $choice"; sleep 1 ;;
+        esac
+    done
+}
+
+check_root
+main_menu

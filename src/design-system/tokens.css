@@ -93,7 +93,7 @@ html.light-theme {
   --sketch-control-height-lg: 40px;
   --sketch-control-edge-padding: 8px;
 
-  /* Spectrum compatibility aliases — required by third-party deps (blankslate) */
+  /* Spectrum compatibility aliases — used by the vendored tablet-visualizer styles */
   --spectrum-white: #ffffff;
   --spectrum-gray-50: var(--sketch-color-gray-50);
   --spectrum-gray-75: var(--sketch-color-gray-75);

@@ -252,20 +252,6 @@ export const styles = css`
     color: white;
   }
 
-  /* Detected state (button is currently pressed on device) */
-  .button-chip.detected {
-    background: var(--sketch-color-orange-400);
-    color: white;
-    box-shadow: 0 0 8px var(--sketch-color-orange-400);
-  }
-
-  /* Both selected and detected */
-  .button-chip.selected.detected {
-    background: var(--sketch-color-green-500);
-    color: white;
-    box-shadow: 0 0 8px var(--sketch-color-green-500);
-  }
-
   .startup-icon {
     color: var(--sketch-color-gray-600);
   }
@@ -345,21 +331,6 @@ export const styles = css`
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
-  }
-
-  .detect-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .detecting {
-    animation: pulse 1s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
   }
 
   input.sketch-input, input.sketch-input {

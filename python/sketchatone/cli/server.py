@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import json
 import math
+import re
 import signal
 import socket
 import sys
@@ -30,6 +32,24 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set, Callable, Union
 from urllib.parse import unquote
+
+
+_PORT_NAME_SUFFIX_RE = re.compile(r'\s+\d+:\d+\s*$')
+
+
+def _normalize_midi_port_name(name: str) -> str:
+    """Normalize an ALSA/CoreMIDI port name for loopback comparison.
+
+    ALSA emits ``"Client:Port NN:MM"`` (e.g. ``"Sketchatone:Sketchatone 128:0"``)
+    for both our output and the corresponding input alias; stripping the
+    trailing sequencer numeric suffix and lowercasing collapses the two
+    onto the same key. Also catches the classic ``"Midi Through"``
+    two-way port pair when routed to itself.
+    """
+    if not name:
+        return ''
+    stripped = _PORT_NAME_SUFFIX_RE.sub('', name)
+    return re.sub(r'\s+', ' ', stripped).strip().lower()
 
 
 def get_local_ip() -> Optional[str]:
@@ -154,14 +174,10 @@ from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
 from sketchatone.midi.jack_input import JackMidiInput
 from sketchatone.utils.keyboard_listener import KeyboardListener
 
-# Import blankslate's TabletReaderBase
-try:
-    from blankslate.cli.tablet_reader_base import TabletReaderBase, Colors, colored
-    from blankslate.utils.finddevice import find_config_for_device
-except ImportError:
-    print("Error: blankslate package not found.")
-    print("Make sure blankslate is installed: pip install -e ../blankslate/python")
-    sys.exit(1)
+from sketchatone.tablet.tablet_client import TabletClient, wait_for_device
+from sketchatone.tablet.otd.config_loader import ConfigIndex
+from sketchatone.tablet.server.event_adapter import TabletEvent
+from sketchatone.cli._ansi import Colors, colored
 
 # Import websockets
 try:
@@ -171,12 +187,6 @@ except ImportError:
     print("Error: websockets package not found.")
     print("Make sure websockets is installed: pip install websockets")
     sys.exit(1)
-
-# Default config directory for device configs
-# Check environment variable first (for packaged apps), then fall back to relative path
-DEFAULT_CONFIG_DIR = os.environ.get('SKETCHATONE_CONFIG_DIR') or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices'
-)
 
 # MIME types for HTTP server
 MIME_TYPES = {
@@ -209,10 +219,10 @@ class TabletEventData:
     tiltXY: float = 0.0
     primaryButtonPressed: bool = False
     secondaryButtonPressed: bool = False
-    # Tablet hardware buttons (dynamic - stored in dict for flexibility)
-    tabletButtons: int = 0
-    # Dynamic button states - keys are 'button1', 'button2', etc.
-    buttons: Dict[str, bool] = field(default_factory=dict)
+    # Auxiliary hardware buttons - raw HID scan codes currently held
+    auxCodes: List[int] = field(default_factory=list)
+    # Normalized keyboard characters currently held (source of `key:<char>` events)
+    pressedKeys: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -360,121 +370,14 @@ class StrummerEventBus:
         self._listeners.clear()
 
 
-def _poll_for_device(search_dir: str, poll_ms: int) -> str:
-    """
-    Poll for a device connection indefinitely.
-
-    Args:
-        search_dir: Directory to search for config files
-        poll_ms: Poll interval in milliseconds
-
-    Returns:
-        Config file path when device is found
-    """
-    print(colored(f'No tablet device found. Waiting for device to be connected...', Colors.YELLOW))
-    print(colored(f'Poll interval: {poll_ms}ms', Colors.GRAY))
-    print(colored('Press Ctrl+C to exit.', Colors.GRAY))
-
-    while True:
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            print(colored(f'Device connected! Using config: {found_config}', Colors.GREEN))
-            return found_config
-        time.sleep(poll_ms / 1000.0)
-
-
-def _exit_no_device(search_dir: str) -> None:
-    """Exit with error message when no device is found."""
-    print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
-    print(colored('Use --poll <ms> to wait for a device to be connected.', Colors.GRAY))
-    sys.exit(1)
-
-
-def resolve_device_config_path(
-    device_path: str | None,
-    base_dir: str | None = None,
-    default_dir: str = DEFAULT_CONFIG_DIR,
-    poll_ms: int | None = None
-) -> tuple[str | None, str]:
-    """
-    Resolve device config path - if it's a directory or None, search for matching config.
-
-    Supports:
-    - Absolute paths (e.g., /opt/sketchatone/configs/devices)
-    - Relative paths resolved from base_dir (e.g., "devices" relative to config file location)
-    - Direct file paths (e.g., /opt/sketchatone/configs/devices/xp-pen.json)
-
-    Args:
-        device_path: Device config path (file, directory, or None)
-        base_dir: Base directory for resolving relative paths (e.g., config file's directory)
-        default_dir: Default directory to search if device_path is None and base_dir is None
-        poll_ms: If set, return None for config path to indicate polling should happen later
-
-    Returns:
-        Tuple of (config_file_path or None, search_directory)
-        If config_file_path is None, the server should poll for device in background
-
-    Raises:
-        SystemExit: If no matching config is found and poll_ms is not set
-    """
-    # Resolve the path
-    if device_path is None:
-        # No device path specified, use default directory
-        search_dir = os.path.abspath(default_dir)
-    elif os.path.isabs(device_path):
-        # Absolute path - use as-is
-        if device_path.endswith('.json'):
-            # Direct file path
-            if not os.path.exists(device_path):
-                print(colored(f'Error: Device config file not found: {device_path}', Colors.RED))
-                sys.exit(1)
-            return device_path, os.path.dirname(device_path)
-        else:
-            # Directory path
-            search_dir = device_path
-    else:
-        # Relative path - resolve from base_dir or current directory
-        if base_dir:
-            resolved_path = os.path.join(base_dir, device_path)
-        else:
-            resolved_path = device_path
-        resolved_path = os.path.abspath(resolved_path)
-
-        if resolved_path.endswith('.json'):
-            # Direct file path
-            if not os.path.exists(resolved_path):
-                print(colored(f'Error: Device config file not found: {resolved_path}', Colors.RED))
-                sys.exit(1)
-            return resolved_path, os.path.dirname(resolved_path)
-        else:
-            # Directory path
-            search_dir = resolved_path
-
-    # Validate directory exists
-    if not os.path.isdir(search_dir):
-        print(colored(f'Error: Device config directory not found: {search_dir}', Colors.RED))
-        sys.exit(1)
-
-    # Search for matching device config
-    found_config = find_config_for_device(search_dir)
-    if found_config:
-        return found_config, search_dir
-    elif poll_ms is not None:
-        # Return None to indicate polling should happen in background
-        return None, search_dir
-    else:
-        _exit_no_device(search_dir)
-
-
-class StrummerWebSocketServer(TabletReaderBase):
+class StrummerWebSocketServer:
     """
     WebSocket server that broadcasts tablet and strum events.
-    Extends TabletReaderBase for HID device access.
+    Uses TabletClient composition for HID device access.
     """
 
     def __init__(
         self,
-        tablet_config_path: Optional[str],
         strummer_config_path: Optional[str] = None,
         ws_port: int = 8081,
         wss_port: Optional[int] = None,
@@ -482,7 +385,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         https_port: Optional[int] = None,
         throttle_ms: int = 150,
         poll_ms: Optional[int] = None,
-        search_dir: Optional[str] = None,
+        dev_mode: bool = False,
         # MIDI options
         use_jack: Optional[bool] = None,
         midi_channel: Optional[int] = None,
@@ -491,18 +394,15 @@ class StrummerWebSocketServer(TabletReaderBase):
         jack_client_name: Optional[str] = None,
         jack_auto_connect: Optional[str] = None
     ):
-        # Only call parent init if we have a config path
-        # Otherwise we'll initialize later when device is found
-        self._tablet_initialized = tablet_config_path is not None
-        if tablet_config_path:
-            super().__init__(tablet_config_path)
-
         self.ws_port = ws_port
         self.wss_port = wss_port
         self.http_port = http_port
         self.https_port = https_port
         self.poll_ms = poll_ms
-        self.search_dir = search_dir or DEFAULT_CONFIG_DIR
+        self.dev_mode = dev_mode
+
+        # TabletClient composition (initialized when a device is discovered)
+        self.tablet_client: Optional[TabletClient] = None
 
         # Determine public directory for HTTP server
         # Check environment variable first (for packaged apps), then fall back to relative path
@@ -512,6 +412,10 @@ class StrummerWebSocketServer(TabletReaderBase):
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'dist', 'public'
         )
         self.clients: Set[WebSocketServerProtocol] = set()
+        # Ephemeral (per-server-run) flag: when True, aux codes we haven't seen
+        # before are auto-appended to device_buttons.buttons. Toggled by clients
+        # via the 'set-button-detection' message; never persisted.
+        self.detecting_device_buttons: bool = False
         self.server: Optional[websockets.WebSocketServer] = None
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
         self._http_server = None
@@ -624,16 +528,25 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Execute any startup rules defined in the config
         self.actions.execute_startup_rules()
 
-        # Initialize keyboard listener if configured
-        # Track keyboard button states to emit synthetic tablet events
+        # Initialize keyboard listener if enabled. Emits raw key names; the server
+        # gates learning through `detecting_device_buttons` and dispatches actions
+        # as `key:<char>` button events. Known tablet VID/PIDs are handed to the
+        # listener so it can skip Linux evdev keyboard interfaces that actually
+        # belong to a tablet - those express keys arrive through the tablet's
+        # hidraw aux path (as `code:<int>`), keeping IDs identical to macOS.
         self.keyboard_button_states: Dict[str, bool] = {}
         self.keyboard_listener: Optional[KeyboardListener] = None
-        if self.config.keyboard.enabled and self.config.keyboard.mappings:
+        if self.config.keyboard.enabled:
+            try:
+                tablet_vid_pids = set(ConfigIndex.from_vendored().all_vid_pid_pairs())
+            except Exception as e:
+                print(colored(f'⚠ Failed to load tablet VID/PID index: {e}', Colors.YELLOW))
+                tablet_vid_pids = set()
             self.keyboard_listener = KeyboardListener(
                 enabled=self.config.keyboard.enabled,
-                mappings=self.config.keyboard.mappings,
-                on_button_press=self._handle_keyboard_button_press,
-                on_button_release=self._handle_keyboard_button_release
+                on_key_press=self._handle_keyboard_key_press,
+                on_key_release=self._handle_keyboard_key_release,
+                tablet_vid_pids=tablet_vid_pids,
             )
 
         # State tracking for stylus buttons
@@ -642,11 +555,8 @@ class StrummerWebSocketServer(TabletReaderBase):
             'secondaryButtonPressed': False,
         }
 
-        # State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
-        self.tablet_button_state: Dict[str, bool] = {}
-        self.tablet_button_count: int = 8  # Default, updated when device connects
-
-
+        # State tracking for auxiliary hardware buttons - previous HID scan codes
+        self.prev_aux_codes: Set[int] = set()
 
         # State tracking for note repeater
         self.repeater_state = {
@@ -683,21 +593,6 @@ class StrummerWebSocketServer(TabletReaderBase):
         self.strummer.notes = notes
         self.slider.notes = notes
 
-    def _initialize_tablet_button_state(self) -> None:
-        """Initialize tablet button state based on device capabilities"""
-        capabilities = None
-        if hasattr(self, 'config_data') and self.config_data:
-            capabilities = self.config_data.get_capabilities()
-
-        self.tablet_button_count = capabilities.buttonCount if capabilities else 8
-
-        # Initialize button state for all buttons
-        self.tablet_button_state = {}
-        for i in range(1, self.tablet_button_count + 1):
-            self.tablet_button_state[f'button{i}'] = False
-
-        print(colored(f'  Tablet has {self.tablet_button_count} hardware buttons', Colors.GRAY))
-
     def _get_control_value(self, control: str, events: Dict[str, Any]) -> Optional[float]:
         """
         Get the control input value based on the control type.
@@ -714,13 +609,13 @@ class StrummerWebSocketServer(TabletReaderBase):
         elif control == "pressure":
             return float(events.get('pressure', 0))
         elif control == "tiltX":
-            # tiltX from blankslate is -1 to 1, normalize to 0-1
+            # tiltX is -1 to 1, normalize to 0-1
             return (float(events.get('tiltX', 0)) + 1.0) / 2.0
         elif control == "tiltY":
-            # tiltY from blankslate is -1 to 1, normalize to 0-1
+            # tiltY is -1 to 1, normalize to 0-1
             return (float(events.get('tiltY', 0)) + 1.0) / 2.0
         elif control == "tiltXY":
-            # tiltXY from blankslate is -1 to 1, normalize to 0-1
+            # tiltXY is -1 to 1, normalize to 0-1
             return (float(events.get('tiltXY', 0)) + 1.0) / 2.0
         elif control == "xaxis":
             return float(events.get('x', 0.5))
@@ -865,7 +760,8 @@ class StrummerWebSocketServer(TabletReaderBase):
                 else:
                     # Connect to selected ports
                     print(colored(f'[MIDI Input] Connecting to selected ports: {input_port}', Colors.CYAN))
-                    connected = self.midi_input.connect_multiple(input_port)
+                    exclude_ports = list(self.config.midi.midi_input_exclude)
+                    connected = self.midi_input.connect_multiple(input_port, exclude_ports=exclude_ports)
             elif input_port is None or input_port == '':
                 # Legacy: Auto-connect to all MIDI sources, excluding ports that could cause feedback
                 exclude_ports: List[str] = list(self.config.midi.midi_input_exclude)
@@ -1036,12 +932,6 @@ class StrummerWebSocketServer(TabletReaderBase):
             Colors.CYAN,
         ))
 
-    async def start(self) -> None:
-        """Start the reader - required by TabletReaderBase abstract method"""
-        # This is called by the parent class's start_sync method
-        # We just need to call the parent's initialize_reader
-        await self.initialize_reader()
-
     async def _handle_http_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle incoming HTTP request for static file serving"""
         peername = None
@@ -1167,11 +1057,10 @@ class StrummerWebSocketServer(TabletReaderBase):
             message['tiltXY'] = data.tablet.tiltXY
             message['primaryButtonPressed'] = data.tablet.primaryButtonPressed
             message['secondaryButtonPressed'] = data.tablet.secondaryButtonPressed
-            # Tablet hardware buttons (dynamic)
-            message['tabletButtons'] = data.tablet.tabletButtons
-            # Add all button states dynamically
-            for button_key, button_value in data.tablet.buttons.items():
-                message[button_key] = button_value
+            # Auxiliary hardware buttons - raw HID scan codes currently held
+            message['auxCodes'] = list(data.tablet.auxCodes)
+            if data.tablet.pressedKeys:
+                message['pressedKeys'] = list(data.tablet.pressedKeys)
 
         if data.strum:
             message['strum'] = {
@@ -1247,11 +1136,12 @@ class StrummerWebSocketServer(TabletReaderBase):
             self.clients.discard(client)
 
     def _resolve_device_name(self, device_name: Optional[str] = None) -> Optional[str]:
-        """Best-effort tablet name, falling back to the loaded config's name."""
+        """Best-effort tablet name, falling back to the attached client's name."""
         if device_name:
             return device_name
-        cfg = getattr(self, 'config_data', None)
-        return getattr(cfg, 'name', None) if cfg is not None else None
+        if self.tablet_client is not None:
+            return self.tablet_client.capabilities.name
+        return None
 
     def broadcast_status(self, connected: bool, device_name: Optional[str] = None) -> None:
         """Broadcast device status to all clients"""
@@ -1291,22 +1181,20 @@ class StrummerWebSocketServer(TabletReaderBase):
 
     def _get_config_data(self, is_saved_state: bool = True) -> Dict[str, Any]:
         """Get config data in the format expected by the webapp"""
-        # Get device capabilities if available
+        # Get device capabilities from the attached TabletClient if available
         device_capabilities = None
-        if hasattr(self, 'config_data') and self.config_data:
-            caps = self.config_data.get_capabilities()
-            if caps:
-                device_capabilities = {
-                    'hasButtons': caps.hasButtons,
-                    'buttonCount': caps.buttonCount,
-                    'hasPressure': caps.hasPressure,
-                    'pressureLevels': caps.pressureLevels,
-                    'hasTilt': caps.hasTilt,
-                    'resolution': {
-                        'x': caps.resolution.x,
-                        'y': caps.resolution.y,
-                    },
-                }
+        if self.tablet_client is not None:
+            caps = self.tablet_client.capabilities
+            device_capabilities = {
+                'name': caps.name,
+                'manufacturer': caps.manufacturer,
+                'model': caps.model,
+                'maxX': caps.max_x,
+                'maxY': caps.max_y,
+                'maxPressure': caps.max_pressure,
+                'penButtonCount': caps.pen_button_count,
+                'auxButtonCount': caps.aux_button_count,
+            }
 
         return {
             'throttleMs': self.event_bus.throttle_ms,
@@ -1365,54 +1253,34 @@ class StrummerWebSocketServer(TabletReaderBase):
         }
         self._broadcast(json.dumps(message))
 
-    def _handle_keyboard_button_press(self, button_id: str) -> None:
+    def _handle_keyboard_key_press(self, key: str) -> None:
         """
-        Handle keyboard button press event.
-        Updates button state, triggers actions, and emits synthetic tablet event.
-
-        Args:
-            button_id: Button ID like 'button:1', 'button:2', etc.
+        Handle a raw keyboard press: learn the key when detection is on,
+        update state, dispatch a ``key:<char>`` action, and emit a synthetic
+        tablet event so the UI can show pressed-key indicators.
         """
-        # Update keyboard button state
+        self._maybe_learn_device_key(key)
+        button_id = f'key:{key}'
         self.keyboard_button_states[button_id] = True
-
-        # Trigger action
         self.actions.handle_button_event(button_id, 'press')
-
-        # Emit synthetic tablet event with button state
         self._emit_keyboard_tablet_event()
 
-    def _handle_keyboard_button_release(self, button_id: str) -> None:
-        """
-        Handle keyboard button release event.
-        Updates button state, triggers actions, and emits synthetic tablet event.
-
-        Args:
-            button_id: Button ID like 'button:1', 'button:2', etc.
-        """
-        # Update keyboard button state
+    def _handle_keyboard_key_release(self, key: str) -> None:
+        button_id = f'key:{key}'
         self.keyboard_button_states[button_id] = False
-
-        # Trigger action
         self.actions.handle_button_event(button_id, 'release')
-
-        # Emit synthetic tablet event with button state
         self._emit_keyboard_tablet_event()
 
     def _emit_keyboard_tablet_event(self) -> None:
         """
-        Emit a synthetic tablet event showing current keyboard button states.
-        This makes keyboard button presses visible in the dashboard.
+        Emit a synthetic tablet event carrying currently-held keyboard keys as
+        ``pressedKeys`` so the dashboard can highlight them alongside auxCodes.
         """
-        # Create buttons dict (e.g., button:1 -> button1)
-        buttons_dict: Dict[str, bool] = {}
+        pressed_keys: List[str] = []
         for button_id, is_pressed in self.keyboard_button_states.items():
-            if button_id.startswith('button:'):
-                button_num = button_id.split(':')[1]
-                if button_num.isdigit():
-                    buttons_dict[f'button{button_num}'] = is_pressed
+            if is_pressed and button_id.startswith('key:'):
+                pressed_keys.append(button_id.split(':', 1)[1])
 
-        # Create a tablet event with neutral position and current button states
         tablet_data = TabletEventData(
             x=0.5,
             y=0.5,
@@ -1423,10 +1291,10 @@ class StrummerWebSocketServer(TabletReaderBase):
             primaryButtonPressed=False,
             secondaryButtonPressed=False,
             state='out-of-range',
-            buttons=buttons_dict
+            auxCodes=[],
+            pressedKeys=pressed_keys,
         )
 
-        # Emit through event bus so it gets broadcast to WebSocket clients
         self.event_bus.emit_tablet_event(tablet_data)
 
     async def _handle_client(self, websocket: WebSocketServerProtocol) -> None:
@@ -1465,6 +1333,13 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Send MIDI input status to new client
         await self._send_midi_input_status(websocket)
 
+        # Send current button-detection state so the UI reflects the shared
+        # per-server flag on reconnect / new tab.
+        await websocket.send(json.dumps({
+            'type': 'button-detection-state',
+            'enabled': self.detecting_device_buttons,
+        }))
+
         try:
             async for message in websocket:
                 await self._handle_client_message(websocket, message)
@@ -1488,7 +1363,16 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Support both 'throttleMs' (webapp format) and 'throttle' (legacy)
                 throttle = data.get('throttleMs', data.get('throttle', 150))
                 self.event_bus.set_throttle(throttle)
-            
+
+            elif msg_type == 'set-button-detection':
+                enabled = bool(data.get('enabled', False))
+                self.detecting_device_buttons = enabled
+                print(colored(
+                    f'[Device Buttons] Detection {"started" if enabled else "stopped"}',
+                    Colors.CYAN,
+                ))
+                self._broadcast_button_detection_state()
+
             elif msg_type == 'update-config':
                 # Handle path-based config updates (like Node.js server)
                 path = data.get('path')
@@ -1499,8 +1383,10 @@ class StrummerWebSocketServer(TabletReaderBase):
                     # Legacy: full config object update
                     config_data = data.get('config', {})
                     self._update_config(config_data)
-                # Broadcast updated config to all clients
-                self.broadcast_config()
+                    self._persist_config_to_file()
+                # Every update is auto-persisted above, so the broadcast
+                # can report the saved state directly.
+                self.broadcast_config(is_saved_state=True)
 
             elif msg_type == 'save-config':
                 # Save the current configuration to the config file
@@ -1629,16 +1515,27 @@ class StrummerWebSocketServer(TabletReaderBase):
             if 'midiChannel' in path and self.backend is not None:
                 self.backend.set_channel(value)
 
-            # Reconnect MIDI output if port changed
+            # Reconnect MIDI output if port changed. ``None`` means the
+            # user toggled the current output off in the UI — just
+            # disconnect and stay disconnected; ``backend.connect(None)``
+            # silently falls through to port 0, which would either
+            # reconnect to a random device or (once ALSA has leaked
+            # Sketchatone clients from earlier toggles) land on our own
+            # output and re-arm the loopback.
             if path == 'midi.midiOutputId' and self.backend is not None:
-                print(colored(f'[MIDI Output] Reconnecting to port: {value}', Colors.CYAN))
-                self.backend.disconnect()
-                if self.backend.connect(value):
-                    print(colored('[MIDI Output] Reconnected successfully', Colors.GREEN))
-                    # Broadcast updated device list to all clients
+                if value is None:
+                    print(colored('[MIDI Output] Disconnecting (no port selected)', Colors.YELLOW))
+                    self.backend.disconnect()
                     self._broadcast_midi_devices()
                 else:
-                    print(colored('[MIDI Output] Failed to reconnect', Colors.RED))
+                    print(colored(f'[MIDI Output] Reconnecting to port: {value}', Colors.CYAN))
+                    self.backend.disconnect()
+                    if self.backend.connect(value):
+                        print(colored('[MIDI Output] Reconnected successfully', Colors.GREEN))
+                        # Broadcast updated device list to all clients
+                        self._broadcast_midi_devices()
+                    else:
+                        print(colored('[MIDI Output] Failed to reconnect', Colors.RED))
 
             # Reconnect MIDI input if port changed
             if path == 'midi.midiInputId' and self.midi_input is not None:
@@ -1654,7 +1551,8 @@ class StrummerWebSocketServer(TabletReaderBase):
                         connected = False
                     else:
                         # Connect to selected ports
-                        connected = self.midi_input.connect_multiple(value)
+                        exclude_ports = list(self.config.midi.midi_input_exclude)
+                        connected = self.midi_input.connect_multiple(value, exclude_ports=exclude_ports)
                         if connected:
                             print(colored(f'[MIDI Input] Reconnected to {len(value)} port(s)', Colors.GREEN))
                 elif value is None:
@@ -1691,9 +1589,103 @@ class StrummerWebSocketServer(TabletReaderBase):
                 # Re-execute startup rules to apply new chord progression
                 self.actions.execute_startup_rules()
 
+            # Persist every config change immediately so it survives a
+            # restart. The Save/Revert affordances have been retired; all
+            # in-memory mutations round-trip to disk right away.
+            self._persist_config_to_file()
+
             print(colored(f'Config updated: {path} = {value}', Colors.YELLOW))
         except Exception as e:
             print(colored(f'Failed to update config: {path} - {e}', Colors.RED))
+
+    def _persist_config_to_file(self) -> None:
+        """
+        Write the current in-memory config to disk (if a file path is configured).
+        Used by auto-learn and other server-initiated config mutations.
+        Preserves original file ownership when running as root (sudo).
+        """
+        if not self.strummer_config_path:
+            return
+        try:
+            original_uid = None
+            original_gid = None
+            if os.path.exists(self.strummer_config_path):
+                stat_info = os.stat(self.strummer_config_path)
+                original_uid = stat_info.st_uid
+                original_gid = stat_info.st_gid
+
+            with open(self.strummer_config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config.to_dict(), f, indent=2)
+
+            if original_uid is not None and os.geteuid() == 0:
+                os.chown(self.strummer_config_path, original_uid, original_gid)
+        except Exception as e:
+            abs_path = os.path.abspath(self.strummer_config_path)
+            errno_name = getattr(e, 'errno', None)
+            errno_str = f' ({errno.errorcode.get(errno_name, errno_name)})' if errno_name else ''
+            print(colored(
+                f'[Persist Config] !! FAILED to write {abs_path}: '
+                f'{type(e).__name__}{errno_str}: {e}',
+                Colors.RED,
+            ))
+            print(colored(
+                '[Persist Config] !! UI changes will NOT survive restart '
+                'until this is resolved (check file ownership/permissions).',
+                Colors.RED,
+            ))
+
+    def _maybe_learn_device_button(self, code: int) -> None:
+        """
+        If button detection is currently on and this aux code isn't already
+        known, append it to ``device_buttons.buttons`` with a default name,
+        persist, and broadcast the updated config to all clients.
+        """
+        from ..models.device_buttons_config import DeviceButton
+        if not self.detecting_device_buttons:
+            return
+        dbc = self.config.device_buttons
+        if any(b.code == code for b in dbc.buttons):
+            return
+
+        next_index = len(dbc.buttons) + 1
+        dbc.buttons.append(DeviceButton(code=code, name=f'Button {next_index}'))
+        print(colored(
+            f'[Device Buttons] Learned new button: code={code} name="Button {next_index}"',
+            Colors.CYAN,
+        ))
+        self._persist_config_to_file()
+        self.broadcast_config(is_saved_state=True)
+
+    def _maybe_learn_device_key(self, key: str) -> None:
+        """
+        If key detection is currently on and this key isn't already known,
+        append it to ``device_buttons.keys`` with a default name, persist, and
+        broadcast the updated config to all clients.
+        """
+        from ..models.device_buttons_config import DeviceKey
+        if not self.detecting_device_buttons or not key:
+            return
+        dbc = self.config.device_buttons
+        if any(k.key == key for k in dbc.keys):
+            return
+
+        dbc.keys.append(DeviceKey(key=key, name=f'Key {key.upper()}'))
+        print(colored(
+            f'[Device Buttons] Learned new key: key="{key}" name="Key {key.upper()}"',
+            Colors.CYAN,
+        ))
+        self._persist_config_to_file()
+        self.broadcast_config(is_saved_state=True)
+
+    def _broadcast_button_detection_state(self) -> None:
+        """
+        Broadcast the current button-detection state to all clients so UIs
+        stay in sync across multiple browser tabs.
+        """
+        self._broadcast(json.dumps({
+            'type': 'button-detection-state',
+            'enabled': self.detecting_device_buttons,
+        }))
 
     async def _handle_restart_service(self, websocket: 'WebSocketServerProtocol') -> None:
         """
@@ -1998,18 +1990,37 @@ class StrummerWebSocketServer(TabletReaderBase):
         input_ports = []
         output_ports = []
 
+        # Build exclusion lists up front so we can filter both pickers.
+        # Same case-insensitive substring rule as RtMidiInput.connect_all,
+        # so anything hidden here is guaranteed to also be skipped by the
+        # auto-connect path.
+        excluded_input_ports = list(self.config.midi.midi_input_exclude)
+        excluded_output_ports = list(self.config.midi.midi_output_exclude)
+
+        def _is_excluded(name: Optional[str], patterns: List[str]) -> bool:
+            if not name:
+                return False
+            lowered = name.lower()
+            return any(p and p.lower() in lowered for p in patterns)
+
         # Get MIDI input ports
         if self.midi_input:
             available_inputs = self.midi_input.get_available_ports()
-            input_ports = available_inputs
+            input_ports = [
+                p for p in available_inputs
+                if not _is_excluded(p.get('name', ''), excluded_input_ports)
+            ]
             print(colored(f'[MIDI Devices] Found {len(input_ports)} input ports', Colors.CYAN))
 
-        # Get MIDI output ports
+        # Get MIDI output ports. We keep the enumeration index as the id
+        # so the backend still opens the right port after excluded entries
+        # are dropped from the visible list.
         if self.backend:
             available_outputs = self.backend.get_available_ports()
             output_ports = [
                 {'id': i, 'name': name}
                 for i, name in enumerate(available_outputs)
+                if not _is_excluded(name, excluded_output_ports)
             ]
 
         # Get currently connected ports (not just config values)
@@ -2018,9 +2029,6 @@ class StrummerWebSocketServer(TabletReaderBase):
         if self.midi_input and self.midi_input.is_connected:
             connected_ports = self.midi_input.connected_ports
             current_input_ports = [p['id'] for p in connected_ports]
-
-        # Build exclusion list (same logic as _setup_midi_input)
-        excluded_input_ports = list(self.config.midi.midi_input_exclude)
 
         # For output: find the port ID that matches the connected port name
         current_output_port = None
@@ -2041,6 +2049,22 @@ class StrummerWebSocketServer(TabletReaderBase):
         # Get passthrough connections from config
         passthrough_connections = self.config.midi.midi_passthrough
 
+        # Detect active MIDI loopback: any currently-connected input port
+        # whose normalized name matches the current output port. This is
+        # how our own strums fed back into _update_notes_from_midi_input
+        # before the CLIENT_NAME rename and is the general failure mode
+        # for "Midi Through" self-routing. The UI colours the offending
+        # rows red and shows a header warning; we don't block the
+        # connection so users can still recover manually.
+        loopback_input_port_ids: List[Any] = []
+        if self.backend and self.backend.current_output_name and current_input_ports:
+            out_norm = _normalize_midi_port_name(self.backend.current_output_name)
+            connected_set = set(current_input_ports)
+            for port in input_ports:
+                pid = port.get('id')
+                if pid in connected_set and _normalize_midi_port_name(port.get('name', '')) == out_norm:
+                    loopback_input_port_ids.append(pid)
+
         data = {
             'inputPorts': input_ports,
             'outputPorts': output_ports,
@@ -2048,8 +2072,11 @@ class StrummerWebSocketServer(TabletReaderBase):
             'currentOutputPort': current_output_port,
             'excludedInputPorts': excluded_input_ports,  # Ports excluded from input to prevent feedback loops
             'passthroughConnections': passthrough_connections,  # MIDI passthrough connections
+            'loopbackInputPortIds': loopback_input_port_ids,  # Connected inputs that share a name with current output
         }
         print(colored(f'[MIDI Devices] Sending to client: {len(input_ports)} inputs, {len(output_ports)} outputs, {len(passthrough_connections)} passthrough', Colors.CYAN))
+        if loopback_input_port_ids:
+            print(colored(f'[MIDI Devices] !! Loopback detected on input port ids: {loopback_input_port_ids}', Colors.YELLOW))
         return data
 
     async def _handle_get_midi_devices(self, websocket: WebSocketServerProtocol) -> None:
@@ -2172,6 +2199,7 @@ class StrummerWebSocketServer(TabletReaderBase):
         from ..models.strummer_features import StrumReleaseConfig, SliderConfig, PressureModulationConfig
         from ..models.strummer_config import StrummingConfig
         from ..models.parameter_mapping import ParameterMapping
+        from ..models.device_buttons_config import DeviceButtonsConfig
 
         converters = {
             'action_rules': ActionRulesConfig.from_dict,
@@ -2182,6 +2210,7 @@ class StrummerWebSocketServer(TabletReaderBase):
             'note_duration': ParameterMapping.from_dict,
             'pitch_bend': ParameterMapping.from_dict,
             'note_velocity': ParameterMapping.from_dict,
+            'device_buttons': DeviceButtonsConfig.from_dict,
         }
 
         converter = converters.get(attr_name)
@@ -2189,75 +2218,50 @@ class StrummerWebSocketServer(TabletReaderBase):
             return converter(value)
         return value
 
-    def handle_packet(self, data: bytes, report_id: int = None, interface_type: str = None) -> None:
-        """Handle incoming HID packet"""
-        # Small delay to match Node.js timing characteristics
-        # Without this, Python processes packets too fast, causing pressure
-        # buffer samples to cluster together and producing inconsistent velocity
+    def on_tablet_event(self, tablet_event: TabletEvent) -> None:
+        """Handle a normalized tablet event from the TabletClient."""
         try:
-            # Process the data using the config
-            # Note: process_packet only takes data, it uses report_id internally from the data
-            events = self.process_packet(data)
+            x = float(tablet_event.x)
+            y = float(tablet_event.y)
+            pressure = float(tablet_event.pressure)
+            tilt_x = float(tablet_event.tiltX)
+            tilt_y = float(tablet_event.tiltY)
+            tilt_xy = float(tablet_event.tiltXY)
+            primary_button = bool(tablet_event.primaryButtonPressed)
+            secondary_button = bool(tablet_event.secondaryButtonPressed)
+            # TabletEvent.state is 'contact' | 'hover' | 'none'; downstream expects 'out-of-range'
+            state = 'out-of-range' if tablet_event.state == 'none' else tablet_event.state
+            raw_aux_codes = list(tablet_event.auxCodes)
 
-            # Extract normalized values
-            x = float(events.get('x', 0))
-            y = float(events.get('y', 0))
-            pressure = float(events.get('pressure', 0))
-            state = str(events.get('state', 'unknown'))
-            tilt_x = float(events.get('tiltX', 0))
-            tilt_y = float(events.get('tiltY', 0))
-            # Calculate combined tilt (matching blankslate's normalizeTabletEvent)
-            tilt_xy = math.sqrt(tilt_x * tilt_x + tilt_y * tilt_y)
-            if tilt_x * tilt_y != 0:
-                tilt_xy *= math.copysign(1, tilt_x * tilt_y)
-            tilt_xy = max(-1.0, min(1.0, tilt_xy))
-            events['tiltXY'] = tilt_xy
-            primary_button = bool(events.get('primaryButton') or events.get('primaryButtonPressed'))
-            secondary_button = bool(events.get('secondaryButton') or events.get('secondaryButtonPressed'))
+            events = {
+                'x': x, 'y': y, 'pressure': pressure,
+                'tiltX': tilt_x, 'tiltY': tilt_y, 'tiltXY': tilt_xy,
+            }
 
-            # Handle stylus button presses via action rules
-            # Detect button down events (transition from not pressed to pressed)
+            # Stylus button transitions
             if primary_button and not self.button_state['primaryButtonPressed']:
-                # Primary button just pressed
                 self.actions.handle_button_event('button:primary', 'press')
             if not primary_button and self.button_state['primaryButtonPressed']:
-                # Primary button just released
                 self.actions.handle_button_event('button:primary', 'release')
-
             if secondary_button and not self.button_state['secondaryButtonPressed']:
-                # Secondary button just pressed
                 self.actions.handle_button_event('button:secondary', 'press')
             if not secondary_button and self.button_state['secondaryButtonPressed']:
-                # Secondary button just released
                 self.actions.handle_button_event('button:secondary', 'release')
-
-            # Update stylus button states
             self.button_state['primaryButtonPressed'] = primary_button
             self.button_state['secondaryButtonPressed'] = secondary_button
 
-            # Handle tablet hardware button presses via action rules (dynamic button count)
-            for i in range(1, self.tablet_button_count + 1):
-                button_key = f'button{i}'
-                button_pressed = bool(events.get(button_key, False))
-                was_pressed = self.tablet_button_state.get(button_key, False)
-
-                # Detect button down event (transition from not pressed to pressed)
-                if button_pressed and not was_pressed:
-                    # Button just pressed - execute 'press' action via action rules system
-                    self.actions.handle_button_event(f'button:{i}', 'press')
-
-                # Detect button up event (transition from pressed to not pressed)
-                if not button_pressed and was_pressed:
-                    # Button just released - execute 'release' action via action rules system
-                    self.actions.handle_button_event(f'button:{i}', 'release')
-
-                # Update tablet button state
-                self.tablet_button_state[button_key] = button_pressed
+            # Auxiliary (express-key) transitions: diff HID scan codes as `code:<n>`
+            current_aux_codes: Set[int] = set(raw_aux_codes)
+            for code in current_aux_codes - self.prev_aux_codes:
+                self.actions.handle_button_event(f'code:{code}', 'press')
+                self._maybe_learn_device_button(code)
+            for code in self.prev_aux_codes - current_aux_codes:
+                self.actions.handle_button_event(f'code:{code}', 'release')
+            self.prev_aux_codes = current_aux_codes
 
             # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
             pitch_bend_cfg = self.config.strummer.pitch_bend
             if pitch_bend_cfg and self.backend:
-                # Get the control input value based on the control setting
                 control_value = self._get_control_value(pitch_bend_cfg.control, events)
                 if control_value is not None:
                     # Map the control value to pitch bend range
@@ -2298,21 +2302,13 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Get note velocity configuration for applying curve
             note_velocity_cfg = self.config.strummer.note_velocity
 
-            # Extract tablet hardware buttons (dynamic based on device capabilities)
-            tablet_buttons = int(events.get('tabletButtons', 0))
-            buttons_dict: Dict[str, bool] = {}
-            for i in range(1, self.tablet_button_count + 1):
-                button_key = f'button{i}'
-                buttons_dict[button_key] = bool(events.get(button_key, False))
-
             # Create tablet event data
             tablet_data = TabletEventData(
                 x=x, y=y, pressure=pressure, state=state,
                 tiltX=tilt_x, tiltY=tilt_y, tiltXY=tilt_xy,
                 primaryButtonPressed=primary_button,
                 secondaryButtonPressed=secondary_button,
-                tabletButtons=tablet_buttons,
-                buttons=buttons_dict
+                auxCodes=raw_aux_codes,
             )
             self.event_bus.emit_tablet_event(tablet_data)
 
@@ -2611,39 +2607,23 @@ class StrummerWebSocketServer(TabletReaderBase):
         elif mod.type == 'cc':
             self.backend.send_cc(mod.cc_number, value)
 
-    def handle_device_disconnect(self) -> None:
-        """Handle device disconnection"""
-        super().handle_device_disconnect()
+    def handle_tablet_disconnect(self) -> None:
+        """Handle a disconnect reported by the TabletClient reader."""
+        if self.tablet_client is None:
+            return
+        self.prev_aux_codes.clear()
+        try:
+            self.tablet_client.stop()
+        except Exception:
+            pass
+        self.tablet_client = None
         self.broadcast_status(False)
         print(colored('Device disconnected', Colors.YELLOW))
-        
-        # If poll_ms is set, attempt to reconnect
-        if self.poll_ms is not None:
-            self._attempt_reconnect()
-    
-    def _attempt_reconnect(self) -> None:
-        """Attempt to reconnect to device"""
-        if self.poll_ms is None:
-            return
-        
-        print(colored(f'Attempting to reconnect (polling every {self.poll_ms}ms)...', Colors.YELLOW))
-        
-        while not self.is_running:
-            time.sleep(self.poll_ms / 1000.0)
-            try:
-                # Try to find and connect to device
-                search_dir = os.path.dirname(self.config_path) if hasattr(self, 'config_path') else DEFAULT_CONFIG_DIR
-                found_config = find_config_for_device(search_dir)
-                if found_config:
-                    self.reconnect()
-                    if self.is_running:
-                        print(colored('Device reconnected!', Colors.GREEN))
-                        self._initialize_tablet_button_state()
-                        self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
-                        break
-            except Exception as e:
-                pass  # Continue polling
-    
+        if self.poll_ms is not None and self.is_running:
+            # Reader thread's outer loop handles polling for a new device.
+            pass
+
+
     async def run_server(self) -> None:
         """Run the WebSocket and HTTP servers"""
         self._main_loop = asyncio.get_event_loop()
@@ -2842,10 +2822,9 @@ class StrummerWebSocketServer(TabletReaderBase):
         if self.keyboard_listener:
             self.keyboard_listener.start()
 
-        # Start reading tablet data in a separate thread
-        # Skip tablet reader if no device path and no polling (dev mode)
-        if self._tablet_initialized or self.poll_ms is not None:
-            import threading
+        # Start reading tablet data in a separate thread (unless in dev mode)
+        if not self.dev_mode:
+            self.is_running = True
             tablet_thread = threading.Thread(target=self._run_tablet_reader, daemon=True)
             tablet_thread.start()
 
@@ -2859,9 +2838,14 @@ class StrummerWebSocketServer(TabletReaderBase):
             # Stop keyboard listener
             if self.keyboard_listener:
                 self.keyboard_listener.stop()
-            # Stop tablet HID reader first (stop_sync sets is_running=False and joins reader threads)
-            if self._tablet_initialized:
-                self.stop_sync()
+            # Stop tablet client HID readers
+            self.is_running = False
+            if self.tablet_client is not None:
+                try:
+                    self.tablet_client.stop()
+                except Exception:
+                    pass
+                self.tablet_client = None
             self.event_bus.cleanup()
             if self._http_server:
                 self._http_server.close()
@@ -2917,68 +2901,63 @@ class StrummerWebSocketServer(TabletReaderBase):
             print(colored('✓ Note scheduler stopped', Colors.GREEN))
 
     def _run_tablet_reader(self) -> None:
-        """Run tablet reader in a separate thread"""
-        # If tablet wasn't initialized (no device found at startup), poll for it first
-        if not self._tablet_initialized:
-            print(colored('Tablet not initialized at startup, starting poll...', Colors.YELLOW))
-            self._poll_and_initialize_tablet()
-            if not self._tablet_initialized:
-                print(colored('Failed to initialize tablet after polling', Colors.RED))
-                return  # Still no device, give up
+        """Discover a TabletClient and drive its lifecycle from a worker thread.
 
-        try:
-            # Initialize the HID reader
-            self.initialize_reader_sync()
+        Runs until ``self.is_running`` becomes False. When ``poll_ms`` is set,
+        keeps polling for a device on startup and after disconnects; otherwise
+        exits the thread if no device is found.
+        """
+        poll_interval = (self.poll_ms or 2000) / 1000.0
+        while self.is_running:
+            if self.tablet_client is None:
+                notified = {'flag': False}
 
-            if not self.reader:
-                raise RuntimeError('Reader not initialized')
+                def on_waiting() -> None:
+                    notified['flag'] = True
+                    print(colored('Waiting for tablet device to be connected...', Colors.YELLOW))
+                    if self.poll_ms is not None:
+                        print(colored(f'Poll interval: {self.poll_ms}ms', Colors.GRAY))
 
-            # Initialize button state based on device capabilities
-            self._initialize_tablet_button_state()
-
-            # Start reading data
-            if hasattr(self.reader, 'start_reading'):
-                self.reader.start_reading(lambda data, report_id=None, interface_type=None: self.handle_packet(data, report_id, interface_type))
-
-            self.is_running = True
-            self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
-            print(colored('✓ Tablet connected', Colors.GREEN))
-
-            # Keep thread alive while running
-            while self.is_running:
-                time.sleep(0.1)
-
-        except Exception as e:
-            print(colored(f'Tablet reader error: {e}', Colors.RED))
-            import traceback
-            traceback.print_exc()
-            if self.poll_ms is not None:
-                self._attempt_reconnect()
-
-    def _poll_and_initialize_tablet(self) -> None:
-        """Poll for device and initialize tablet reader when found"""
-        if self.poll_ms is None:
-            return
-
-        print(colored('Waiting for tablet device to be connected...', Colors.YELLOW))
-        print(colored(f'Poll interval: {self.poll_ms}ms', Colors.GRAY))
-
-        while True:
-            found_config = find_config_for_device(self.search_dir)
-            if found_config:
-                print(colored(f'Device connected! Using config: {found_config}', Colors.GREEN))
                 try:
-                    # Initialize the tablet reader with the found config
-                    TabletReaderBase.__init__(self, found_config)
-                    self._tablet_initialized = True
-                    self._initialize_tablet_button_state()
-                    self.broadcast_status(True, self.device_name if hasattr(self, 'device_name') else None)
-                    print(colored('Tablet reader initialized successfully', Colors.GREEN))
-                    return
+                    if self.poll_ms is None:
+                        client = TabletClient.discover()
+                        if client is None:
+                            print(colored('No tablet device found', Colors.RED))
+                            return
+                    else:
+                        client = wait_for_device(
+                            interval_ms=self.poll_ms,
+                            on_waiting=on_waiting,
+                        )
                 except Exception as e:
-                    print(colored(f'Failed to initialize tablet reader: {e}', Colors.RED))
-                    # Continue polling
-            time.sleep(self.poll_ms / 1000.0)
+                    print(colored(f'Discovery error: {e}', Colors.RED))
+                    time.sleep(poll_interval)
+                    continue
+
+                try:
+                    client.start(
+                        on_event=self.on_tablet_event,
+                        on_disconnect=self.handle_tablet_disconnect,
+                    )
+                except Exception as e:
+                    print(colored(f'Tablet reader error: {e}', Colors.RED))
+                    import traceback
+                    traceback.print_exc()
+                    try:
+                        client.stop()
+                    except Exception:
+                        pass
+                    time.sleep(poll_interval)
+                    continue
+
+                self.tablet_client = client
+                caps = client.capabilities
+                print(colored(f'✓ Tablet connected: {caps.manufacturer} {caps.model}', Colors.GREEN))
+                print(colored(f'  Aux buttons: {caps.aux_button_count}, pen buttons: {caps.pen_button_count}', Colors.GRAY))
+                self.broadcast_status(True, caps.name)
+                self.broadcast_config(False)
+
+            time.sleep(0.1)
 
 
 def main():
@@ -3131,22 +3110,6 @@ def main():
         config.device_finding_poll_interval if config else None
     )
 
-    # Get device path from config (defaults to "devices" folder relative to config)
-    device_path = config.server.device if config else None
-
-    # In dev mode, skip device config entirely
-    if args.dev:
-        device_config_path = None
-        search_dir = None
-    else:
-        # Resolve device config path (returns tuple: config_path or None, search_dir)
-        # Use config file's directory as base for resolving relative device paths
-        device_config_path, search_dir = resolve_device_config_path(
-            device_path,
-            base_dir=config_dir,
-            poll_ms=effective_poll
-        )
-
     print(colored(f'Sketchatone Server v{SKETCHATONE_VERSION}', Colors.CYAN))
     if args.dev:
         print(colored('Dev mode (no tablet)', Colors.YELLOW))
@@ -3169,7 +3132,6 @@ def main():
 
     # Create and run server
     server = StrummerWebSocketServer(
-        tablet_config_path=device_config_path,
         strummer_config_path=config_path,
         ws_port=effective_ws_port,
         wss_port=effective_wss_port,
@@ -3177,7 +3139,7 @@ def main():
         https_port=effective_https_port,
         throttle_ms=effective_throttle,
         poll_ms=effective_poll,
-        search_dir=search_dir,
+        dev_mode=args.dev,
         # MIDI options
         use_jack=args.jack if args.jack else None,
         midi_channel=args.channel - 1 if args.channel is not None else None,  # Convert 1-16 to 0-15

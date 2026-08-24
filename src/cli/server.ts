@@ -24,19 +24,16 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// Import from blankslate CLI modules
-import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath, findConfigForDevice } from 'blankslate/cli/tablet-reader-base.js';
-import type { HIDInterfaceType } from 'blankslate/core';
-
-// Default config directory for device configs
-const DEFAULT_CONFIG_DIR = './public/configs/devices';
+// Vendored tablet client (composition-based OTD wrapper)
+import { TabletClient, waitForDevice, type DeviceCapabilities as TabletClientCapabilities } from '../tablet/tabletClient.js';
+import type { TabletEvent } from '../tablet/server/eventAdapter.js';
 
 // Version (from package.json)
 const SKETCHATONE_VERSION = '0.2.0';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { Slider, routeSlideEventToMidi, type SlideRoutingState } from '../core/slider.js';
 import { Actions } from '../core/actions.js';
-import { MidiStrummerConfig, type MidiStrummerConfigData } from '../models/midi-strummer-config.js';
+import { MidiStrummerConfig, type MidiStrummerConfigData, DeviceButtonsConfig } from '../models/midi-strummer-config.js';
 import { ActionRulesConfig, type ButtonId } from '../models/action-rules.js';
 import { StrumReleaseConfig } from '../models/strummer-features.js';
 import { StrummingConfig } from '../models/strummer-config.js';
@@ -59,7 +56,7 @@ import { KeyboardListener } from '../utils/keyboard-listener.js';
 import { generateSelfSignedCert, loadSSLCert, getSSLCertPaths } from '../utils/ssl-cert.js';
 
 /**
- * WebSocket tablet event (matches blankslate format)
+ * WebSocket tablet event envelope
  */
 interface TabletWebSocketEvent extends CombinedEventData {
   type: 'tablet-data';
@@ -95,21 +92,6 @@ function getLocalIP(): string | null {
 }
 
 /**
- * Device capabilities from blankslate tablet configuration
- */
-interface DeviceCapabilities {
-  hasButtons: boolean;
-  buttonCount: number;
-  hasPressure: boolean;
-  pressureLevels: number;
-  hasTilt: boolean;
-  resolution: {
-    x: number;
-    y: number;
-  };
-}
-
-/**
  * Full config data sent to clients on connection
  */
 interface ServerConfigData {
@@ -119,8 +101,8 @@ interface ServerConfigData {
   notes: Array<{ notation: string; octave: number }>;
   /** Full strummer configuration */
   config: MidiStrummerConfigData;
-  /** Device capabilities from blankslate tablet configuration */
-  deviceCapabilities?: DeviceCapabilities;
+  /** Device capabilities from the matched OTD tablet configuration */
+  deviceCapabilities?: TabletClientCapabilities;
   /** Current config file name (without path) */
   currentConfigName?: string;
   /** List of available config files in the config directory */
@@ -156,7 +138,15 @@ const MIME_TYPES: Record<string, string> = {
   '.eot': 'application/vnd.ms-fontobject',
 };
 
-class StrummerWebSocketServer extends TabletReaderBase {
+class StrummerWebSocketServer {
+  // Tablet client (composition-based OTD wrapper); null when no device is connected
+  // or when running in --dev mode.
+  private tabletClient: TabletClient | null = null;
+  private devMode: boolean = false;
+  private devicePollInterval: number | null = null;
+  private devicePollTimer: ReturnType<typeof setTimeout> | null = null;
+  private shutdownHandlersInstalled: boolean = false;
+
   private wss: WebSocketServer | null = null;
   private wssSecure: WebSocketServer | null = null;
   private httpServer: http.Server | null = null;
@@ -175,6 +165,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private combinedUnsubscribe: (() => void) | null = null;
   private clientCount: number = 0;
   private deviceConnected: boolean = false;
+  // Ephemeral (per-server-run) flag: when true, aux codes we haven't seen before
+  // are auto-appended to deviceButtons.buttons. Toggled by clients via the
+  // 'set-button-detection' message; never persisted.
+  private detectingDeviceButtons: boolean = false;
   private publicDir: string;
   // MIDI support
   private backend: MidiBackendProtocol | null = null;
@@ -193,9 +187,9 @@ class StrummerWebSocketServer extends TabletReaderBase {
     secondaryButtonPressed: false,
   };
 
-  // State tracking for tablet hardware buttons (dynamically sized based on device capabilities)
-  private tabletButtonState: Record<string, boolean> = {};
-  private tabletButtonCount: number = 8; // Default, updated when device connects
+  // State tracking for auxiliary hardware buttons - previous set of HID scan codes
+  // so we can diff against the next report to emit press/release events.
+  private prevAuxCodes: Set<number> = new Set();
 
   // State tracking for note repeater
   private repeaterState = {
@@ -221,8 +215,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private currentConfigName: string | undefined;
 
   constructor(
-    tabletConfigPath: string | null,
-    options: TabletReaderOptions & {
+    options: {
       strummerConfigPath?: string;
       wsPort?: number;
       wssPort?: number;
@@ -233,11 +226,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
       midiChannel?: number;
       midiPort?: string | number;
       noteDuration?: number;
+      // Tablet options
+      devMode?: boolean;
+      devicePollInterval?: number | null;
     } = {}
   ) {
-    // In dev mode (tabletConfigPath is null), pass empty string to parent
-    // The parent class will handle missing device gracefully
-    super(tabletConfigPath ?? '', options);
+    this.devMode = options.devMode ?? false;
+    this.devicePollInterval = options.devicePollInterval ?? null;
 
     // Store the config path for saving later
     this.strummerConfigPath = options.strummerConfigPath;
@@ -325,17 +320,14 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Execute any startup rules defined in the config
     this.actions.executeStartupRules();
 
-    // Initialize keyboard listener if configured
-    if (this.config.keyboard.enabled && Object.keys(this.config.keyboard.mappings).length > 0) {
+    // Initialize keyboard listener if enabled. Emits raw key names; the server
+    // gates learning through `detectingDeviceButtons` and dispatches actions as
+    // `key:<char>` button events.
+    if (this.config.keyboard.enabled) {
       this.keyboardListener = new KeyboardListener({
         enabled: this.config.keyboard.enabled,
-        mappings: this.config.keyboard.mappings,
-        onButtonPress: (buttonId) => {
-          this.handleKeyboardButtonPress(buttonId);
-        },
-        onButtonRelease: (buttonId) => {
-          this.handleKeyboardButtonRelease(buttonId);
-        },
+        onKeyPress: (key) => this.handleKeyboardKeyPress(key),
+        onKeyRelease: (key) => this.handleKeyboardKeyRelease(key),
       });
     }
   }
@@ -433,13 +425,13 @@ class StrummerWebSocketServer extends TabletReaderBase {
       case 'pressure':
         return inputs.pressure ?? 0;
       case 'tiltX':
-        // tiltX from blankslate is -1 to 1, normalize to 0-1
+        // tiltX is -1 to 1, normalize to 0-1
         return ((inputs.tiltX ?? 0) + 1.0) / 2.0;
       case 'tiltY':
-        // tiltY from blankslate is -1 to 1, normalize to 0-1
+        // tiltY is -1 to 1, normalize to 0-1
         return ((inputs.tiltY ?? 0) + 1.0) / 2.0;
       case 'tiltXY':
-        // tiltXY from blankslate is -1 to 1, normalize to 0-1
+        // tiltXY is -1 to 1, normalize to 0-1
         return ((inputs.tiltXY ?? 0) + 1.0) / 2.0;
       case 'xaxis':
         return inputs.x ?? 0.5;
@@ -596,7 +588,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
         } else {
           // Connect to selected ports
           console.log(chalk.cyan(`[MIDI Input] Connecting to selected ports: ${JSON.stringify(inputPort)}`));
-          connected = await this.midiInput.connectMultiple(inputPort);
+          const excludePorts: string[] = [...this.config.midi.inputExclude];
+          connected = await this.midiInput.connectMultiple(inputPort, excludePorts);
         }
       } else if (inputPort === null || inputPort === undefined) {
         // Legacy: Discovery mode - listen to all ports (except excluded ones)
@@ -674,42 +667,37 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
-   * Handle keyboard button press event
-   * Updates button state, triggers actions, and emits synthetic tablet event
+   * Handle raw keyboard press. Learns the key when detection is on, updates
+   * the pressed-key state, dispatches a `key:<char>` action event, and emits a
+   * synthetic tablet event so the UI can show pressed-key indicators.
    */
-  private handleKeyboardButtonPress(buttonId: ButtonId): void {
-    // Update keyboard button state
+  private handleKeyboardKeyPress(key: string): void {
+    this.maybeLearnDeviceKey(key);
+    const buttonId = `key:${key}` as ButtonId;
     this.keyboardButtonStates.set(buttonId, true);
-
-    // Trigger action
     this.actions.handleButtonEvent(buttonId, 'press');
-
-    // Emit synthetic tablet event with button state
     this.emitKeyboardTabletEvent();
   }
 
-  /**
-   * Handle keyboard button release event
-   * Updates button state, triggers actions, and emits synthetic tablet event
-   */
-  private handleKeyboardButtonRelease(buttonId: ButtonId): void {
-    // Update keyboard button state
+  private handleKeyboardKeyRelease(key: string): void {
+    const buttonId = `key:${key}` as ButtonId;
     this.keyboardButtonStates.set(buttonId, false);
-
-    // Trigger action
     this.actions.handleButtonEvent(buttonId, 'release');
-
-    // Emit synthetic tablet event with button state
     this.emitKeyboardTabletEvent();
   }
 
   /**
-   * Emit a synthetic tablet event showing current keyboard button states
-   * This makes keyboard button presses visible in the dashboard
+   * Emit a synthetic tablet event carrying the currently-held keyboard keys
+   * as `pressedKeys` so the dashboard can highlight them alongside auxCodes.
    */
   private emitKeyboardTabletEvent(): void {
-    // Create a tablet event with neutral position and current button states
-    const tabletData: TabletEventData & Record<string, unknown> = {
+    const pressedKeys: string[] = [];
+    for (const [buttonId, isPressed] of this.keyboardButtonStates.entries()) {
+      if (!isPressed) continue;
+      if (buttonId.startsWith('key:')) pressedKeys.push(buttonId.slice(4));
+    }
+
+    const tabletData: TabletEventData = {
       x: 0.5,
       y: 0.5,
       pressure: 0.0,
@@ -720,19 +708,10 @@ class StrummerWebSocketServer extends TabletReaderBase {
       secondaryButtonPressed: false,
       state: 'out-of-range',
       timestamp: Date.now(),
+      auxCodes: [],
+      pressedKeys,
     };
 
-    // Add keyboard button states (e.g., button:1 -> button1)
-    for (const [buttonId, isPressed] of this.keyboardButtonStates.entries()) {
-      if (buttonId.startsWith('button:')) {
-        const buttonNum = buttonId.split(':')[1];
-        if (/^\d+$/.test(buttonNum)) {
-          tabletData[`button${buttonNum}`] = isPressed;
-        }
-      }
-    }
-
-    // Emit through event bus so it gets broadcast to WebSocket clients
     this.eventBus.emitTabletEvent(tabletData);
   }
 
@@ -846,7 +825,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         octave: n.octave,
       })),
       config: this.config.toDict(),
-      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
+      deviceCapabilities: this.tabletClient?.capabilities ?? undefined,
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
       isSavedState,
@@ -888,7 +867,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         octave: n.octave,
       })),
       config: this.config.toDict(),
-      deviceCapabilities: this.configData?.getCapabilities() ?? undefined,
+      deviceCapabilities: this.tabletClient?.capabilities ?? undefined,
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
       isSavedState,
@@ -929,48 +908,89 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
-   * Override handleDeviceDisconnect to notify WebSocket clients
+   * Handle disconnection reported by the TabletClient reader. Notifies clients
+   * and, if a poll interval is configured, begins polling for a reconnection.
    */
-  protected handleDeviceDisconnect(): void {
+  private handleTabletDisconnect(): void {
+    if (!this.deviceConnected) return;
     this.deviceConnected = false;
-
-    // Notify all connected clients
+    this.prevAuxCodes.clear();
+    console.log(chalk.yellow('[Tablet] Device disconnected'));
     this.broadcastStatus('disconnected', 'Tablet disconnected, waiting for reconnection...');
 
-    // Call parent implementation (handles polling for reconnection)
-    super.handleDeviceDisconnect();
+    if (this.tabletClient) {
+      try { this.tabletClient.stop(); } catch { /* ignore */ }
+      this.tabletClient = null;
+    }
+    this.startDevicePolling();
   }
 
   /**
-   * Initialize tablet button state based on device capabilities
+   * Poll for a tablet device to (re)appear and start reading from it. Uses
+   * `devicePollInterval` from options/config; a null/undefined value means
+   * no polling (used when the user wants the server to exit if no device is
+   * found).
    */
-  private initializeTabletButtonState(): void {
-    const capabilities = this.configData?.getCapabilities();
-    this.tabletButtonCount = capabilities?.buttonCount ?? 8;
+  private startDevicePolling(): void {
+    if (this.devMode) return;
+    if (this.devicePollTimer) return;
+    const interval = this.devicePollInterval;
+    if (interval == null) return;
 
-    // Initialize button state for all buttons
-    this.tabletButtonState = {};
-    for (let i = 1; i <= this.tabletButtonCount; i++) {
-      this.tabletButtonState[`button${i}`] = false;
-    }
-
-    console.log(chalk.gray(`  Tablet has ${this.tabletButtonCount} hardware buttons`));
+    const poll = async (): Promise<void> => {
+      this.devicePollTimer = null;
+      try {
+        const client = await TabletClient.discover();
+        if (client) {
+          await this.attachTabletClient(client);
+          return;
+        }
+      } catch (e) {
+        console.log(chalk.gray(`[Tablet] Discovery error: ${(e as Error).message}`));
+      }
+      this.devicePollTimer = setTimeout(poll, interval);
+    };
+    this.devicePollTimer = setTimeout(poll, interval);
   }
 
   /**
-   * Override attemptReconnect to notify clients on success
+   * Attach a TabletClient, start reading events, and notify WebSocket clients.
    */
-  protected async attemptReconnect(): Promise<void> {
-    const previousAttempts = this.reconnectAttempts;
+  private async attachTabletClient(client: TabletClient): Promise<void> {
+    this.tabletClient = client;
+    this.prevAuxCodes.clear();
+    await client.start({
+      onEvent: (event) => this.onTabletEvent(event),
+      onDisconnect: () => this.handleTabletDisconnect(),
+    });
+    this.deviceConnected = true;
+    const caps = client.capabilities;
+    console.log(chalk.green(`✓ Tablet connected: ${caps.manufacturer} ${caps.model}`));
+    console.log(chalk.gray(`  Aux buttons: ${caps.auxButtonCount}, pen buttons: ${caps.penButtonCount}`));
+    this.broadcastStatus('connected', 'Tablet connected');
+    // Config changed (deviceCapabilities is now known) - push to clients.
+    this.broadcastConfig(false);
+  }
 
-    await super.attemptReconnect();
-
-    // If reconnection succeeded (attempts reset to 0 and reader exists)
-    if (this.reconnectAttempts === 0 && previousAttempts > 0 && this.reader) {
-      this.deviceConnected = true;
-      this.initializeTabletButtonState();
-      this.broadcastStatus('connected', 'Tablet reconnected successfully');
-    }
+  /**
+   * Install SIGINT/SIGTERM handlers that gracefully stop the server.
+   */
+  private setupShutdownHandlers(): void {
+    if (this.shutdownHandlersInstalled) return;
+    this.shutdownHandlersInstalled = true;
+    const shutdown = async (): Promise<void> => {
+      await this.stop();
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    process.on('unhandledRejection', async (err) => {
+      console.error(chalk.red('[Server] unhandledRejection:'), err);
+      await shutdown();
+    });
+    process.on('uncaughtException', async (err) => {
+      console.error(chalk.red('[Server] uncaughtException:'), err);
+      await shutdown();
+    });
   }
 
   /**
@@ -1053,7 +1073,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
             connectPromise = Promise.resolve(false);
           } else {
             // Connect to selected ports
-            connectPromise = this.midiInput.connectMultiple(value);
+            const excludePorts = [...this.config.midi.inputExclude];
+            connectPromise = this.midiInput.connectMultiple(value, excludePorts);
           }
         } else if (value === null) {
           // Legacy: Connect to all ports
@@ -1083,13 +1104,83 @@ class StrummerWebSocketServer extends TabletReaderBase {
         this.registerMidiPassthrough();
       }
 
+      // Persist every config change immediately so it survives a
+      // restart. The Save/Revert affordances have been retired; all
+      // in-memory mutations round-trip to disk right away.
+      this.persistConfigToFile();
+
       console.log(chalk.yellow(`Config updated: ${path} = ${JSON.stringify(value)}`));
 
-      // Broadcast updated config to all clients
-      this.broadcastConfig();
+      // Every update is auto-persisted above, so the broadcast reports
+      // the saved state directly.
+      this.broadcastConfig(true);
     } catch (e) {
       console.error(chalk.red(`Failed to update config: ${path}`), e);
     }
+  }
+
+  /**
+   * Write the current in-memory config to disk (if a file path is configured).
+   * Used by auto-learn and other server-initiated config mutations.
+   */
+  private persistConfigToFile(): void {
+    if (!this.strummerConfigPath) return;
+    try {
+      const configJson = JSON.stringify(this.config.toDict(), null, 2);
+      fs.writeFileSync(this.strummerConfigPath, configJson, { encoding: 'utf-8' });
+      fs.chmodSync(this.strummerConfigPath, 0o666);
+    } catch (e) {
+      console.error(chalk.red(`[Persist Config] Failed to write ${this.strummerConfigPath}:`), e);
+    }
+  }
+
+  /**
+   * If button detection is currently on and this aux code isn't already known,
+   * append it to `deviceButtons.buttons` with a default name, persist, and
+   * broadcast the updated config to all clients.
+   */
+  private maybeLearnDeviceButton(code: number): void {
+    if (!this.detectingDeviceButtons) return;
+    const dbc = this.config.deviceButtons;
+    if (dbc.buttons.some(b => b.code === code)) return;
+
+    const nextIndex = dbc.buttons.length + 1;
+    dbc.buttons.push({ code, name: `Button ${nextIndex}` });
+    console.log(chalk.cyan(`[Device Buttons] Learned new button: code=${code} name="Button ${nextIndex}"`));
+    this.persistConfigToFile();
+    this.broadcastConfig(true);
+  }
+
+  /**
+   * If key detection is currently on and this key isn't already known,
+   * append it to `deviceButtons.keys` with a default name, persist, and
+   * broadcast the updated config to all clients.
+   */
+  private maybeLearnDeviceKey(key: string): void {
+    if (!this.detectingDeviceButtons) return;
+    if (!key) return;
+    const dbc = this.config.deviceButtons;
+    if (dbc.keys.some(k => k.key === key)) return;
+
+    dbc.keys.push({ key, name: `Key ${key.toUpperCase()}` });
+    console.log(chalk.cyan(`[Device Buttons] Learned new key: key="${key}" name="Key ${key.toUpperCase()}"`));
+    this.persistConfigToFile();
+    this.broadcastConfig(true);
+  }
+
+  /**
+   * Broadcast the current button-detection state to all clients so UIs stay
+   * in sync across multiple browser tabs.
+   */
+  private broadcastButtonDetectionState(): void {
+    if (!this.wss) return;
+    const message = JSON.stringify({
+      type: 'button-detection-state',
+      enabled: this.detectingDeviceButtons,
+    });
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) client.send(message);
+    });
   }
 
   /**
@@ -1436,6 +1527,43 @@ class StrummerWebSocketServer extends TabletReaderBase {
   }
 
   /**
+   * Normalize a MIDI port name for loopback comparison.
+   *
+   * ALSA emits `"Client:Port NN:MM"` (e.g. `"Sketchatone:Sketchatone 128:0"`)
+   * for both our output and the corresponding input alias; stripping the
+   * trailing sequencer numeric suffix and lowercasing collapses the two
+   * onto the same key. Mirrors ``_normalize_midi_port_name`` in the
+   * Python server.
+   */
+  private normalizeMidiPortName(name: string | null | undefined): string {
+    if (!name) return '';
+    return name.replace(/\s+\d+:\d+\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  /**
+   * Compute the ids of currently-connected input ports whose normalized
+   * name matches the current output port name — i.e. an active MIDI
+   * loopback that would feed our own strums back into the input handler.
+   */
+  private computeLoopbackInputPortIds(
+    inputPorts: Array<{ id: number; name: string }>,
+    currentInputPorts: number[],
+  ): number[] {
+    const outputName = this.backend?.currentOutputName;
+    if (!outputName || currentInputPorts.length === 0) return [];
+    const outNorm = this.normalizeMidiPortName(outputName);
+    if (!outNorm) return [];
+    const connected = new Set(currentInputPorts);
+    const result: number[] = [];
+    for (const port of inputPorts) {
+      if (connected.has(port.id) && this.normalizeMidiPortName(port.name) === outNorm) {
+        result.push(port.id);
+      }
+    }
+    return result;
+  }
+
+  /**
    * Handle get-midi-devices request
    * Returns available MIDI input and output ports
    */
@@ -1444,17 +1572,34 @@ class StrummerWebSocketServer extends TabletReaderBase {
       const inputPorts: Array<{ id: number; name: string }> = [];
       const outputPorts: Array<{ id: number; name: string }> = [];
 
+      // Build exclusion lists up front so we can filter both pickers.
+      // Same case-insensitive substring rule as RtMidiInput.connectAll,
+      // so anything hidden here is guaranteed to also be skipped by the
+      // auto-connect path.
+      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
+      const excludedOutputPorts: string[] = [...this.config.midi.outputExclude];
+      const isExcluded = (name: string | undefined, patterns: string[]): boolean => {
+        if (!name) return false;
+        const lowered = name.toLowerCase();
+        return patterns.some(p => p && lowered.includes(p.toLowerCase()));
+      };
+
       // Get MIDI input ports
       if (this.midiInput) {
         const availableInputs = await this.midiInput.getAvailablePorts();
-        inputPorts.push(...availableInputs);
+        for (const port of availableInputs) {
+          if (!isExcluded(port.name, excludedInputPorts)) inputPorts.push(port);
+        }
       }
 
-      // Get MIDI output ports
+      // Get MIDI output ports. Keep the enumeration index as the id so the
+      // backend still opens the right port after excluded entries are dropped.
       if (this.backend) {
         const availableOutputs = this.backend.getAvailablePorts();
         availableOutputs.forEach((name: string, index: number) => {
-          outputPorts.push({ id: index, name });
+          if (!isExcluded(name, excludedOutputPorts)) {
+            outputPorts.push({ id: index, name });
+          }
         });
       }
 
@@ -1465,9 +1610,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
         const connectedPorts = this.midiInput.connectedPorts;
         currentInputPorts.push(...connectedPorts.map(p => p.id));
       }
-
-      // Build exclusion list (same logic as setupMidiInput)
-      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
 
       // For output: find the port ID that matches the connected port name
       let currentOutputPort: string | number | null = null;
@@ -1480,6 +1622,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
         }
       }
 
+      const loopbackInputPortIds = this.computeLoopbackInputPortIds(inputPorts, currentInputPorts);
+      if (loopbackInputPortIds.length > 0) {
+        console.log(chalk.yellow(`[MIDI Devices] !! Loopback detected on input port ids: ${loopbackInputPortIds.join(', ')}`));
+      }
+
       const response = {
         type: 'midi-devices',
         data: {
@@ -1488,6 +1635,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
           currentInputPorts,  // Array of connected input port IDs
           currentOutputPort,
           excludedInputPorts,  // Ports excluded from input to prevent feedback loops
+          loopbackInputPortIds,  // Connected inputs that share a name with current output
         },
       };
 
@@ -1508,17 +1656,34 @@ class StrummerWebSocketServer extends TabletReaderBase {
       const inputPorts: Array<{ id: number; name: string }> = [];
       const outputPorts: Array<{ id: number; name: string }> = [];
 
+      // Build exclusion list
+      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
+      if (this.backend && this.backend.currentOutputName) {
+        excludedInputPorts.push(this.backend.currentOutputName);
+      }
+      const excludedOutputPorts: string[] = [...this.config.midi.outputExclude];
+      const isExcluded = (name: string | undefined, patterns: string[]): boolean => {
+        if (!name) return false;
+        const lowered = name.toLowerCase();
+        return patterns.some(p => p && lowered.includes(p.toLowerCase()));
+      };
+
       // Get MIDI input ports
       if (this.midiInput) {
         const availableInputs = await this.midiInput.getAvailablePorts();
-        inputPorts.push(...availableInputs);
+        for (const port of availableInputs) {
+          if (!isExcluded(port.name, excludedInputPorts)) inputPorts.push(port);
+        }
       }
 
-      // Get MIDI output ports
+      // Get MIDI output ports. Keep enumeration index as the id so the
+      // backend still opens the right port after excluded entries are dropped.
       if (this.backend) {
         const availableOutputs = this.backend.getAvailablePorts();
         availableOutputs.forEach((name: string, index: number) => {
-          outputPorts.push({ id: index, name });
+          if (!isExcluded(name, excludedOutputPorts)) {
+            outputPorts.push({ id: index, name });
+          }
         });
       }
 
@@ -1527,12 +1692,6 @@ class StrummerWebSocketServer extends TabletReaderBase {
       if (this.midiInput && this.midiInput.isConnected) {
         const connectedPorts = this.midiInput.connectedPorts;
         currentInputPorts.push(...connectedPorts.map(p => p.id));
-      }
-
-      // Build exclusion list
-      const excludedInputPorts: string[] = [...this.config.midi.inputExclude];
-      if (this.backend && this.backend.currentOutputName) {
-        excludedInputPorts.push(this.backend.currentOutputName);
       }
 
       // For output: find the port ID that matches the connected port name
@@ -1545,6 +1704,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
         }
       }
 
+      const loopbackInputPortIds = this.computeLoopbackInputPortIds(inputPorts, currentInputPorts);
+      if (loopbackInputPortIds.length > 0) {
+        console.log(chalk.yellow(`[Broadcast MIDI Devices] !! Loopback detected on input port ids: ${loopbackInputPortIds.join(', ')}`));
+      }
+
       const message = JSON.stringify({
         type: 'midi-devices',
         data: {
@@ -1554,6 +1718,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
           currentOutputPort,
           excludedInputPorts,
           passthroughConnections: this.config.midi.midiPassthrough || [],
+          loopbackInputPortIds,
         },
       });
 
@@ -1625,6 +1790,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
       noteDuration: ParameterMapping.fromDict,
       pitchBend: ParameterMapping.fromDict,
       noteVelocity: ParameterMapping.fromDict,
+      deviceButtons: DeviceButtonsConfig.fromDict,
     };
 
     const converter = converters[attrName];
@@ -1640,8 +1806,8 @@ class StrummerWebSocketServer extends TabletReaderBase {
   private setupEventSubscriptions(): void {
     // Subscribe to combined events (tablet + strum merged)
     this.combinedUnsubscribe = this.eventBus.onCombinedEvent((data) => {
-      // Send as 'tablet-data' type for blankslate WebSocketManager compatibility
-      // The strum field is optional and will be present when a strum occurred
+      // Send as 'tablet-data' envelope over the WebSocket.
+      // The strum field is optional and will be present when a strum occurred.
       this.broadcast({
         type: 'tablet-data',
         ...data,
@@ -1649,63 +1815,47 @@ class StrummerWebSocketServer extends TabletReaderBase {
     });
   }
 
-  protected handlePacket(data: Uint8Array, reportId?: number, interfaceType?: HIDInterfaceType): void {
+  /**
+   * Handle a tablet event from the TabletClient. Emitted for both pen reports
+   * (position/pressure/tilt/pen-buttons) and aux reports (express keys as
+   * HID scan codes). Diffs stylus + aux button state to fire press/release
+   * actions, then feeds the sample into strum/slide/repeater processing.
+   */
+  private onTabletEvent(tabletEvent: TabletEvent): void {
     try {
-      this.packetCount++;
+      const { x, y, pressure, tiltX, tiltY, tiltXY,
+        primaryButtonPressed, secondaryButtonPressed, auxCodes: rawAuxCodes } = tabletEvent;
+      const state: 'hover' | 'contact' | 'out-of-range' =
+        tabletEvent.state === 'none' ? 'out-of-range' : tabletEvent.state;
 
-      // Process the data using the config
-      const events = this.processPacket(data, reportId, interfaceType);
-
-      // Extract normalized values
-      const normalized = normalizeTabletEvent(events);
-      const { x, y, pressure, state, tiltX, tiltY, tiltXY, primaryButtonPressed, secondaryButtonPressed } = normalized;
-
-      // Handle stylus button presses via action rules
-      // Detect button down events (transition from not pressed to pressed)
+      // Stylus button transitions
       if (primaryButtonPressed && !this.buttonState.primaryButtonPressed) {
-        // Primary button just pressed
         this.actions.handleButtonEvent('button:primary', 'press');
-      }
-      if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
-        // Primary button just released
+      } else if (!primaryButtonPressed && this.buttonState.primaryButtonPressed) {
         this.actions.handleButtonEvent('button:primary', 'release');
       }
-
       if (secondaryButtonPressed && !this.buttonState.secondaryButtonPressed) {
-        // Secondary button just pressed
         this.actions.handleButtonEvent('button:secondary', 'press');
-      }
-      if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
-        // Secondary button just released
+      } else if (!secondaryButtonPressed && this.buttonState.secondaryButtonPressed) {
         this.actions.handleButtonEvent('button:secondary', 'release');
       }
-
-      // Update stylus button states
       this.buttonState.primaryButtonPressed = primaryButtonPressed;
       this.buttonState.secondaryButtonPressed = secondaryButtonPressed;
 
-      // Handle tablet hardware button presses via action rules (dynamic button count)
-      for (let i = 1; i <= this.tabletButtonCount; i++) {
-        const buttonKey = `button${i}` as keyof typeof normalized;
-        const buttonPressed = Boolean(normalized[buttonKey]);
-        const stateKey = `button${i}`;
-        const wasPressed = this.tabletButtonState[stateKey] ?? false;
-
-        // Detect button down event (transition from not pressed to pressed)
-        if (buttonPressed && !wasPressed) {
-          // Button just pressed - execute 'press' action via action rules system
-          this.actions.handleButtonEvent(`button:${i}`, 'press');
+      // Auxiliary (express-key) transitions: diff HID scan codes as `code:<n>`.
+      const currentAuxCodes = new Set<number>(rawAuxCodes);
+      for (const code of currentAuxCodes) {
+        if (!this.prevAuxCodes.has(code)) {
+          this.actions.handleButtonEvent(`code:${code}`, 'press');
+          this.maybeLearnDeviceButton(code);
         }
-
-        // Detect button up event (transition from pressed to not pressed)
-        if (!buttonPressed && wasPressed) {
-          // Button just released - execute 'release' action via action rules system
-          this.actions.handleButtonEvent(`button:${i}`, 'release');
-        }
-
-        // Update tablet button state
-        this.tabletButtonState[stateKey] = buttonPressed;
       }
+      for (const code of this.prevAuxCodes) {
+        if (!currentAuxCodes.has(code)) {
+          this.actions.handleButtonEvent(`code:${code}`, 'release');
+        }
+      }
+      this.prevAuxCodes = currentAuxCodes;
 
       // Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
       const pitchBendCfg = this.config.pitchBend;
@@ -1768,8 +1918,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
       const noteVelocityCfg = this.config.noteVelocity;
 
       // Emit tablet event to event bus
-      // Use Record type for dynamic button assignment, then cast to TabletEventData
-      const tabletEventData: Record<string, unknown> = {
+      const tabletEventData: TabletEventData = {
         x,
         y,
         pressure,
@@ -1778,17 +1927,11 @@ class StrummerWebSocketServer extends TabletReaderBase {
         tiltXY,
         primaryButtonPressed,
         secondaryButtonPressed,
-        state: state as 'hover' | 'contact' | 'out-of-range',
-        timestamp: Date.now(),
-        // Tablet hardware buttons
-        tabletButtons: normalized.tabletButtons,
+        state,
+        timestamp: tabletEvent.timestamp || Date.now(),
+        auxCodes: rawAuxCodes.slice(),
       };
-      // Dynamically add all button states based on device capabilities
-      for (let i = 1; i <= this.tabletButtonCount; i++) {
-        const buttonKey = `button${i}`;
-        tabletEventData[buttonKey] = Boolean((normalized as Record<string, unknown>)[buttonKey]);
-      }
-      this.eventBus.emitTabletEvent(tabletEventData as unknown as TabletEventData);
+      this.eventBus.emitTabletEvent(tabletEventData);
 
       // Update strummer/slider bounds (use normalized 0-1 range)
       this.strummer.updateBounds(1.0, 1.0);
@@ -1965,7 +2108,7 @@ class StrummerWebSocketServer extends TabletReaderBase {
         }
       }
     } catch (e) {
-      console.error(chalk.red(`Error processing packet: ${e}`));
+      console.error(chalk.red(`Error processing tablet event: ${e}`));
     }
   }
 
@@ -2162,12 +2305,23 @@ class StrummerWebSocketServer extends TabletReaderBase {
       // Send MIDI input status to new client
       this.sendMidiInputStatus(ws);
 
+      // Send current button-detection state so the UI reflects the shared
+      // per-server flag on reconnect / new tab.
+      ws.send(JSON.stringify({
+        type: 'button-detection-state',
+        enabled: this.detectingDeviceButtons,
+      }));
+
       ws.on('message', (message) => {
         try {
           const parsed = JSON.parse(message.toString());
           if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
             this.setThrottle(parsed.throttleMs);
             console.log(chalk.yellow(`Throttle changed to: ${parsed.throttleMs}ms`));
+          } else if (parsed.type === 'set-button-detection' && typeof parsed.enabled === 'boolean') {
+            this.detectingDeviceButtons = parsed.enabled;
+            console.log(chalk.cyan(`[Device Buttons] Detection ${parsed.enabled ? 'started' : 'stopped'}`));
+            this.broadcastButtonDetectionState();
           } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
             this.handleConfigUpdate(parsed.path, parsed.value);
           } else if (parsed.type === 'save-config') {
@@ -2306,37 +2460,36 @@ class StrummerWebSocketServer extends TabletReaderBase {
     // Set up event subscriptions
     this.setupEventSubscriptions();
 
-    // Skip tablet reader if no device path provided (dev mode)
-    if (this.configData) {
-      // Initialize tablet reader (may fail if no device connected)
-      console.log(chalk.gray('\nInitializing tablet reader...'));
-      try {
-        await this.initializeReader();
-
-        if (this.reader) {
-          this.deviceConnected = true;
-          this.initializeTabletButtonState();
-
-          // Start reading
-          this.reader.startReading((data, reportId, interfaceType) => {
-            this.handlePacket(data, reportId, interfaceType);
-          });
-
-          console.log(chalk.green('✓ Started reading tablet data'));
-        }
-      } catch (e) {
-        // No device found at startup - this is OK, we'll wait for one
-        const error = e as Error;
-        console.log(chalk.yellow(`\n⚠ No tablet connected: ${error.message}`));
-        console.log(chalk.yellow('  Server is running - waiting for tablet to be connected...'));
-        this.deviceConnected = false;
-
-        // Start polling for device (uses parent class's polling mechanism)
-        this.startDevicePolling();
-      }
-    } else {
+    // Attach to a tablet device (skipped in dev mode)
+    if (this.devMode) {
       console.log(chalk.yellow('⚠ Skipping tablet reader (dev mode)'));
       this.deviceConnected = false;
+    } else {
+      console.log(chalk.gray('\nDiscovering tablet...'));
+      try {
+        const pollInterval = this.devicePollInterval;
+        const client = pollInterval != null
+          ? await waitForDevice({
+              intervalMs: pollInterval,
+              onWaiting: () => {
+                console.log(chalk.yellow('⚠ No tablet detected - waiting for one to be connected...'));
+              },
+            })
+          : await TabletClient.discover();
+
+        if (client) {
+          await this.attachTabletClient(client);
+        } else {
+          console.log(chalk.yellow('\n⚠ No tablet connected.'));
+          console.log(chalk.gray('  Use --poll <ms> to wait indefinitely for a device.'));
+          this.deviceConnected = false;
+        }
+      } catch (e) {
+        const error = e as Error;
+        console.log(chalk.yellow(`\n⚠ Failed to attach tablet: ${error.message}`));
+        this.deviceConnected = false;
+        this.startDevicePolling();
+      }
     }
 
     // Start keyboard listener if configured
@@ -2389,7 +2542,17 @@ class StrummerWebSocketServer extends TabletReaderBase {
       this.wssSecure = null;
     }
 
-    await super.stop();
+    // Cancel any pending device-polling timer
+    if (this.devicePollTimer) {
+      clearTimeout(this.devicePollTimer);
+      this.devicePollTimer = null;
+    }
+
+    // Stop tablet client
+    if (this.tabletClient) {
+      try { this.tabletClient.stop(); } catch { /* ignore */ }
+      this.tabletClient = null;
+    }
   }
 }
 
@@ -2399,7 +2562,7 @@ async function main(): Promise<void> {
   program
     .name('server')
     .description('Sketchatone Server - HTTP server for webapps and WebSocket server for tablet/strum events')
-    .option('-c, --config <path>', 'Combined config file path (strummer, MIDI, and server settings). Device path is specified in server.device field.')
+    .option('-c, --config <path>', 'Combined config file path (strummer, MIDI, and server settings).')
     .option('--ws-port <number>', 'WebSocket server port (default: 8081)', parseInt)
     .option('--http-port <number>', 'HTTP server port for serving webapps', parseInt)
     .option('--throttle <ms>', 'Throttle interval in milliseconds (default: 150)', parseInt)
@@ -2465,19 +2628,6 @@ Examples:
     ? MidiStrummerConfig.fromJsonFile(configPath)
     : new MidiStrummerConfig();
 
-  // In dev mode, skip device config entirely
-  let resolvedInput: string | null = null;
-  if (!options.dev) {
-    // Get device path from config (defaults to DEFAULT_CONFIG_DIR if not specified)
-    const devicePath = strummerConfig.server.device ?? DEFAULT_CONFIG_DIR;
-    const configDir = configPath ? path.dirname(configPath) : process.cwd();
-
-    // Resolve device path (absolute or relative to config file directory)
-    resolvedInput = path.isAbsolute(devicePath)
-      ? devicePath
-      : path.resolve(configDir, devicePath);
-  }
-
   // Handle --dump-config: print config as JSON and exit
   if (options.dumpConfig) {
     console.log(JSON.stringify(strummerConfig.toDict(), null, 2));
@@ -2485,7 +2635,7 @@ Examples:
   }
 
   // Resolve effective poll interval (CLI arg takes precedence over config)
-  const effectivePoll = options.poll ?? strummerConfig.deviceFindingPollInterval ?? undefined;
+  const effectivePoll = options.poll ?? strummerConfig.deviceFindingPollInterval ?? null;
 
   // Parse MIDI port (could be int or string)
   let midiPort: string | number | undefined = options.port;
@@ -2496,22 +2646,6 @@ Examples:
     }
   }
 
-  // Helper function to create and start the server with a given config path
-  const createAndStartServer = async (tabletConfigPath: string | null): Promise<void> => {
-    const server = new StrummerWebSocketServer(tabletConfigPath, {
-      strummerConfigPath: configPath,
-      wsPort: options.wsPort,
-      httpPort: options.httpPort,
-      throttleMs: options.throttle,
-      // MIDI options
-      midiChannel: options.channel,
-      midiPort,
-      noteDuration: options.duration,
-    });
-
-    await server.start();
-  };
-
   // Print startup banner
   console.log(chalk.cyan(`=== Strummer WebSocket Server v${SKETCHATONE_VERSION} ===`));
   if (options.dev) {
@@ -2520,69 +2654,23 @@ Examples:
   if (configPath) {
     console.log(chalk.gray('Config:'), configPath);
   }
-  if (options.dev) {
-    console.log(chalk.gray('Device config: (dev mode - no device)'));
-  }
 
   try {
-    // In dev mode, run without tablet device
-    if (options.dev) {
-      await createAndStartServer(null as any); // Pass null for dev mode
-      return;
-    }
+    const server = new StrummerWebSocketServer({
+      strummerConfigPath: configPath,
+      wsPort: options.wsPort,
+      httpPort: options.httpPort,
+      throttleMs: options.throttle,
+      // MIDI options
+      midiChannel: options.channel,
+      midiPort,
+      noteDuration: options.duration,
+      // Tablet options
+      devMode: options.dev,
+      devicePollInterval: effectivePoll,
+    });
 
-    // Check if the input is a file or directory
-    const stat = fs.existsSync(resolvedInput!) ? fs.statSync(resolvedInput!) : null;
-    const isDirectory = stat?.isDirectory() ?? false;
-    const isFile = stat?.isFile() ?? false;
-
-    if (isFile) {
-      // User provided a specific config file - use it directly
-      console.log(chalk.blue('[Config]'), `Using specified config file: ${resolvedInput}`);
-      await createAndStartServer(resolvedInput!);
-    } else if (isDirectory || !stat) {
-      // Directory or default - need to auto-detect device
-      const configDir = isDirectory ? resolvedInput! : path.resolve(DEFAULT_CONFIG_DIR);
-
-      // Try to find a connected device
-      let configPath = findConfigForDevice(configDir);
-
-      if (configPath) {
-        console.log(chalk.blue('[Config]'), `Found device config: ${configPath}`);
-        await createAndStartServer(configPath);
-      } else if (effectivePoll !== undefined) {
-        // No device found, but poll is set - poll indefinitely
-        console.log(chalk.yellow('[Config]'), 'No tablet device found. Waiting for device to be connected...');
-        console.log(chalk.gray('[Config]'), `Scanning directory: ${configDir}`);
-        console.log(chalk.gray('[Config]'), `Poll interval: ${effectivePoll}ms`);
-
-        const pollForDevice = (): Promise<string> => {
-          return new Promise((resolve) => {
-            const poll = (): void => {
-              const foundConfig = findConfigForDevice(configDir);
-              if (foundConfig) {
-                resolve(foundConfig);
-              } else {
-                setTimeout(poll, effectivePoll);
-              }
-            };
-            poll();
-          });
-        };
-
-        configPath = await pollForDevice();
-        console.log(chalk.green('[Config]'), `Device connected! Using config: ${configPath}`);
-        await createAndStartServer(configPath);
-      } else {
-        // No device found and poll not set - exit
-        console.error(chalk.red('[Config]'), 'No tablet device found.');
-        console.error(chalk.gray('[Config]'), `Scanned directory: ${configDir}`);
-        console.error(chalk.gray('[Config]'), 'Use --poll <ms> to wait for a device to be connected.');
-        process.exit(1);
-      }
-    } else {
-      throw new Error(`Invalid config path: ${resolvedInput}`);
-    }
+    await server.start();
   } catch (e) {
     const error = e as Error;
     console.error(chalk.red('Error: ') + error.message);

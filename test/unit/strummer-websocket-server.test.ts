@@ -72,6 +72,7 @@ describe('StrummerWebSocketServer Event Logic', () => {
     tiltXY: 0,
     primaryButtonPressed: false,
     secondaryButtonPressed: false,
+    auxCodes: [],
     state: 'contact',
     timestamp: Date.now(),
   });
@@ -261,6 +262,7 @@ describe('WebSocket Message Protocol', () => {
         tiltXY: 11.18,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: 1234567890,
       };
@@ -362,6 +364,7 @@ describe('Event Data Validation', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       };
@@ -395,6 +398,7 @@ describe('Event Data Validation', () => {
           tiltXY: 0,
           primaryButtonPressed: false,
           secondaryButtonPressed: false,
+          auxCodes: [],
           state,
           timestamp: Date.now(),
         };
@@ -764,5 +768,98 @@ describe('CamelCase to SnakeCase Conversion', () => {
   it('should handle strings with numbers', () => {
     expect(camelToSnake('note1')).toBe('note1');
     expect(camelToSnake('channel10')).toBe('channel10');
+  });
+});
+
+
+/**
+ * MIDI loopback detection helpers on StrummerWebSocketServer.
+ *
+ * Both `normalizeMidiPortName` and `computeLoopbackInputPortIds` are
+ * private, so we call them through the prototype with a synthetic `this`
+ * — avoids the heavy construction path (HID/WebSocket/rtmidi).
+ */
+describe('StrummerWebSocketServer loopback detection', () => {
+  // Lazy import so the top of this file can stay side-effect free.
+  const loadProto = async () => {
+    const mod = await import('../../src/cli/server.js');
+    return mod.StrummerWebSocketServer.prototype as any;
+  };
+
+  describe('normalizeMidiPortName', () => {
+    it('strips the trailing ALSA sequencer suffix', async () => {
+      const proto = await loadProto();
+      const norm = proto.normalizeMidiPortName.call({}, 'Sketchatone:Sketchatone 128:0');
+      expect(norm).toBe('sketchatone:sketchatone');
+    });
+
+    it('matches the "Midi Through" pair regardless of the suffix', async () => {
+      const proto = await loadProto();
+      const a = proto.normalizeMidiPortName.call({}, 'Midi Through:Midi Through Port-0 14:0');
+      const b = proto.normalizeMidiPortName.call({}, 'Midi Through:Midi Through Port-0');
+      expect(a).toBe(b);
+    });
+
+    it('returns empty for null / undefined / empty input', async () => {
+      const proto = await loadProto();
+      expect(proto.normalizeMidiPortName.call({}, null)).toBe('');
+      expect(proto.normalizeMidiPortName.call({}, undefined)).toBe('');
+      expect(proto.normalizeMidiPortName.call({}, '')).toBe('');
+    });
+
+    it('lowercases and collapses whitespace', async () => {
+      const proto = await loadProto();
+      expect(proto.normalizeMidiPortName.call({}, '  My  Device  ')).toBe('my device');
+    });
+  });
+
+  describe('computeLoopbackInputPortIds', () => {
+    const call = async (
+      outputName: string | null,
+      inputPorts: Array<{ id: number; name: string }>,
+      currentInputPorts: number[],
+    ): Promise<number[]> => {
+      const proto = await loadProto();
+      // Inherit from the prototype so `this.normalizeMidiPortName` resolves
+      // without having to construct the full server.
+      const ctx = Object.create(proto);
+      ctx.backend = outputName === null ? null : { currentOutputName: outputName };
+      return proto.computeLoopbackInputPortIds.call(ctx, inputPorts, currentInputPorts);
+    };
+
+    it('flags the connected input whose name matches the output', async () => {
+      const ids = await call(
+        'Sketchatone:Sketchatone 128:0',
+        [
+          { id: 0, name: 'Midi Through:Midi Through Port-0 14:0' },
+          { id: 1, name: 'Sketchatone:Sketchatone 128:0' },
+        ],
+        [0, 1],
+      );
+      expect(ids).toEqual([1]);
+    });
+
+    it('returns [] when connected input names differ from the output', async () => {
+      const ids = await call(
+        'Sketchatone:Sketchatone 128:0',
+        [{ id: 0, name: 'IAC Driver Bus 1' }],
+        [0],
+      );
+      expect(ids).toEqual([]);
+    });
+
+    it('returns [] when the matching input is present but not connected', async () => {
+      const ids = await call(
+        'Sketchatone:Sketchatone 128:0',
+        [{ id: 0, name: 'Sketchatone:Sketchatone 128:0' }],
+        [],
+      );
+      expect(ids).toEqual([]);
+    });
+
+    it('returns [] when there is no current output', async () => {
+      const ids = await call(null, [{ id: 0, name: 'Sketchatone' }], [0]);
+      expect(ids).toEqual([]);
+    });
   });
 });

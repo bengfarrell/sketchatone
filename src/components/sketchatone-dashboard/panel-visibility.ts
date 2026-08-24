@@ -17,6 +17,7 @@ export type PanelId =
   | 'slide'
   | 'actions'
   | 'groups'
+  | 'deviceButtons'
   | 'chordProgressions'
   | 'serverSettings';
 
@@ -41,6 +42,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'slide', label: 'Slide', icon: '🎚️' },
   { id: 'actions', label: 'Actions', icon: '⚡' },
   { id: 'groups', label: 'Groups', icon: '📦' },
+  { id: 'deviceButtons', label: 'Device Buttons', icon: '🔘' },
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
   { id: 'serverSettings', label: 'Server', icon: '⚙️' },
 ];
@@ -64,6 +66,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   slide: true,
   actions: true,
   groups: true,
+  deviceButtons: true,
   chordProgressions: true,
   serverSettings: true,
 };

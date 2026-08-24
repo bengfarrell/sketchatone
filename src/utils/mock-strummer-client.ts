@@ -140,6 +140,7 @@ export class MockStrummerClient extends StrummerWebSocketClient {
       primaryButtonPressed: false, secondaryButtonPressed: false,
       state: pressure > 0.1 ? 'contact' : 'hover',
       timestamp: Date.now(),
+      auxCodes: [],
     };
     const now = performance.now();
     if (pressure > 0.4 && now - this.lastStrumTime > 700) {

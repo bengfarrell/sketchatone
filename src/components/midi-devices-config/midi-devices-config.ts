@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { MidiDevicePort } from '../../types/tablet-events.js';
-import type { MidiPassthroughConnection } from '../../utils/strummer-websocket-client.js';
+import type { MidiPassthroughConnection } from '../../models/midi-strummer-config.js';
 
 @customElement('midi-devices-config')
 export class MidiDevicesConfig extends LitElement {
@@ -97,6 +97,39 @@ export class MidiDevicesConfig extends LitElement {
     .device-item.connected {
       background: var(--sketch-color-green-100);
       border-color: var(--sketch-color-green-500);
+    }
+
+    /* MIDI loopback: connected input whose name matches the current
+       output (would feed our own strums back into the note handler)
+       and, for symmetry, the offending output row itself. */
+    .device-item.loopback,
+    .device-item.loopback.connected {
+      background: #7f1d1d;
+      border-color: #b91c1c;
+      color: #fecaca;
+    }
+
+    .device-item.loopback .device-name,
+    .device-item.loopback .device-index,
+    .device-item.loopback .passthrough-label {
+      color: #fecaca;
+    }
+
+    .loopback-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #7f1d1d;
+      color: #fecaca;
+      border: 1px solid #b91c1c;
+      border-radius: 6px;
+      font-size: 0.8125rem;
+      line-height: 1.35;
+    }
+
+    .loopback-banner strong {
+      color: #fff;
     }
 
     /* Toggle Switch Styles */
@@ -220,6 +253,14 @@ export class MidiDevicesConfig extends LitElement {
   @property({ type: Array })
   passthroughConnections: MidiPassthroughConnection[] = [];
 
+  /**
+   * Ids of currently-connected input ports whose name matches the
+   * current output port (i.e. an active MIDI loopback). Set from the
+   * backend's ``loopbackInputPortIds`` field.
+   */
+  @property({ type: Array })
+  loopbackInputPortIds: (string | number)[] = [];
+
   private handleInputToggle(portId: string | number, event: Event): void {
     event.stopPropagation();
     const checkbox = event.target as HTMLInputElement;
@@ -309,8 +350,17 @@ export class MidiDevicesConfig extends LitElement {
       </svg>
     `;
 
+    const hasLoopback = this.loopbackInputPortIds.length > 0;
+
     return html`
       <div class="devices-container">
+        ${hasLoopback ? html`
+          <div class="loopback-banner" role="alert">
+            <strong>Warning:</strong>
+            Sketchatone's MIDI output is also being used as input which can cause a
+            feedback loop and cause problems.
+          </div>
+        ` : ''}
         <!-- MIDI Input Devices -->
         <div class="device-section">
           <div class="section-header">
@@ -327,8 +377,12 @@ export class MidiDevicesConfig extends LitElement {
               const hasPassthrough = this.passthroughConnections.some(
                 conn => conn.inputPort === port.id
               );
+              const isLoopback = this.loopbackInputPortIds.includes(port.id);
+              const cls = ['device-item'];
+              if (isConnected) cls.push('connected');
+              if (isLoopback) cls.push('loopback');
               return html`
-                <div class="device-item ${isConnected ? 'connected' : ''}">
+                <div class="${cls.join(' ')}">
                   <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -373,9 +427,15 @@ export class MidiDevicesConfig extends LitElement {
               <div class="empty-message">No MIDI output devices found</div>
             ` : this.outputPorts.map(port => {
               const isConnected = this.currentOutputPort === port.id;
+              // Mirror the header warning: flag the active output row when
+              // any input loopback is detected so users can see both sides
+              // of the cycle at a glance.
+              const outputLoopback = isConnected && hasLoopback;
               if (port.virtual) {
+                const vCls = ['device-item', 'connected'];
+                if (outputLoopback) vCls.push('loopback');
                 return html`
-                  <div class="device-item connected">
+                  <div class="${vCls.join(' ')}">
                     <div class="device-info">
                       <span class="device-name">${port.name}</span>
                       <span class="device-index"><span class="virtual-badge">Virtual</span></span>
@@ -383,8 +443,11 @@ export class MidiDevicesConfig extends LitElement {
                   </div>
                 `;
               }
+              const oCls = ['device-item'];
+              if (isConnected) oCls.push('connected');
+              if (outputLoopback) oCls.push('loopback');
               return html`
-                <div class="device-item ${isConnected ? 'connected' : ''}">
+                <div class="${oCls.join(' ')}">
                   <label class="device-toggle" @click=${(e: Event) => e.stopPropagation()}>
                     <input
                       type="checkbox"

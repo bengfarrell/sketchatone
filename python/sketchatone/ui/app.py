@@ -12,6 +12,7 @@ imported when the optional ``[ui]`` extra is installed. The CLI in
 
 from __future__ import annotations
 
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -378,6 +379,22 @@ class PanelArea(BoxLayout):
 
 # ---- Status bar ----------------------------------------------------------
 
+def _ws_host() -> str:
+    """Best-effort hostname for the status-bar WS URL. Appends ``.local``
+    on Linux so mDNS-capable clients (macOS, iOS, most Linux/Android) can
+    resolve the appliance by name. Falls back to ``localhost`` if the
+    system hostname can't be read."""
+    try:
+        name = socket.gethostname()
+    except Exception:
+        return 'localhost'
+    if not name:
+        return 'localhost'
+    if sys.platform.startswith('linux') and not name.endswith('.local'):
+        return f'{name}.local'
+    return name
+
+
 class StatusBar(BoxLayout):
     def __init__(self, ws_port: Optional[int], config: Optional[str],
                  bridge: Optional[UIBridge] = None, **kwargs) -> None:
@@ -392,14 +409,8 @@ class StatusBar(BoxLayout):
         _paint_bg(self, theme.BG_SURFACE)
 
         self._bridge = bridge
-        # Dirty-tracking mirrors ``ServerSettingsPanel``: snapshot the
-        # config JSON whenever the backend reports a saved state, then
-        # compare on every subsequent ``'config'`` event.
-        self._current_name: Optional[str] = None
-        self._saved_snapshot: Optional[str] = None
-        self._dirty: bool = False
 
-        left_text = f'ws://localhost:{ws_port}' if ws_port else 'in-process (no WS)'
+        left_text = f'ws://{_ws_host()}:{ws_port}' if ws_port else 'in-process (no WS)'
         left = Label(
             text=left_text,
             color=theme.TEXT_SECONDARY,
@@ -422,12 +433,6 @@ class StatusBar(BoxLayout):
         self._right.bind(texture_size=lambda w, s: setattr(w, 'width', s[0]))
         self._right.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
 
-        self._revert_btn = self._make_action_button(
-            'Revert', theme.BG_SURFACE_ALT, self._revert)
-        self._save_btn = self._make_action_button(
-            'Save', theme.ACCENT_BG, self._save)
-        self._apply_button_state()
-
         if bridge is not None:
             bridge.on('config', self._on_config)
 
@@ -435,57 +440,10 @@ class StatusBar(BoxLayout):
 
         # Badge first (left edge), then WS label adjacent. ``left`` keeps
         # ``size_hint=(1, 1)`` so it stretches across the middle and
-        # pushes the config label + action buttons to the right edge.
+        # pushes the config label to the right edge.
         self.add_widget(self.badge)
         self.add_widget(left)
         self.add_widget(self._right)
-        self.add_widget(self._revert_btn)
-        self.add_widget(self._save_btn)
-
-    # ---- Button factory ---------------------------------------------
-
-    def _make_action_button(self, text: str, enabled_bg: tuple,
-                            on_release) -> Button:
-        """Pill button with explicit enabled/disabled visual state.
-
-        Kivy's built-in disabled visual relies on
-        ``background_disabled_normal``, which is bypassed here because
-        the fill is painted on ``canvas.before``. The active background
-        colour and text colour are toggled in :meth:`_apply_button_state`.
-        """
-        h = theme.CONTROL_HEIGHT
-        btn = Button(
-            text=text, size_hint=(None, None),
-            size=(64, h),
-            background_normal='', background_down='',
-            background_color=(0, 0, 0, 0),
-            color=theme.TEXT_PRIMARY,
-            font_size='8.5sp', bold=True,
-        )
-        btn.pos_hint = {'center_y': 0.5}
-        with btn.canvas.before:
-            btn._bg_color = Color(*enabled_bg)
-            btn._bg_rect = RoundedRectangle(pos=btn.pos, size=btn.size,
-                                            radius=[h // 2])
-        def _sync(w, *_):
-            w._bg_rect.pos = w.pos
-            w._bg_rect.size = w.size
-        btn.bind(pos=_sync, size=_sync)
-        btn._enabled_bg = enabled_bg
-        btn.bind(on_release=lambda *_: on_release())
-        return btn
-
-    def _apply_button_state(self) -> None:
-        can_act = bool(self._dirty and self._bridge is not None
-                       and self._current_name is not None)
-        for btn in (self._save_btn, self._revert_btn):
-            btn.disabled = not can_act
-            if can_act:
-                btn._bg_color.rgba = btn._enabled_bg
-                btn.color = theme.TEXT_PRIMARY
-            else:
-                btn._bg_color.rgba = theme.BG_SURFACE_ALT
-                btn.color = theme.TEXT_MUTED
 
     @staticmethod
     def _format_config_label(name: Optional[str]) -> str:
@@ -503,40 +461,7 @@ class StatusBar(BoxLayout):
         if not isinstance(payload, dict):
             return
         name = payload.get('currentConfigName')
-        self._current_name = name
         self._right.text = self._format_config_label(name)
-        config = payload.get('config')
-        if payload.get('isSavedState'):
-            self._refresh_snapshot(config)
-        self._dirty = panel_widgets.compute_dirty(
-            config, self._saved_snapshot)
-        self._apply_button_state()
-
-    def _refresh_snapshot(self, config: Any) -> None:
-        import json
-        if config is None:
-            self._saved_snapshot = None
-            return
-        try:
-            self._saved_snapshot = json.dumps(config, sort_keys=True)
-        except (TypeError, ValueError):
-            self._saved_snapshot = None
-
-    # ---- User actions -----------------------------------------------
-
-    def _save(self) -> None:
-        if self._bridge is None or not self._dirty:
-            return
-        self._bridge.save_config()
-
-    def _revert(self) -> None:
-        if (self._bridge is None or not self._dirty
-                or self._current_name is None):
-            return
-        # Re-loading the current config from disk discards in-memory
-        # edits and triggers an ``isSavedState=True`` broadcast that
-        # will reset our dirty flag in ``_on_config``.
-        self._bridge.load_config(self._current_name)
 
 
 # ---- Header (top + tab bars + branding column) --------------------------
@@ -794,7 +719,6 @@ class SketchatoneUIApp(App):
 
 def run_app(
     *,
-    config: Optional[str],
     ws_port: Optional[int],
     throttle_ms: int = 150,
     fullscreen: bool,
@@ -808,7 +732,6 @@ def run_app(
     takes effect before this module's top-level kivy imports trigger
     Window initialisation."""
     bridge = UIBridge(
-        tablet_config_path=config,
         strummer_config_path=strummer_config,
         throttle_ms=throttle_ms,
         ws_port=ws_port,

@@ -3,11 +3,13 @@
 Strum Event Viewer CLI
 
 A CLI tool that reads tablet events directly via HID and displays strum events.
-Extends blankslate's TabletReaderBase for direct device access.
+Uses the vendored TabletClient (composition-based OTD wrapper).
 
 Usage:
-    python -m sketchatone.cli.strum_event_viewer --config path/to/config.json
-    python -m sketchatone.cli.strum_event_viewer --config path/to/config.json --strummer-config path/to/strummer.json
+    python -m sketchatone.cli.strum_event_viewer
+    python -m sketchatone.cli.strum_event_viewer --strummer-config path/to/strummer.json
+    python -m sketchatone.cli.strum_event_viewer --live
+    python -m sketchatone.cli.strum_event_viewer --poll 2000
 """
 
 from __future__ import annotations
@@ -24,77 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from sketchatone.strummer.strummer import Strummer
 from sketchatone.models.strummer_config import StrummerConfig
 from sketchatone.models.note import Note, NoteObject
-
-# Import blankslate's TabletReaderBase
-try:
-    from blankslate.cli.tablet_reader_base import TabletReaderBase, Colors, colored
-    from blankslate.utils.finddevice import find_config_for_device
-except ImportError:
-    print("Error: blankslate package not found.")
-    print("Make sure blankslate is installed: pip install -e ../blankslate/python")
-    sys.exit(1)
-
-# Default config directory for device configs (relative to python/ directory)
-DEFAULT_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '..', 'public', 'configs', 'devices')
-
-
-def resolve_config_path(config_arg: str | None, default_dir: str = DEFAULT_CONFIG_DIR) -> str:
-    """
-    Resolve config path - if it's a directory or None, search for matching config.
-
-    Args:
-        config_arg: Config path argument (file, directory, or None)
-        default_dir: Default directory to search if config_arg is None
-
-    Returns:
-        Resolved config file path
-
-    Raises:
-        SystemExit: If no matching config is found
-    """
-    # If no config provided, use default directory
-    if config_arg is None:
-        search_dir = os.path.abspath(default_dir)
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            return found_config
-        else:
-            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
-            sys.exit(1)
-
-    # If it's a file with .json extension, use it directly
-    if config_arg.endswith('.json'):
-        if not os.path.exists(config_arg):
-            print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
-            sys.exit(1)
-        return config_arg
-
-    config_path = os.path.abspath(config_arg)
-
-    # If it's a directory, search for matching config
-    if os.path.isdir(config_path):
-        found_config = find_config_for_device(config_path)
-        if found_config:
-            return found_config
-        else:
-            print(colored(f'Error: No matching tablet config found in: {config_path}', Colors.RED))
-            sys.exit(1)
-
-    # If path doesn't exist and has no extension, try default directory
-    if not os.path.exists(config_path) and not os.path.splitext(config_arg)[1]:
-        search_dir = os.path.abspath(default_dir)
-        found_config = find_config_for_device(search_dir)
-        if found_config:
-            return found_config
-        else:
-            print(colored(f'Error: No matching tablet config found in: {search_dir}', Colors.RED))
-            sys.exit(1)
-
-    # Otherwise treat as file path
-    if not os.path.exists(config_arg):
-        print(colored(f'Error: Config file not found: {config_arg}', Colors.RED))
-        sys.exit(1)
-    return config_arg
+from sketchatone.tablet.tablet_client import TabletClient, wait_for_device
+from sketchatone.tablet.server.event_adapter import TabletEvent
+from sketchatone.cli._ansi import Colors, colored
 
 
 def print_strummer_info(strummer_config: StrummerConfig):
@@ -316,19 +250,22 @@ def print_live_dashboard(
     sys.stdout.flush()
 
 
-class StrumEventViewer(TabletReaderBase):
+class StrumEventViewer:
     """Strum event viewer that reads directly from tablet via HID"""
 
     def __init__(
         self,
-        config_path: str,
         strummer_config_path: Optional[str] = None,
-        live_mode: bool = False
+        live_mode: bool = False,
+        device_poll_interval: Optional[int] = None,
     ):
-        super().__init__(config_path, exit_on_stop=True)
         self.live_mode = live_mode
+        self.device_poll_interval = device_poll_interval
         self.last_event: Optional[Dict[str, Any]] = None
-        self.last_live_update = 0
+        self.last_live_update = 0.0
+        self.packet_count = 0
+        self.is_running = False
+        self.tablet_client: Optional[TabletClient] = None
 
         # Load or create strummer config
         if strummer_config_path:
@@ -365,24 +302,38 @@ class StrumEventViewer(TabletReaderBase):
 
         self.strummer.notes = notes
 
+    def _print_header(self, title: str) -> None:
+        print(colored('\n╔' + '═' * 60 + '╗', Colors.CYAN, bold=True))
+        print(colored('║', Colors.CYAN, bold=True) +
+              colored(f'  {title}'.ljust(60), Colors.WHITE, bold=True) +
+              colored('║', Colors.CYAN, bold=True))
+        print(colored('╚' + '═' * 60 + '╝\n', Colors.CYAN, bold=True))
+
     def start(self):
         """Start viewing strum events"""
-        self.print_header('Strum Event Viewer')
+        self._print_header('Strum Event Viewer')
         print_strummer_info(self.strummer_config)
 
-        # Initialize reader
-        print(colored('Initializing...', Colors.GRAY))
-        self.initialize_reader_sync()
+        # Discover and attach tablet
+        print(colored('Discovering tablet...', Colors.GRAY))
+        if self.device_poll_interval is not None:
+            client = wait_for_device(
+                interval_ms=self.device_poll_interval,
+                on_waiting=lambda: print(colored('⚠ No tablet detected - waiting...', Colors.YELLOW)),
+            )
+        else:
+            client = TabletClient.discover()
+            if client is None:
+                raise RuntimeError('No tablet device found. Use --poll <ms> to wait for one.')
 
-        if not self.reader:
-            raise RuntimeError('Reader not initialized')
+        self.tablet_client = client
+        client.start(
+            on_event=self._on_tablet_event,
+            on_disconnect=lambda: print(colored('\n[Tablet] Device disconnected', Colors.YELLOW)),
+        )
 
-        # Start reading
-        print(colored('Setting up data callback...', Colors.GRAY))
-        if hasattr(self.reader, 'start_reading'):
-            self.reader.start_reading(lambda data: self.handle_packet(data))
-
-        print(colored('✓ Started reading data', Colors.GREEN))
+        caps = client.capabilities
+        print(colored(f'✓ Tablet connected: {caps.manufacturer} {caps.model}', Colors.GREEN))
         print(colored('Press Ctrl+C to stop\n', Colors.GRAY))
 
         self.is_running = True
@@ -394,37 +345,41 @@ class StrumEventViewer(TabletReaderBase):
         except KeyboardInterrupt:
             pass
         finally:
-            self.stop_sync()
+            self.stop()
 
-    def handle_packet(self, data: bytes):
-        """Handle incoming HID packet"""
+    def stop(self) -> None:
+        self.is_running = False
+        if self.tablet_client is not None:
+            try:
+                self.tablet_client.stop()
+            except Exception:  # pragma: no cover - defensive shutdown
+                pass
+            self.tablet_client = None
+
+    def _on_tablet_event(self, event: TabletEvent) -> None:
+        """Handle incoming tablet event from TabletClient"""
         try:
             self.packet_count += 1
-
-            # Process the data using the config
-            events = self.process_packet(data)
-
-            # Extract normalized values
-            x = float(events.get('x', 0))
-            y = float(events.get('y', 0))
-            pressure = float(events.get('pressure', 0))
-            state = str(events.get('state', 'unknown'))
+            x = event.x
+            y = event.y
+            pressure = event.pressure
+            state = 'out-of-range' if event.state == 'none' else event.state
 
             # Update strummer bounds (use normalized 0-1 range)
             self.strummer.update_bounds(1.0, 1.0)
 
             # Process strum
-            event = self.strummer.strum(x, pressure)
+            strum_event = self.strummer.strum(x, pressure)
 
-            if event:
-                self.last_event = event
+            if strum_event:
+                self.last_event = strum_event
                 if not self.live_mode:
-                    print_strum_event(event, self.strummer)
+                    print_strum_event(strum_event, self.strummer)
 
             if self.live_mode:
                 # Throttle live updates to ~10fps
                 now = time.time()
-                if now - self.last_live_update >= 0.1 or event:
+                if now - self.last_live_update >= 0.1 or strum_event:
                     self.last_live_update = now
                     print_live_dashboard(
                         self.strummer,
@@ -434,7 +389,7 @@ class StrumEventViewer(TabletReaderBase):
                     )
         except Exception as e:
             import traceback
-            sys.stderr.write(f"\n[ERROR] Failed to process packet: {e}\n")
+            sys.stderr.write(f"\n[ERROR] Failed to process tablet event: {e}\n")
             traceback.print_exc(file=sys.stderr)
             sys.stderr.flush()
 
@@ -445,26 +400,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Auto-detect tablet from default config directory
+    # Auto-detect tablet
     python -m sketchatone.cli.strum_event_viewer
 
-    # Auto-detect tablet from specific directory
-    python -m sketchatone.cli.strum_event_viewer -c ./configs/
-
-    # Basic usage with tablet config
-    python -m sketchatone.cli.strum_event_viewer -c tablet-config.json
-
     # With custom strummer config
-    python -m sketchatone.cli.strum_event_viewer -c tablet-config.json -s strummer-config.json
+    python -m sketchatone.cli.strum_event_viewer -s strummer-config.json
 
     # Live dashboard mode
-    python -m sketchatone.cli.strum_event_viewer -c tablet-config.json --live
-"""
-    )
+    python -m sketchatone.cli.strum_event_viewer --live
 
-    parser.add_argument(
-        '-c', '--config',
-        help='Path to tablet config JSON file or directory (auto-detects from ../public/configs if not provided)'
+    # Wait indefinitely for a device, polling every 2 seconds
+    python -m sketchatone.cli.strum_event_viewer --poll 2000
+"""
     )
 
     parser.add_argument(
@@ -478,10 +425,15 @@ Examples:
         help='Live dashboard mode (updates in place)'
     )
 
-    args = parser.parse_args()
+    parser.add_argument(
+        '--poll',
+        type=int,
+        default=None,
+        metavar='MS',
+        help='Poll interval in milliseconds for waiting for device. If not set, quit if no device found.'
+    )
 
-    # Resolve tablet config path (handles auto-detection from directory)
-    config_path = resolve_config_path(args.config)
+    args = parser.parse_args()
 
     if args.strummer_config and not os.path.exists(args.strummer_config):
         print(colored(f'Error: Strummer config file not found: {args.strummer_config}', Colors.RED))
@@ -490,8 +442,8 @@ Examples:
     viewer = None
     try:
         viewer = StrumEventViewer(
-            config_path=config_path,
             strummer_config_path=args.strummer_config,
+            device_poll_interval=args.poll,
             live_mode=args.live
         )
 
@@ -500,7 +452,7 @@ Examples:
     except KeyboardInterrupt:
         print(colored('\n\nShutdown signal received...', Colors.YELLOW))
         if viewer:
-            viewer.stop_sync()
+            viewer.stop()
         # Show cursor again
         sys.stdout.write('\033[?25h')
         sys.stdout.flush()

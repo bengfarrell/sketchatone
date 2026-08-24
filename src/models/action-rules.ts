@@ -14,9 +14,9 @@ import { ActionDefinition } from '../core/actions.js';
  * Button identifier type
  * - "button:primary" - Stylus primary button
  * - "button:secondary" - Stylus secondary button
- * - "button:1" through "button:N" - Tablet buttons by number
+ * - "code:<hidcode>" - Tablet auxiliary button identified by raw HID scan code
  */
-export type ButtonId = `button:${string}`;
+export type ButtonId = `button:primary` | `button:secondary` | `code:${number}` | `key:${string}`;
 
 /**
  * Trigger type for when an action should execute
@@ -135,40 +135,53 @@ export function generateRuleId(prefix: string = 'rule'): string {
 }
 
 /**
- * Parse a button ID into its components
+ * Parse a button ID into its components.
+ *
+ * - `button:primary` / `button:secondary` -> stylus
+ * - `code:<n>` -> auxiliary tablet button (identifier is the numeric HID scan code as a string)
  */
-export function parseButtonId(buttonId: ButtonId): { type: 'stylus' | 'tablet'; identifier: string } {
+export function parseButtonId(buttonId: ButtonId): { type: 'stylus' | 'aux'; identifier: string } {
   const parts = buttonId.split(':');
-  if (parts.length !== 2 || parts[0] !== 'button') {
+  if (parts.length !== 2) {
     throw new Error(`Invalid button ID: ${buttonId}`);
   }
-  
-  const identifier = parts[1];
-  if (identifier === 'primary' || identifier === 'secondary') {
-    return { type: 'stylus', identifier };
-  }
-  
-  // Numeric tablet button
-  const num = parseInt(identifier, 10);
-  if (isNaN(num) || num < 1) {
+
+  const [scheme, identifier] = parts;
+
+  if (scheme === 'button') {
+    if (identifier === 'primary' || identifier === 'secondary') {
+      return { type: 'stylus', identifier };
+    }
     throw new Error(`Invalid button ID: ${buttonId}`);
   }
-  
-  return { type: 'tablet', identifier };
+
+  if (scheme === 'code') {
+    const num = parseInt(identifier, 10);
+    if (isNaN(num) || num < 0 || String(num) !== identifier) {
+      throw new Error(`Invalid button ID: ${buttonId}`);
+    }
+    return { type: 'aux', identifier };
+  }
+
+  throw new Error(`Invalid button ID: ${buttonId}`);
 }
 
 /**
- * Create a button ID from components
+ * Create a button ID from components.
  */
-export function createButtonId(type: 'stylus' | 'tablet', identifier: string | number): ButtonId {
+export function createButtonId(type: 'stylus' | 'aux', identifier: string | number): ButtonId {
   if (type === 'stylus') {
     if (identifier !== 'primary' && identifier !== 'secondary') {
       throw new Error(`Invalid stylus identifier: ${identifier}`);
     }
     return `button:${identifier}` as ButtonId;
   }
-  
-  return `button:${identifier}` as ButtonId;
+
+  const num = typeof identifier === 'number' ? identifier : parseInt(identifier, 10);
+  if (isNaN(num) || num < 0) {
+    throw new Error(`Invalid aux identifier: ${identifier}`);
+  }
+  return `code:${num}` as ButtonId;
 }
 
 

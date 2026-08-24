@@ -232,6 +232,7 @@ export class CurveVisualizer extends LitElement {
                             <option value="tiltX">Tilt X</option>
                             <option value="tiltY">Tilt Y</option>
                             <option value="tiltXY">Tilt X+Y</option>
+                            <option value="none">None (disabled)</option>
                         </select>
                     </div>
                     

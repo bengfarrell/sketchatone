@@ -18,7 +18,7 @@ import string
 
 
 # Type aliases
-ButtonId = str  # Format: "button:primary", "button:secondary", "button:1", etc.
+ButtonId = str  # Format: "button:primary", "button:secondary", or "code:<hidcode>"
 TriggerType = Literal['press', 'release', 'hold']
 ActionCategory = Literal['button', 'group', 'startup']
 GroupActionType = Literal['chord-progression']
@@ -191,34 +191,53 @@ def generate_rule_id(prefix: str = 'rule') -> str:
 def parse_button_id(button_id: ButtonId) -> Dict[str, str]:
     """
     Parse a button ID into its components.
-    
+
+    - "button:primary" / "button:secondary" -> stylus
+    - "code:<n>" -> auxiliary tablet button (identifier is the numeric HID scan code as a string)
+
     Returns:
-        Dict with 'type' ('stylus' or 'tablet') and 'identifier'
+        Dict with 'type' ('stylus' or 'aux') and 'identifier'
     """
     parts = button_id.split(':')
-    if len(parts) != 2 or parts[0] != 'button':
+    if len(parts) != 2:
         raise ValueError(f"Invalid button ID: {button_id}")
-    
-    identifier = parts[1]
-    if identifier in ('primary', 'secondary'):
-        return {'type': 'stylus', 'identifier': identifier}
-    
-    # Numeric tablet button
-    try:
-        num = int(identifier)
-        if num < 1:
+
+    scheme, identifier = parts
+
+    if scheme == 'button':
+        if identifier in ('primary', 'secondary'):
+            return {'type': 'stylus', 'identifier': identifier}
+        raise ValueError(f"Invalid button ID: {button_id}")
+
+    if scheme == 'code':
+        try:
+            num = int(identifier)
+        except ValueError:
             raise ValueError(f"Invalid button ID: {button_id}")
-        return {'type': 'tablet', 'identifier': identifier}
-    except ValueError:
-        raise ValueError(f"Invalid button ID: {button_id}")
+        if num < 0 or str(num) != identifier:
+            raise ValueError(f"Invalid button ID: {button_id}")
+        return {'type': 'aux', 'identifier': identifier}
+
+    raise ValueError(f"Invalid button ID: {button_id}")
 
 
 def create_button_id(button_type: str, identifier: Union[str, int]) -> ButtonId:
-    """Create a button ID from components"""
+    """Create a button ID from components."""
     if button_type == 'stylus':
         if identifier not in ('primary', 'secondary'):
             raise ValueError(f"Invalid stylus identifier: {identifier}")
-    return f"button:{identifier}"
+        return f"button:{identifier}"
+
+    if button_type == 'aux':
+        try:
+            num = int(identifier)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid aux identifier: {identifier}")
+        if num < 0:
+            raise ValueError(f"Invalid aux identifier: {identifier}")
+        return f"code:{num}"
+
+    raise ValueError(f"Invalid button type: {button_type}")
 
 
 

@@ -21,7 +21,6 @@ from typing import Any, Callable, Dict, List, Optional
 from sketchatone.cli.server import (
     CombinedEventData,
     StrummerWebSocketServer,
-    resolve_device_config_path,
 )
 
 
@@ -29,7 +28,7 @@ from sketchatone.cli.server import (
 # web-side ``StrummerWebSocketClientEvents`` so panel widgets can be
 # written against a single interface.
 EVENT_NAMES = ('device-status', 'tablet', 'strum', 'combined', 'config',
-               'midi-devices', 'midi-input')
+               'midi-devices', 'midi-input', 'button-detection-state')
 
 Listener = Callable[[Any], None]
 
@@ -58,16 +57,19 @@ class _BridgeServer(StrummerWebSocketServer):
     _config_hook: Optional[Callable[[Dict[str, Any]], None]] = None
     _midi_devices_hook: Optional[Callable[[Dict[str, Any]], None]] = None
     _midi_input_hook: Optional[Callable[[Dict[str, Any]], None]] = None
+    _button_detection_hook: Optional[Callable[[bool], None]] = None
 
     def __init__(self, *args: Any, _on_status: Optional[Callable[[bool, Optional[str]], None]] = None,
                  _on_config: Optional[Callable[[Dict[str, Any]], None]] = None,
                  _on_midi_devices: Optional[Callable[[Dict[str, Any]], None]] = None,
                  _on_midi_input: Optional[Callable[[Dict[str, Any]], None]] = None,
+                 _on_button_detection: Optional[Callable[[bool], None]] = None,
                  **kwargs: Any) -> None:
         self._status_hook = _on_status
         self._config_hook = _on_config
         self._midi_devices_hook = _on_midi_devices
         self._midi_input_hook = _on_midi_input
+        self._button_detection_hook = _on_button_detection
         super().__init__(*args, **kwargs)
 
     def broadcast_status(self, connected: bool, device_name: Optional[str] = None) -> None:  # type: ignore[override]
@@ -97,6 +99,14 @@ class _BridgeServer(StrummerWebSocketServer):
         if self._midi_input_hook is not None:
             try:
                 self._midi_input_hook(self._build_midi_input_payload(event))
+            except Exception:
+                pass
+
+    def _broadcast_button_detection_state(self) -> None:  # type: ignore[override]
+        super()._broadcast_button_detection_state()
+        if self._button_detection_hook is not None:
+            try:
+                self._button_detection_hook(bool(self.detecting_device_buttons))
             except Exception:
                 pass
 
@@ -163,20 +173,16 @@ class UIBridge:
     def __init__(
         self,
         *,
-        tablet_config_path: Optional[str] = None,
         strummer_config_path: Optional[str] = None,
         throttle_ms: int = 150,
         ws_port: Optional[int] = None,
         poll_ms: Optional[int] = 2000,
-        search_dir: Optional[str] = None,
         dev_mode: bool = False,
     ) -> None:
-        self._tablet_config_path = tablet_config_path
         self._strummer_config_path = strummer_config_path
         self._throttle_ms = throttle_ms
         self._ws_port = ws_port
         self._poll_ms = poll_ms
-        self._search_dir = search_dir
         self._dev_mode = dev_mode
 
         self._listeners: Dict[str, List[Listener]] = {name: [] for name in EVENT_NAMES}
@@ -203,6 +209,9 @@ class UIBridge:
         # opened after the backend has already started shows current notes
         # and source port without waiting for the next input event.
         self._last_midi_input: Optional[Dict[str, Any]] = None
+        # Ephemeral button-detection flag mirrored from the backend so a
+        # freshly-subscribed panel reflects the current toggle immediately.
+        self._last_button_detection: bool = False
 
     def on(self, event: str, callback: Listener) -> Callable[[], None]:
         """Subscribe to ``event``. Returns an unsubscribe function.
@@ -218,6 +227,8 @@ class UIBridge:
             _schedule_on_kivy_main(callback, self._last_config)
         if event == 'midi-input' and self._last_midi_input is not None:
             _schedule_on_kivy_main(callback, self._last_midi_input)
+        if event == 'button-detection-state':
+            _schedule_on_kivy_main(callback, {'enabled': self._last_button_detection})
         def _off() -> None:
             if callback in self._listeners[event]:
                 self._listeners[event].remove(callback)
@@ -297,6 +308,10 @@ class UIBridge:
         self._last_midi_input = data
         self._emit('midi-input', data)
 
+    def _on_button_detection(self, enabled: bool) -> None:
+        self._last_button_detection = bool(enabled)
+        self._emit('button-detection-state', {'enabled': self._last_button_detection})
+
     # ---- Public command API (callable from the Kivy main thread) ------
 
     def request_midi_devices(self) -> None:
@@ -334,6 +349,26 @@ class UIBridge:
                 return
             self._on_midi_input(data)
         self._run_on_loop(_fetch)
+
+    def set_button_detection(self, enabled: bool) -> None:
+        """Toggle the backend's ephemeral device-button learning flag.
+
+        Mirrors the web ``set-button-detection`` message: flips
+        ``detecting_device_buttons`` and rebroadcasts the state so every
+        subscriber (this UI and any WS clients) stays in sync.
+        """
+        target = bool(enabled)
+
+        def _apply() -> None:
+            srv = self._server
+            if srv is None:
+                return
+            try:
+                srv.detecting_device_buttons = target
+                srv._broadcast_button_detection_state()
+            except Exception:
+                pass
+        self._run_on_loop(_apply)
 
     def set_midi_output(self, port: Optional[str]) -> None:
         """Switch the MIDI output port. ``port`` is a port name or index
@@ -498,41 +533,26 @@ class UIBridge:
                 return
             await asyncio.sleep(0.05)
 
-    def _resolve_device_config(self) -> tuple[Optional[str], Optional[str]]:
-        """Resolve (tablet_config_path, search_dir) for the backend.
-
-        Mirrors ``cli/server.py`` startup: route through
-        ``resolve_device_config_path`` so an explicit ``--config`` can be
-        a single device JSON *or* a directory to scan for a connected
-        device. With ``poll_ms`` set, missing devices are tolerated and
-        the reader thread polls until one is connected.
-        """
-        if self._dev_mode:
-            return (None, None)
-        return resolve_device_config_path(
-            self._tablet_config_path,
-            base_dir=self._search_dir,
-            poll_ms=self._poll_ms,
-        )
-
     def _thread_main(self) -> None:
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
         try:
             try:
-                tablet_config_path, search_dir = self._resolve_device_config()
+                # Device discovery is delegated to ``TabletClient.discover()``
+                # inside the server's reader thread — no path resolution
+                # needed here; the bundled OTD config index handles it.
                 self._server = _BridgeServer(
-                    tablet_config_path=tablet_config_path,
                     strummer_config_path=self._strummer_config_path,
                     ws_port=self._ws_port,
                     throttle_ms=self._throttle_ms,
                     poll_ms=self._poll_ms,
-                    search_dir=search_dir,
+                    dev_mode=self._dev_mode,
                     _on_status=self._on_status,
                     _on_config=self._on_config,
                     _on_midi_devices=self._on_midi_devices,
                     _on_midi_input=self._on_midi_input,
+                    _on_button_detection=self._on_button_detection,
                 )
                 self._server.event_bus.on_combined_event(self._on_combined)
                 self._run_task = loop.create_task(self._server.run_server())

@@ -3,13 +3,13 @@
  * Strum Event Viewer CLI
  *
  * A CLI tool that reads tablet events directly via HID and displays strum events.
- * Extends blankslate's TabletReaderBase for direct device access.
+ * Uses the vendored TabletClient (composition-based OTD wrapper).
  *
  * Usage:
  *   npm run strum-events
- *   npm run strum-events -- --config ./configs/
- *   npm run strum-events -- --config path/to/config.json
- *   npm run strum-events -- --config path/to/config.json --strummer-config path/to/strummer.json
+ *   npm run strum-events -- --strummer-config path/to/strummer.json
+ *   npm run strum-events -- --live
+ *   npm run strum-events -- --poll 2000
  */
 
 import chalk from 'chalk';
@@ -17,11 +17,9 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Import from blankslate CLI modules
-import { TabletReaderBase, type TabletReaderOptions, normalizeTabletEvent, resolveConfigPath } from 'blankslate/cli/tablet-reader-base.js';
-
-// Default config directory for device configs
-const DEFAULT_CONFIG_DIR = './public/configs/devices';
+// Vendored tablet client (composition-based OTD wrapper)
+import { TabletClient, waitForDevice } from '../tablet/tabletClient.js';
+import type { TabletEvent } from '../tablet/server/eventAdapter.js';
 import { Strummer, type StrummerEvent, type StrumNoteData } from '../core/strummer.js';
 import { StrummerConfig } from '../models/strummer-config.js';
 import { Note, type NoteObject } from '../models/note.js';
@@ -246,23 +244,27 @@ function printLiveDashboard(
 /**
  * Strum event viewer that reads directly from tablet via HID
  */
-class StrumEventViewer extends TabletReaderBase {
+class StrumEventViewer {
+  private tabletClient: TabletClient | null = null;
+  private devicePollInterval: number | null;
   private liveMode: boolean;
   private lastEvent: StrummerEvent | null = null;
   private lastLiveUpdate = 0;
   private strummerConfig: StrummerConfig;
   private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+  private packetCount = 0;
+  private shutdownHandlersInstalled = false;
   strummer: Strummer;
 
   constructor(
-    configPath: string,
-    options: TabletReaderOptions & {
+    options: {
       strummerConfigPath?: string;
       liveMode?: boolean;
+      devicePollInterval?: number | null;
     } = {}
   ) {
-    super(configPath, options);
     this.liveMode = options.liveMode ?? false;
+    this.devicePollInterval = options.devicePollInterval ?? null;
 
     // Load or create strummer config
     if (options.strummerConfigPath) {
@@ -298,72 +300,94 @@ class StrumEventViewer extends TabletReaderBase {
     this.strummer.notes = notes;
   }
 
-  protected handlePacket(data: Uint8Array): void {
+  private onTabletEvent(tabletEvent: TabletEvent): void {
     try {
       this.packetCount++;
-
-      // Process the data using the config
-      const events = this.processPacket(data);
-
-      // Extract normalized values
-      const normalized = normalizeTabletEvent(events);
-      const { x, y, pressure, state } = normalized;
+      const { x, pressure } = tabletEvent;
+      const state: 'hover' | 'contact' | 'out-of-range' =
+        tabletEvent.state === 'none' ? 'out-of-range' : tabletEvent.state;
 
       // Update strummer bounds (use normalized 0-1 range)
       this.strummer.updateBounds(1.0, 1.0);
 
       // Process strum
-      const event = this.strummer.strum(x, pressure);
+      const strumEvent = this.strummer.strum(x, pressure);
 
-      if (event) {
-        this.lastEvent = event;
+      if (strumEvent) {
+        this.lastEvent = strumEvent;
         if (!this.liveMode) {
-          printStrumEvent(event);
+          printStrumEvent(strumEvent);
         }
       }
 
       if (this.liveMode) {
         // Throttle live updates to ~10fps
         const now = Date.now() / 1000;
-        if (now - this.lastLiveUpdate >= 0.1 || event) {
+        if (now - this.lastLiveUpdate >= 0.1 || strumEvent) {
           this.lastLiveUpdate = now;
-          printLiveDashboard(this.strummer, x, y, pressure, state, this.lastEvent, this.packetCount);
+          printLiveDashboard(this.strummer, x, tabletEvent.y, pressure, state, this.lastEvent, this.packetCount);
         }
       }
     } catch (e) {
       const error = e as Error;
-      process.stderr.write(`\n[ERROR] Failed to process packet: ${error.message}\n`);
+      process.stderr.write(`\n[ERROR] Failed to process tablet event: ${error.message}\n`);
       if (error.stack) {
         process.stderr.write(error.stack + '\n');
       }
     }
   }
 
+  private printHeader(title: string): void {
+    console.log(chalk.cyan.bold('\n╔' + '═'.repeat(60) + '╗'));
+    console.log(chalk.cyan.bold('║') + chalk.white.bold(`  ${title}`.padEnd(60)) + chalk.cyan.bold('║'));
+    console.log(chalk.cyan.bold('╚' + '═'.repeat(60) + '╝\n'));
+  }
+
+  private setupShutdownHandlers(): void {
+    if (this.shutdownHandlersInstalled) return;
+    this.shutdownHandlersInstalled = true;
+    const shutdown = async (): Promise<void> => {
+      await this.stop();
+      process.stdout.write('\x1b[?25h');
+      process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+  }
+
   async start(): Promise<void> {
     this.printHeader('Strum Event Viewer');
     printStrummerInfo(this.strummerConfig);
 
-    // Initialize reader
-    console.log(chalk.gray('Initializing...'));
-    await this.initializeReader();
+    // Discover and attach tablet
+    console.log(chalk.gray('Discovering tablet...'));
+    const pollInterval = this.devicePollInterval;
+    const client = pollInterval != null
+      ? await waitForDevice({
+          intervalMs: pollInterval,
+          onWaiting: () => console.log(chalk.yellow('⚠ No tablet detected - waiting...')),
+        })
+      : await TabletClient.discover();
 
-    if (!this.reader) {
-      throw new Error('Reader not initialized');
+    if (!client) {
+      throw new Error('No tablet device found. Use --poll <ms> to wait for one.');
     }
 
-    // Start reading
-    console.log(chalk.gray('Setting up data callback...'));
-    this.reader.startReading((data) => {
-      this.handlePacket(data);
+    this.tabletClient = client;
+    await client.start({
+      onEvent: (event) => this.onTabletEvent(event),
+      onDisconnect: () => {
+        console.log(chalk.yellow('\n[Tablet] Device disconnected'));
+      },
     });
 
-    console.log(chalk.green('✓ Started reading data'));
+    const caps = client.capabilities;
+    console.log(chalk.green(`✓ Tablet connected: ${caps.manufacturer} ${caps.model}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
     // Keep the process alive (HID reader alone doesn't keep Node.js event loop active)
     this.keepAliveInterval = setInterval(() => {}, 1000);
 
-    // Set up shutdown handlers
     this.setupShutdownHandlers();
   }
 
@@ -374,7 +398,11 @@ class StrumEventViewer extends TabletReaderBase {
       this.keepAliveInterval = null;
     }
 
-    await super.stop();
+    // Stop tablet client
+    if (this.tabletClient) {
+      try { this.tabletClient.stop(); } catch { /* ignore */ }
+      this.tabletClient = null;
+    }
   }
 }
 
@@ -384,40 +412,34 @@ async function main(): Promise<void> {
   program
     .name('strum-events')
     .description('View strum events from tablet input')
-    .option('-c, --config <path>', 'Path to tablet config JSON file or directory (auto-detects from ./public/configs if not provided)')
     .option('-s, --strummer-config <path>', 'Path to strummer config JSON file')
     .option('-l, --live', 'Live dashboard mode (updates in place)')
+    .option('--poll <ms>', 'Poll interval in milliseconds for waiting for device. If not set, quit if no device found.', parseInt)
     .addHelpText(
       'after',
       `
 Examples:
-  # Auto-detect tablet from default config directory
+  # Auto-detect tablet
   npm run strum-events
 
-  # Auto-detect tablet from specific directory
-  npm run strum-events -- -c ./configs/
-
-  # Basic usage with tablet config
-  npm run strum-events -- -c tablet-config.json
-
   # With custom strummer config
-  npm run strum-events -- -c tablet-config.json -s strummer-config.json
+  npm run strum-events -- -s strummer-config.json
 
   # Live dashboard mode
-  npm run strum-events -- -c tablet-config.json --live
+  npm run strum-events -- --live
+
+  # Wait indefinitely for a device, polling every 2 seconds
+  npm run strum-events -- --poll 2000
 `
     );
 
   program.parse();
 
   const options = program.opts<{
-    config?: string;
     strummerConfig?: string;
     live?: boolean;
+    poll?: number;
   }>();
-
-  // Resolve tablet config path (handles auto-detection from directory)
-  const configPath = resolveConfigPath(options.config ?? DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_DIR);
 
   if (options.strummerConfig) {
     const strummerConfigPath = path.resolve(options.strummerConfig);
@@ -427,11 +449,11 @@ Examples:
     }
   }
 
-  let viewer: StrumEventViewer | null = null;
   try {
-    viewer = new StrumEventViewer(configPath, {
+    const viewer = new StrumEventViewer({
       strummerConfigPath: options.strummerConfig ? path.resolve(options.strummerConfig) : undefined,
       liveMode: options.live,
+      devicePollInterval: options.poll ?? null,
     });
 
     await viewer.start();

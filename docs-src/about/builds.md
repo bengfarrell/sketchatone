@@ -130,12 +130,24 @@ source venv/bin/activate
 # Upgrade pip/setuptools (editable install requires pip >= 21.3, setuptools >= 64)
 pip install --upgrade pip setuptools
 
-# Install in editable mode (also fetches blankslate from GitHub)
+# Install in editable mode
 pip install -e .
 
 # Run manually
 python -m sketchatone.cli.server -c /path/to/config.json
 ```
+
+### Post-Install Configuration
+
+After installation, the interactive menu covers autostart mode, USB MIDI gadget mode, and boot-time trimming in one place:
+
+```bash
+sudo sketchatone-configure
+```
+
+The **UI variant** ships an equivalent `sudo sketchatone-ui-configure` menu (autostart on tty1 + boot-trim).
+
+The individual helper commands documented below (`sketchatone-setup`, `sketchatone-setup-usb-gadget`, `sketchatone-boot-trim`) remain available for scripting and advanced use.
 
 ### Auto-Start Modes
 
@@ -221,7 +233,7 @@ This removes the USB plug/unplug detection rules but keeps the HID permission ru
 #### Adding a new device:
 
 1. Create a device config JSON in `/opt/sketchatone/configs/devices/` with `vendorId` and `productId` fields
-2. Re-run the setup script to regenerate udev rules:
+2. Re-run the autostart setup to regenerate udev rules — either interactively via `sudo sketchatone-configure` → **Autostart mode** → **usb-trigger**, or directly:
    ```bash
    sudo sketchatone-setup --mode usb-trigger
    ```

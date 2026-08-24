@@ -39,6 +39,7 @@ PANELS: List[PanelInfo] = [
     PanelInfo('slide',             'Slide'),
     PanelInfo('actions',           'Actions'),
     PanelInfo('groups',            'Groups'),
+    PanelInfo('deviceButtons',     'Device Buttons'),
     PanelInfo('chordProgressions', 'Chord Progressions'),
 ]
 
@@ -54,7 +55,7 @@ CATEGORIES: List[CategoryInfo] = [
         'strummingSettings', 'strumRelease', 'slide',
     )),
     CategoryInfo('song', 'Song', (
-        'actions', 'groups', 'chordProgressions',
+        'actions', 'groups', 'deviceButtons', 'chordProgressions',
     )),
 ]
 

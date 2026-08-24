@@ -1,11 +1,11 @@
 /**
  * Strum Events Display Component
- * Extends blankslate's events-display with strum event visualization
+ * Renders a live log of tablet events plus strum event visualizations.
  */
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import type { TabletEvent } from 'blankslate/components/events-display/events-display.js';
+import type { TabletEvent } from '../../tablet/server/eventAdapter.js';
 import type { StrumEventData } from '../../types/tablet-events.js';
 
 /**
@@ -301,15 +301,9 @@ export class StrumEventsDisplay extends LitElement {
   }
 
   private _getPressedTabletButton(event: TabletEvent): number | null {
-    if (event.button1) return 1;
-    if (event.button2) return 2;
-    if (event.button3) return 3;
-    if (event.button4) return 4;
-    if (event.button5) return 5;
-    if (event.button6) return 6;
-    if (event.button7) return 7;
-    if (event.button8) return 8;
-    return null;
+    // Show the first HID code from the auxCodes array (there may be several
+    // simultaneous presses; the log line only has room for one).
+    return event.auxCodes && event.auxCodes.length > 0 ? event.auxCodes[0] : null;
   }
 
   private _renderStrumSection() {

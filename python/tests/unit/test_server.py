@@ -22,47 +22,49 @@ from sketchatone.cli.server import (
     TabletEventData,
     StrumEventData,
     CombinedEventData,
+    StrummerWebSocketServer,
+    _normalize_midi_port_name,
 )
 from sketchatone.models import MidiStrummerConfig
 
 
 class TestCamelToSnakeConversion:
     """Test camelCase to snake_case conversion."""
-    
+
     @staticmethod
     def _camel_to_snake(name: str) -> str:
         """Convert camelCase to snake_case (copied from server for testing)"""
         import re
         s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
         return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-    
+
     def test_simple_camel_case(self):
         """Test simple camelCase conversion."""
         assert self._camel_to_snake('upperNoteSpread') == 'upper_note_spread'
         assert self._camel_to_snake('lowerNoteSpread') == 'lower_note_spread'
         assert self._camel_to_snake('midiChannel') == 'midi_channel'
-    
+
     def test_single_word(self):
         """Test single word (no conversion needed)."""
         assert self._camel_to_snake('chord') == 'chord'
         assert self._camel_to_snake('notes') == 'notes'
-    
+
     def test_already_snake_case(self):
         """Test already snake_case strings."""
         assert self._camel_to_snake('upper_note_spread') == 'upper_note_spread'
         assert self._camel_to_snake('midi_channel') == 'midi_channel'
-    
+
     def test_multiple_capitals(self):
         """Test strings with multiple consecutive capitals."""
         assert self._camel_to_snake('initialNotes') == 'initial_notes'
         assert self._camel_to_snake('pressureThreshold') == 'pressure_threshold'
-    
+
     def test_acronyms(self):
         """Test strings with acronyms."""
         assert self._camel_to_snake('midiID') == 'midi_id'
         assert self._camel_to_snake('httpPort') == 'http_port'
         assert self._camel_to_snake('wsPort') == 'ws_port'
-    
+
     def test_numbers(self):
         """Test strings with numbers."""
         assert self._camel_to_snake('note1') == 'note1'
@@ -71,23 +73,23 @@ class TestCamelToSnakeConversion:
 
 class TestSetConfigValue:
     """Test path-based config value setting."""
-    
+
     def setup_method(self):
         """Set up test fixtures."""
         self.config = MidiStrummerConfig()
-    
+
     @staticmethod
     def _camel_to_snake(name: str) -> str:
         """Convert camelCase to snake_case"""
         import re
         s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
         return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-    
+
     def _set_config_value(self, path: str, value: Any) -> None:
         """Set a config value using dot-notation path (copied from server)."""
         parts = path.split('.')
         current = self.config
-        
+
         for i, part in enumerate(parts[:-1]):
             snake_part = self._camel_to_snake(part)
             if hasattr(current, snake_part):
@@ -100,10 +102,10 @@ class TestSetConfigValue:
                 current = current[snake_part]
             else:
                 raise ValueError(f"Invalid path: {path} (failed at '{part}')")
-        
+
         last_part = parts[-1]
         snake_last = self._camel_to_snake(last_part)
-        
+
         if hasattr(current, snake_last):
             setattr(current, snake_last, value)
         elif hasattr(current, last_part):
@@ -115,37 +117,37 @@ class TestSetConfigValue:
                 current[last_part] = value
         else:
             raise ValueError(f"Cannot set value at path: {path}")
-    
+
     def test_set_upper_note_spread(self):
         """Test setting upperNoteSpread via path."""
         self._set_config_value('strummer.strumming.upperNoteSpread', 5)
         assert self.config.strummer.strumming.upper_note_spread == 5
-    
+
     def test_set_lower_note_spread(self):
         """Test setting lowerNoteSpread via path."""
         self._set_config_value('strummer.strumming.lowerNoteSpread', 2)
         assert self.config.strummer.strumming.lower_note_spread == 2
-    
+
     def test_set_chord(self):
         """Test setting chord via path."""
         self._set_config_value('strummer.strumming.chord', 'Am')
         assert self.config.strummer.strumming.chord == 'Am'
-    
+
     def test_set_pressure_threshold(self):
         """Test setting pressureThreshold via path."""
         self._set_config_value('strummer.strumming.pressureThreshold', 0.2)
         assert self.config.strummer.strumming.pressure_threshold == 0.2
-    
+
     def test_set_midi_channel(self):
         """Test setting midiChannel via path."""
         self._set_config_value('strummer.strumming.midiChannel', 5)
         assert self.config.strummer.strumming.midi_channel == 5
-    
+
     def test_set_initial_notes(self):
         """Test setting initialNotes via path."""
         self._set_config_value('strummer.strumming.initialNotes', ['A3', 'C4', 'E4'])
         assert self.config.strummer.strumming.initial_notes == ['A3', 'C4', 'E4']
-    
+
     def test_set_note_duration_control(self):
         """Test setting note duration control via path."""
         self._set_config_value('strummer.noteDuration.control', 'pressure')
@@ -157,7 +159,7 @@ class TestSetConfigValue:
         """Test that invalid path raises ValueError."""
         with pytest.raises(ValueError, match="Invalid path"):
             self._set_config_value('strummer.invalid.path', 'value')
-    
+
     def test_snake_case_path(self):
         """Test that snake_case paths also work."""
         self._set_config_value('strummer.strumming.upper_note_spread', 4)
@@ -166,23 +168,23 @@ class TestSetConfigValue:
 
 class TestStrummerEventBus:
     """Test the StrummerEventBus class."""
-    
+
     def test_default_throttle(self):
         """Test default throttle value."""
         bus = StrummerEventBus()
         assert bus.throttle_ms == 150
-    
+
     def test_custom_throttle(self):
         """Test custom throttle value."""
         bus = StrummerEventBus(throttle_ms=200)
         assert bus.throttle_ms == 200
-    
+
     def test_set_throttle(self):
         """Test setting throttle value."""
         bus = StrummerEventBus()
         bus.set_throttle(300)
         assert bus.throttle_ms == 300
-    
+
     def test_emit_tablet_event(self):
         """Test emitting tablet event."""
         bus = StrummerEventBus()
@@ -212,14 +214,14 @@ class TestStrummerEventBus:
         # Event should be buffered
         assert bus._buffer.strum == event
         assert bus._has_new_data is True
-    
+
     def test_on_combined_event(self):
         """Test registering combined event listener."""
         bus = StrummerEventBus()
         callback = Mock()
         bus.on_combined_event(callback)
         assert callback in bus._listeners
-    
+
     def test_off_combined_event(self):
         """Test unregistering combined event listener."""
         bus = StrummerEventBus()
@@ -227,7 +229,7 @@ class TestStrummerEventBus:
         bus.on_combined_event(callback)
         bus.off_combined_event(callback)
         assert callback not in bus._listeners
-    
+
     def test_pause_resume(self):
         """Test pause and resume functionality."""
         bus = StrummerEventBus()
@@ -240,7 +242,7 @@ class TestStrummerEventBus:
 
 class TestStatusMessageFormat:
     """Test status message format matches Node.js server."""
-    
+
     def test_connected_status_format(self):
         """Test connected status message format."""
         import time
@@ -250,7 +252,7 @@ class TestStatusMessageFormat:
         message_text = f'Tablet {"connected" if connected else "disconnected"}'
         if device_name:
             message_text = f'{device_name} {status_str}'
-        
+
         message = {
             'type': 'status',
             'status': status_str,
@@ -258,14 +260,14 @@ class TestStatusMessageFormat:
             'message': message_text,
             'timestamp': int(time.time() * 1000)
         }
-        
+
         # Verify format matches Node.js
         assert message['type'] == 'status'
         assert message['status'] == 'connected'
         assert message['deviceConnected'] is True
         assert 'Test Tablet' in message['message']
         assert isinstance(message['timestamp'], int)
-    
+
     def test_disconnected_status_format(self):
         """Test disconnected status message format."""
         import time
@@ -273,7 +275,7 @@ class TestStatusMessageFormat:
         device_name = None
         status_str = 'connected' if connected else 'disconnected'
         message_text = 'Tablet connected' if connected else 'Waiting for tablet...'
-        
+
         message = {
             'type': 'status',
             'status': status_str,
@@ -281,7 +283,7 @@ class TestStatusMessageFormat:
             'message': message_text,
             'timestamp': int(time.time() * 1000)
         }
-        
+
         # Verify format matches Node.js
         assert message['type'] == 'status'
         assert message['status'] == 'disconnected'
@@ -292,52 +294,52 @@ class TestStatusMessageFormat:
 
 class TestSetThrottleMessageFormat:
     """Test set-throttle message handling."""
-    
+
     def test_throttle_ms_format(self):
         """Test that throttleMs format is accepted (webapp format)."""
         bus = StrummerEventBus()
         data = {'type': 'set-throttle', 'throttleMs': 200}
-        
+
         # Simulate message handling
         throttle = data.get('throttleMs', data.get('throttle', 150))
         bus.set_throttle(throttle)
-        
+
         assert bus.throttle_ms == 200
-    
+
     def test_throttle_legacy_format(self):
         """Test that throttle format is accepted (legacy format)."""
         bus = StrummerEventBus()
         data = {'type': 'set-throttle', 'throttle': 250}
-        
+
         # Simulate message handling
         throttle = data.get('throttleMs', data.get('throttle', 150))
         bus.set_throttle(throttle)
-        
+
         assert bus.throttle_ms == 250
-    
+
     def test_throttle_default_fallback(self):
         """Test default fallback when neither format is present."""
         bus = StrummerEventBus()
         data = {'type': 'set-throttle'}
-        
+
         # Simulate message handling
         throttle = data.get('throttleMs', data.get('throttle', 150))
         bus.set_throttle(throttle)
-        
+
         assert bus.throttle_ms == 150
 
 
 class TestConfigMessageFormat:
     """Test config message format."""
-    
+
     def test_config_data_format(self):
         """Test config data format matches Node.js."""
         from sketchatone.models.note import Note
-        
+
         config = MidiStrummerConfig()
         notes = [Note.parse_notation('C4'), Note.parse_notation('E4'), Note.parse_notation('G4')]
         throttle_ms = 150
-        
+
         config_data = {
             'throttleMs': throttle_ms,
             'notes': [
@@ -346,12 +348,12 @@ class TestConfigMessageFormat:
             ],
             'config': config.to_dict()
         }
-        
+
         message = {
             'type': 'config',
             'data': config_data
         }
-        
+
         # Verify format
         assert message['type'] == 'config'
         assert 'data' in message
@@ -363,7 +365,7 @@ class TestConfigMessageFormat:
 
 class TestUpdateConfigMessageFormat:
     """Test update-config message handling."""
-    
+
     def test_path_based_update_format(self):
         """Test path-based update format (webapp format)."""
         data = {
@@ -371,12 +373,12 @@ class TestUpdateConfigMessageFormat:
             'path': 'strummer.strumming.upperNoteSpread',
             'value': 5
         }
-        
+
         # Verify format
         assert data['type'] == 'update-config'
         assert data['path'] == 'strummer.strumming.upperNoteSpread'
         assert data['value'] == 5
-    
+
     def test_legacy_config_update_format(self):
         """Test legacy full config update format."""
         data = {
@@ -387,7 +389,7 @@ class TestUpdateConfigMessageFormat:
                 }
             }
         }
-        
+
         # Verify format
         assert data['type'] == 'update-config'
         assert 'config' in data
@@ -500,3 +502,98 @@ class TestCombinedEventData:
 
         assert event.tablet == tablet
         assert event.strum == strum
+
+
+class TestNormalizeMidiPortName:
+    """Test the module-level MIDI port name normalizer used by loopback detection."""
+
+    def test_strips_trailing_alsa_sequencer_suffix(self):
+        assert _normalize_midi_port_name('Sketchatone:Sketchatone 128:0') == 'sketchatone:sketchatone'
+
+    def test_matches_midi_through_pair(self):
+        left = _normalize_midi_port_name('Midi Through:Midi Through Port-0 14:0')
+        right = _normalize_midi_port_name('Midi Through:Midi Through Port-0')
+        assert left == right
+
+    def test_lowercases_and_collapses_whitespace(self):
+        assert _normalize_midi_port_name('  My  Device  ') == 'my device'
+
+    def test_empty_and_none(self):
+        assert _normalize_midi_port_name('') == ''
+        assert _normalize_midi_port_name(None) == ''  # type: ignore[arg-type]
+
+    def test_no_suffix_is_unchanged(self):
+        assert _normalize_midi_port_name('IAC Driver Bus 1') == 'iac driver bus 1'
+
+
+class TestLoopbackDetection:
+    """Exercise the loopback branch of _get_midi_devices_data.
+
+    Uses a namespace stub instead of constructing StrummerWebSocketServer
+    (whose __init__ starts wiring the strummer, HID, MIDI, etc.).
+    """
+
+    @staticmethod
+    def _stub(output_name, input_ports, connected_input_ids, *,
+              output_ports=None, is_virtual=False, exclude=()):
+        from types import SimpleNamespace
+        backend = SimpleNamespace(
+            current_output_name=output_name,
+            is_connected=output_name is not None,
+            is_virtual_port=is_virtual,
+            get_available_ports=lambda: [p['name'] for p in (output_ports or [{'id': 0, 'name': output_name}])],
+        )
+        midi_input = SimpleNamespace(
+            is_connected=bool(connected_input_ids),
+            connected_ports=[{'id': i, 'name': next(p['name'] for p in input_ports if p['id'] == i)}
+                             for i in connected_input_ids],
+            get_available_ports=lambda: list(input_ports),
+        )
+        cfg = SimpleNamespace(midi=SimpleNamespace(
+            midi_input_exclude=list(exclude),
+            midi_output_exclude=[],
+            midi_passthrough=[],
+        ))
+        return SimpleNamespace(backend=backend, midi_input=midi_input, config=cfg)
+
+    def _call(self, stub):
+        return StrummerWebSocketServer._get_midi_devices_data(stub)
+
+    def test_loopback_detected_when_input_name_matches_output(self):
+        stub = self._stub(
+            output_name='Sketchatone:Sketchatone 128:0',
+            input_ports=[
+                {'id': 0, 'name': 'Midi Through:Midi Through Port-0 14:0'},
+                {'id': 1, 'name': 'Sketchatone:Sketchatone 128:0'},
+            ],
+            connected_input_ids=[0, 1],
+        )
+        data = self._call(stub)
+        assert data['loopbackInputPortIds'] == [1]
+
+    def test_no_loopback_when_names_differ(self):
+        stub = self._stub(
+            output_name='Sketchatone:Sketchatone 128:0',
+            input_ports=[{'id': 0, 'name': 'IAC Driver Bus 1'}],
+            connected_input_ids=[0],
+        )
+        data = self._call(stub)
+        assert data['loopbackInputPortIds'] == []
+
+    def test_no_loopback_when_matching_input_not_connected(self):
+        stub = self._stub(
+            output_name='Sketchatone:Sketchatone 128:0',
+            input_ports=[{'id': 0, 'name': 'Sketchatone:Sketchatone 128:0'}],
+            connected_input_ids=[],  # port exists but not connected
+        )
+        data = self._call(stub)
+        assert data['loopbackInputPortIds'] == []
+
+    def test_no_loopback_when_no_output(self):
+        stub = self._stub(
+            output_name=None,
+            input_ports=[{'id': 0, 'name': 'Sketchatone'}],
+            connected_input_ids=[0],
+        )
+        data = self._call(stub)
+        assert data['loopbackInputPortIds'] == []

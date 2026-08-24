@@ -74,6 +74,7 @@ describe('StrummerEventBus', () => {
       tiltXY: 0,
       primaryButtonPressed: false,
       secondaryButtonPressed: false,
+      auxCodes: [],
       state: 'contact',
       timestamp: Date.now(),
     });
@@ -262,6 +263,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -311,6 +313,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -338,6 +341,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -376,6 +380,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -406,6 +411,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -433,6 +439,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -460,6 +467,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
@@ -479,6 +487,7 @@ describe('StrummerEventBus', () => {
         tiltXY: 0,
         primaryButtonPressed: false,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: Date.now(),
       });
