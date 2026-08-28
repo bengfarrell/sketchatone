@@ -16,7 +16,7 @@
       "multiplier": 1.0,
       "curve": 4.0,
       "spread": "central",
-      "control": "none",
+      "control": "yaxis",
       "default": 0.0
     },
     "noteVelocity": {
@@ -321,7 +321,7 @@
   },
   "midi": {
     "midiOutputBackend": "rtmidi",
-    "midiOutputId": null,
+    "midiOutputId": "IAC Driver Bus 1",
     "midiInputId": [],
     "inputMode": "direct",
     "midiInputExclude": [

@@ -2631,8 +2631,9 @@ class StrummerWebSocketServer:
             self.prev_aux_codes = current_aux_codes
 
             # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
+            # Skip out-of-range events (state="none"): those produce Y=0 which maps to PB=-1.0
             pitch_bend_cfg = self.config.strummer.pitch_bend
-            if pitch_bend_cfg and self.backend:
+            if pitch_bend_cfg and self.backend and tablet_event.state != "none":
                 control_value = self._get_control_value(pitch_bend_cfg.control, events)
                 if control_value is not None:
                     # Map the control value to pitch bend range
@@ -2806,6 +2807,14 @@ class StrummerWebSocketServer:
 
                     # Reset strum start time
                     self.strum_start_time = 0.0
+
+                    # Reset pitch bend to center so sustaining notes aren't bent
+                    # by Y-axis drift as the pen lifts off the tablet surface.
+                    pitch_bend_cfg = self.config.strummer.pitch_bend
+                    last_bend = getattr(self, '_last_pitch_bend_value', None)
+                    if pitch_bend_cfg and self.backend and last_bend not in (None, 0.0):
+                        self.backend.send_pitch_bend(0.0)
+                        self._last_pitch_bend_value = 0.0
 
                 strum_data = StrumEventData(
                     type=event.get('type', 'strum'),
@@ -3143,7 +3152,8 @@ class StrummerWebSocketServer:
             self._ws_server = await websockets.serve(
                 self._handle_client,
                 "0.0.0.0",
-                self.ws_port
+                self.ws_port,
+                origins=None,
             )
             self.server = self._ws_server  # Keep backward compatibility
 
@@ -3180,7 +3190,8 @@ class StrummerWebSocketServer:
                         self._handle_client,
                         "0.0.0.0",
                         self.wss_port,
-                        ssl=ssl_context
+                        ssl=ssl_context,
+                        origins=None,
                     )
 
                     print(colored(f'✓ Secure WebSocket server listening on port {self.wss_port}', Colors.GREEN))

@@ -129,7 +129,7 @@ class MidiStrummer:
         self.actions = Actions(
             config=self.config,
             strummer=self.strummer,
-            custom_chord_progressions=self.config.custom_chord_progressions
+            chord_progressions=self.config.strummer.chord_progressions
         )
 
         # Configure action rules so button-to-action mapping works
@@ -409,8 +409,9 @@ class MidiStrummer:
             self.prev_aux_codes = current_aux_codes
 
             # Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
+            # Skip out-of-range events (state="none"): those produce Y=0 which maps to PB=-1.0
             pitch_bend_cfg = self.config.strummer.pitch_bend
-            if pitch_bend_cfg and self.backend:
+            if pitch_bend_cfg and self.backend and tablet_event.state != "none":
                 # Get the control input value based on the control setting
                 control_value = self._get_control_value(pitch_bend_cfg.control, events)
                 if control_value is not None:
@@ -437,6 +438,8 @@ class MidiStrummer:
                         self.backend.send_pitch_bend(bend_value)
                         self._last_pitch_bend_time = current_time
                         self._last_pitch_bend_value = bend_value
+                        if not self.live_mode:
+                            print(colored(f'⤢ PB {bend_value:+.3f}', Colors.CYAN))
 
             # Calculate dynamic note duration based on configuration
             note_duration_cfg = self.config.strummer.note_duration
@@ -517,6 +520,16 @@ class MidiStrummer:
                     # Stop holding - no more repeats
                     self.repeater_state['is_holding'] = False
                     self.repeater_state['notes'] = []
+
+                    # Reset pitch bend to center so sustaining notes aren't bent
+                    # by Y-axis drift as the pen lifts off the tablet surface.
+                    pitch_bend_cfg = self.config.strummer.pitch_bend
+                    last_bend = getattr(self, '_last_pitch_bend_value', None)
+                    if pitch_bend_cfg and self.backend and last_bend not in (None, 0.0):
+                        self.backend.send_pitch_bend(0.0)
+                        self._last_pitch_bend_value = 0.0
+                        if not self.live_mode:
+                            print(colored(f'⤢ PB  0.000 (reset on release)', Colors.CYAN))
 
                     if not self.live_mode:
                         self._print_release_event(event, x, y, pressure)

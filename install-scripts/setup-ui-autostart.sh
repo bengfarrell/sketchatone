@@ -156,6 +156,7 @@ setup_udev_rules() {
         [ -n "$vendor" ] || continue
         lines+=("# $name")
         lines+=("SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"$vendor\", ATTRS{idProduct}==\"$product\", MODE=\"$UDEV_MODE\", GROUP=\"$UDEV_GROUP\"")
+        lines+=("SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"$vendor\", ATTRS{idProduct}==\"$product\", ATTR{power/autosuspend_delay_ms}=\"-1\"")
     done < <(get_device_ids "$DEVICES_DIR")
 
     if [ "${#lines[@]}" -eq 0 ]; then
@@ -171,8 +172,8 @@ setup_udev_rules() {
     } > "$UDEV_RULES_FILE"
 
     udevadm control --reload-rules
-    udevadm trigger --subsystem-match=hidraw 2>/dev/null || udevadm trigger
-    local count=$(( ${#lines[@]} / 2 ))
+    udevadm trigger --subsystem-match=hidraw --subsystem-match=usb 2>/dev/null || udevadm trigger
+    local count=$(( ${#lines[@]} / 3 ))
     print_success "Wrote $UDEV_RULES_FILE ($count device(s))"
 }
 
