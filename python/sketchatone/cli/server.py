@@ -3469,6 +3469,20 @@ def main():
         help='JACK auto-connect target'
     )
 
+    parser.add_argument(
+        '--no-http',
+        action='store_true',
+        dest='no_http',
+        help='Disable HTTP server (overrides config http_port)'
+    )
+
+    parser.add_argument(
+        '--no-https',
+        action='store_true',
+        dest='no_https',
+        help='Disable HTTPS server (overrides config https_port)'
+    )
+
     # Debug/test options
     parser.add_argument(
         '--dump-config',
@@ -3502,11 +3516,11 @@ def main():
     effective_wss_port = args.wss_port or (
         config.wss_port if config and hasattr(config, 'wss_port') else None
     )
-    effective_http_port = args.http_port or (
-        config.http_port if config else None
+    effective_http_port = None if args.no_http else (
+        args.http_port or (config.http_port if config else None)
     )
-    effective_https_port = args.https_port or (
-        config.https_port if config and hasattr(config, 'https_port') else None
+    effective_https_port = None if args.no_https else (
+        args.https_port or (config.https_port if config and hasattr(config, 'https_port') else None)
     )
     effective_throttle = args.throttle if args.throttle != 150 else (
         config.ws_message_throttle if config else 150

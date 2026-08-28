@@ -373,7 +373,11 @@ class PanelArea(BoxLayout):
     def set_active(self, active_id: str) -> None:
         if self._active_body is not None:
             self.remove_widget(self._active_body)
+            if hasattr(self._active_body, 'set_viz_active'):
+                self._active_body.set_viz_active(False)
         self._active_body = self._bodies[active_id]
+        if hasattr(self._active_body, 'set_viz_active'):
+            self._active_body.set_viz_active(True)
         self.add_widget(self._active_body)
 
 

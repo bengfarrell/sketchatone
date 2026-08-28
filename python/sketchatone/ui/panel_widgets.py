@@ -162,9 +162,13 @@ class EventsPanel(BoxLayout):
 
         self._render_strum_body(None)
 
+        self._viz_active = False
         if bridge is not None:
             bridge.on('tablet', self._on_tablet)
             bridge.on('strum', self._on_strum)
+
+    def set_viz_active(self, active: bool) -> None:
+        self._viz_active = active
 
     # ---- Section builders --------------------------------------------
 
@@ -457,6 +461,8 @@ class EventsPanel(BoxLayout):
     # ---- Bridge handlers ---------------------------------------------
 
     def _on_tablet(self, ev: Any) -> None:
+        if not self._viz_active:
+            return
         self._count += 1
         self._header.text = f'{self._count} events'
         self._count_label.text = str(self._count)
@@ -479,6 +485,8 @@ class EventsPanel(BoxLayout):
         )
 
     def _on_strum(self, strum: Any) -> None:
+        if not self._viz_active:
+            return
         self._last_strum = strum
         info = format_strum(strum)
         if not info['type']:
@@ -740,10 +748,14 @@ class PerformancePanel(BoxLayout):
 
         self._render_mappings()
 
+        self._viz_active = False
         if bridge is not None:
             bridge.on('config', self._on_config)
             bridge.on('tablet', self._on_tablet)
             bridge.on('strum', self._on_strum)
+
+    def set_viz_active(self, active: bool) -> None:
+        self._viz_active = active
 
     def _on_config(self, payload: Any) -> None:
         mappings = extract_button_mappings(payload)
@@ -754,6 +766,8 @@ class PerformancePanel(BoxLayout):
         self._strip.set_notes(self._notes)
 
     def _on_tablet(self, ev: Any) -> None:
+        if not self._viz_active:
+            return
         pressed: set = set()
         if getattr(ev, 'primaryButtonPressed', False):
             pressed.add('primary')
@@ -772,6 +786,8 @@ class PerformancePanel(BoxLayout):
         self._strip.update_pen(x, pressure, in_range=(x > 0 or y > 0))
 
     def _on_strum(self, strum: Any) -> None:
+        if not self._viz_active:
+            return
         notes = list(getattr(strum, 'notes', []) or [])
         if not notes or not self._notes:
             return
@@ -1147,11 +1163,17 @@ class TabletVisualizerPanel(BoxLayout):
         self._readout.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
         self.add_widget(self._readout)
 
+        self._viz_active = False
         if bridge is not None:
             bridge.on('tablet', self._on_tablet)
             bridge.on('config', self._on_config)
 
+    def set_viz_active(self, active: bool) -> None:
+        self._viz_active = active
+
     def _on_tablet(self, ev: Any) -> None:
+        if not self._viz_active:
+            return
         self._canvas_widget.update_event(ev)
         self._stylus_widget.update_event(ev)
         self._readout.text = (
@@ -2192,9 +2214,17 @@ class ParameterMappingPanel(BoxLayout):
         self._visualizer = _CurveVisualizer(spec, self._state, size_hint_x=0.45)
         self.add_widget(self._visualizer)
 
+        self._viz_active = False
         if bridge is not None:
             bridge.on('config', self._on_config)
-            bridge.on('tablet', self._visualizer.on_tablet)
+            bridge.on('tablet', self._on_viz_tablet)
+
+    def set_viz_active(self, active: bool) -> None:
+        self._viz_active = active
+
+    def _on_viz_tablet(self, ev: Any) -> None:
+        if self._viz_active:
+            self._visualizer.on_tablet(ev)
 
     # ---- Rows ---------------------------------------------------------
 

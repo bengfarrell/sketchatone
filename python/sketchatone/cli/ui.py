@@ -153,6 +153,18 @@ validate packaging and the deployment pipeline.
         action='store_true',
         help='Parse arguments and exit without opening a Kivy window'
     )
+    parser.add_argument(
+        '--shell',
+        action='store_true',
+        help='Debug: run a blank 1fps Kivy window with the server subprocess active but no UI panels'
+    )
+    parser.add_argument(
+        '--fps',
+        type=int,
+        default=15,
+        metavar='FPS',
+        help='Kivy render framerate cap (default: 15)'
+    )
     return parser
 
 
@@ -164,6 +176,8 @@ def run_app(
     dev_mode: bool = False,
     strummer_config: str | None = None,
     hot_reload: bool = False,
+    shell: bool = False,
+    fps: int = 15,
 ) -> int:
     """Boot the Kivy app. Kivy (and the ui package that imports it) is
     loaded lazily so this CLI remains importable — and `--help` /
@@ -202,6 +216,7 @@ def run_app(
     KivyConfig.set('graphics', 'left', '0')
     KivyConfig.set('graphics', 'top', '0')
     KivyConfig.set('graphics', 'show_cursor', '0' if is_appliance else '1')
+    KivyConfig.set('graphics', 'maxfps', str(fps))
     if fullscreen:
         KivyConfig.set('graphics', 'borderless', '1')
         KivyConfig.set('graphics', 'fullscreen', '0')
@@ -230,6 +245,13 @@ def run_app(
     except Exception:
         pass  # non-fatal: falls back to Kivy's default registration
 
+    if shell:
+        # Set maxfps before Window initialises (which happens on first import of kivy.app).
+        KivyConfig.set('graphics', 'maxfps', '1')
+        return _run_shell_app(ws_port, throttle_ms, strummer_config, poll_ms, dev_mode)
+
+    # Import ui.app (which pulls in all panel widgets) only in normal mode so
+    # shell mode never registers any kv rules with Kivy's global Builder.
     try:
         from sketchatone.ui.app import run_app as _ui_run_app
     except ImportError as exc:
@@ -247,6 +269,50 @@ def run_app(
         strummer_config=strummer_config,
         hot_reload=hot_reload,
     )
+
+
+def _run_shell_app(
+    ws_port: int | None,
+    throttle_ms: int,
+    strummer_config: str | None,
+    poll_ms: int | None,
+    dev_mode: bool,
+) -> int:
+    """Start the server subprocess via the bridge then run a blank 1fps Kivy window.
+
+    Used for isolating whether Kivy panel rendering costs CPU that starves the
+    server subprocess's HID reader thread.  The window is intentionally empty
+    and nearly idle so any stutter that still appears points to OS-level
+    process scheduling rather than Kivy widget complexity.
+    """
+    from kivy.app import App
+    from kivy.uix.widget import Widget
+    from sketchatone.ui.bridge import UIBridge
+
+    bridge = UIBridge(
+        strummer_config_path=strummer_config,
+        throttle_ms=throttle_ms,
+        ws_port=ws_port,
+        poll_ms=poll_ms,
+        dev_mode=dev_mode,
+    )
+    try:
+        bridge.start()
+    except Exception as exc:
+        print(f'❌ Failed to start bridge: {exc}')
+        bridge.stop()
+        return 1
+
+    class _ShellApp(App):
+        def build(self):
+            return Widget()
+
+        def on_stop(self):
+            bridge.stop()
+
+    print(colored('Shell mode: blank 1fps Kivy window, server subprocess running', Colors.YELLOW))
+    _ShellApp().run()
+    return 0
 
 
 def main() -> None:
@@ -272,6 +338,8 @@ def main() -> None:
         poll_ms=args.poll, dev_mode=args.dev,
         strummer_config=config_path,
         hot_reload=args.hot_reload,
+        shell=args.shell,
+        fps=args.fps,
     ))
 
 
