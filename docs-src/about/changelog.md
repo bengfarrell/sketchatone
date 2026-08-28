@@ -9,6 +9,39 @@ description: Release notes and version history
 
 ### Installation
 - **Dropped choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice
+- **Interactive post-install menus**: `sudo sketchatone-configure` and `sudo sketchatone-ui-configure` cover autostart mode, USB MIDI gadget, and boot-time trimming in one place, replacing the need to run individual helper scripts
+- **Removed blankslate dependency**: Python implementation now uses the bundled OpenTabletDriver-based tablet layer directly — no separate package install required
+
+### Raspberry Pi Native UI (Kivy)
+
+- **Native appliance UI**: New fullscreen Kivy dashboard designed for the 800×480 DSI touchscreen on Raspberry Pi 4. Replaces the Chromium kiosk workflow with a purpose-built native app
+- **Subprocess bridge architecture**: The strummer server runs in its own Python process with its own GIL, connected to the UI over a local WebSocket. Kivy's render loop can no longer steal CPU from the HID reader thread
+- **`sketchatone-ui` package**: New `.deb` installer (`create-deb-ui.sh`) for the native UI variant, separate from the headless server `.deb`
+- **Hot reload for development**: Pass `--hot-reload` to rebuild the widget tree in place on save (via Kaki) while keeping the bridge, WebSocket, and HID reader alive across reloads
+- **tty1 direct launch**: Boots straight to the dashboard via SDL2's kmsdrm backend — no Wayland compositor, saving ~6 s of boot time on Pi 4
+- **Removed Chromium kiosk mode**: Superseded by the native UI
+
+### Performance (Raspberry Pi)
+
+- **GC tuning**: Raised cyclic GC thresholds (`10000, 500, 50` vs Python's default `700, 10, 10`) and added a cooperative idle scheduler that runs gen-0/gen-1 sweeps only during silence, preventing 100–300 ms GIL pauses from interrupting the HID reader during play
+- **One-shot startup GC sweep**: Drains allocation from imports and config parsing before the first strum arrives, preventing a ~285 ms hitch on first play
+- **15 fps Kivy render cap**: Default changed from Kivy's 60 fps to 15 fps, freeing significant CPU on the Pi for the audio path. Configurable via `--fps`
+- **Single-panel event dispatch**: Only the currently visible dashboard panel receives high-frequency `tablet` and `strum` callbacks. Previously all panels were subscribed simultaneously, multiplying render work by the number of panels
+- **`--shell` diagnostic mode**: Runs a blank 1 fps Kivy window alongside the server subprocess with no UI panels loaded, for isolating whether stutters come from Kivy rendering or the server/OS layer
+- **Performance logging**: Set `SKETCHATONE_STRUM_PERF=1` to enable a per-30-second `[PERF]` summary covering tablet gap, HID read times, GC pauses, and strum path timings. See **[Performance](/about/performance/)** for details
+- **USB autosuspend prevention**: udev rules now include per-tablet `power/autosuspend_delay_ms=-1` entries to prevent the kernel from suspending the HID device between strums
+
+### OpenTabletDriver Integration
+
+- **Bundled tablet definitions**: ~340 device definitions across 25+ manufacturers (Huion, XP-Pen, Wacom, Gaomon, Parblo, UGEE, and more) sourced from the OpenTabletDriver project, replacing the blankslate dependency
+- **LGPL compliance**: LGPL v3 license text bundled alongside the configs; project `LICENSE` updated with a third-party notices section. See **[OpenTabletDriver](/about/open-tablet-driver/)**
+- **Huion H640P support**: Added device config for the Huion Inspiroy H640P
+
+### Bug Fixes
+
+- **Pitch bend spurious PB=-1.0** (Python and Node.js): Fixed a bug where lifting the pen out of proximity caused the pitch bend to snap to -1.0. Pen `state="none"` (out-of-range) events now skip pitch bend processing in both `server.ts`, `midi-strummer.ts`, and the Python equivalents
+- **Repeated button fire**: Buttons that are held down no longer repeatedly fire on every tablet event — only the initial press triggers the action
+- **Chord change config saving**: Simple chord changes no longer trigger a full config file write, halving allocation cost per strum and reducing GC pressure
 
 ### Custom Chord Progressions
 

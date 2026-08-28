@@ -1,9 +1,9 @@
 ---
-title: Configuration
+title: How to Configure
 description: Understanding Sketchatone's configuration files and settings
 ---
 
-# Configuration
+# How to Configure
 
 This document describes Sketchatone's configuration system and all available settings.
 
@@ -376,39 +376,8 @@ Keyboard input configuration for testing without physical tablet hardware. Maps 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `enabled` | boolean | false | Whether keyboard input is enabled |
-| `mappings` | object | {} | Key-to-button mappings |
 
-### Keyboard Mappings Format
-
-The `mappings` object maps keyboard keys to button IDs:
-
-```json
-{
-  "keyboard": {
-    "enabled": true,
-    "mappings": {
-      "1": "button:1",
-      "2": "button:2",
-      "3": "button:3",
-      "4": "button:4",
-      "q": "button:primary",
-      "w": "button:secondary"
-    }
-  }
-}
-```
-
-### Key Names
-
-- **Alphanumeric**: `"a"` through `"z"`, `"0"` through `"9"`
-- **Function Keys**: `"f1"` through `"f12"` (lowercase)
-- **Special Keys**: `"space"`, `"enter"`, `"tab"`, `"escape"`, etc.
-
-### Button IDs
-
-- `"button:primary"` - Primary stylus button
-- `"button:secondary"` - Secondary stylus button
-- `"button:1"` through `"button:N"` - Tablet hardware buttons
+When enabled, computer keyboard keys emit `key:<char>` events (e.g. `key:1`, `key:q`) that can be used as triggers in `action_rules`. This lets you map keyboard keys to chord changes or other actions without physical tablet hardware.
 
 ### Platform Notes
 
@@ -426,37 +395,20 @@ The `mappings` object maps keyboard keys to button IDs:
 ```json
 {
   "keyboard": {
-    "enabled": true,
-    "mappings": {
-      "1": "button:1",
-      "2": "button:2",
-      "3": "button:3",
-      "4": "button:4"
-    }
+    "enabled": true
   },
   "action_rules": {
-    "groups": [
-      {
-        "id": "chord-buttons",
-        "buttons": ["button:1", "button:2", "button:3", "button:4"]
-      }
-    ],
-    "group_rules": [
-      {
-        "id": "chord-progression",
-        "group_id": "chord-buttons",
-        "action": {
-          "type": "chord-progression",
-          "progression": "a-minor-pop",
-          "octave": 4
-        }
-      }
+    "rules": [
+      { "trigger": "key:1", "on": "press", "action": { "type": "chord", "chord": "Am" } },
+      { "trigger": "key:2", "on": "press", "action": { "type": "chord", "chord": "C" } },
+      { "trigger": "key:3", "on": "press", "action": { "type": "chord", "chord": "G" } },
+      { "trigger": "key:4", "on": "press", "action": { "type": "chord", "chord": "F" } }
     ]
   }
 }
 ```
 
-With this configuration, pressing keys `1`, `2`, `3`, or `4` on your computer keyboard will trigger the chord progression action as if you pressed the physical tablet buttons.
+With this configuration, pressing keys `1`–`4` on your computer keyboard switches chords directly via `action_rules`.
 
 ---
 

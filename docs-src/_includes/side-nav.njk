@@ -2,12 +2,16 @@
     { url: '/', label: 'Introduction' },
     { url: '/about/getting-started/', label: 'Getting Started' },
     { url: '/about/dashboard/', label: 'Web Dashboard' },
+    { url: '/about/native-ui/', label: 'Native Pi UI' },
     { url: '/about/builds/', label: 'Builds & Installers' },
-    { url: '/about/changelog/', label: 'Changelog' }
+    { url: '/about/changelog/', label: 'Changelog' },
+    { url: '/about/jack-midi/', label: 'JACK MIDI (Linux)' },
+    { url: '/about/usb-midi-gadget/', label: 'USB MIDI Gadget (Pi)' },
+    { url: '/about/troubleshooting/', label: 'Troubleshooting' }
 ] %}
 
 {% set configNav = [
-    { url: '/about/configuration-settings/', label: 'Configuration' },
+    { url: '/about/configuration-settings/', label: 'How to Configure' },
     { url: '/about/strumming/', label: 'Strumming' },
     { url: '/about/slide-mode/', label: 'Slide Mode (Experimental)' },
     { url: '/about/scales-and-midi-driven-mode/', label: 'Scales & MIDI-Driven Mode' },
@@ -15,24 +19,23 @@
     { url: '/about/note-duration/', label: 'Note Duration' },
     { url: '/about/pitch-bend/', label: 'Pitch Bend' },
     { url: '/about/strum-release/', label: 'Strum Release' },
-    { url: '/about/action-rules/', label: 'Action Rules' }
+    { url: '/about/action-rules/', label: 'Action Rules' },
+    { url: '/about/chords-and-progressions/', label: 'Chords & Progressions' }
 ] %}
 
-{% set miscNav = [
+{% set devNav = [
     { url: '/about/node-cli/', label: 'Node.js CLI' },
     { url: '/about/python-cli/', label: 'Python CLI' },
-    { url: '/about/chords-and-progressions/', label: 'Chords & Progressions' },
-    { url: '/about/jack-midi/', label: 'JACK MIDI (Linux)' },
-    { url: '/about/usb-midi-gadget/', label: 'USB MIDI Gadget (Pi)' },
-    { url: '/about/gc-tuning/', label: 'GC Tuning' },
-    { url: '/about/troubleshooting/', label: 'Troubleshooting' }
+    { url: '/about/cli-flags/', label: 'CLI Flags' },
+    { url: '/about/open-tablet-driver/', label: 'OpenTabletDriver' },
+    { url: '/about/performance/', label: 'Performance' }
 ] %}
 
 <nav>
     <div class="mobile-header">
         <h1>Sketchatone</h1>
     </div>
-    <h4>About</h4>
+    <h4>Using</h4>
     {% for item in aboutNav %}
     <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
     {% endfor %}
@@ -42,8 +45,8 @@
         <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
     {% endfor %}
 
-    <h4>Misc</h4>
-    {% for item in miscNav %}
+    <h4>Dev</h4>
+    {% for item in devNav %}
         <a href="{{ page.url | resolvePath(item.url) }}">{{item.label}}</a>
     {% endfor %}
 </nav>

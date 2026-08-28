@@ -52,29 +52,6 @@ Converts tablet input to MIDI output. This is the main tool for using a graphics
 python -m sketchatone.cli.midi_strummer [options]
 ```
 
-to start the Kivy app:
-```bash
-sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
-    -c public/configs/default.json
-```
-
-To enable hot reload of the UI while editing (rebuilds the widget tree in place on save via [Kaki](https://github.com/tito/kaki), keeping the bridge/WebSocket/HID reader alive across reloads), first install the optional extra:
-
-```bash
-pip install -e ".[hotreload]"
-```
-
-then pass `--hot-reload`:
-
-```bash
-sudo ./venv/bin/python -u -m sketchatone.cli.ui \
-    --hot-reload --throttle 33 \
-    -c public/configs/default.json \
-    --enable-ws
-```
-
-Edits under `python/sketchatone/ui/` trigger a soft rebuild. Edits to `app.py` or `hotreload.py` itself trigger a full process restart (re-execs the same argv). `bridge.py` and anything under `cli/` are intentionally not watched — change those and restart manually.
-
 ### Optional Arguments
 
 | Argument | Short | Type | Description |
@@ -126,6 +103,55 @@ python -m sketchatone.cli.strum_event_viewer [options]
 | `--config` | `-c` | path | Path to tablet config JSON file |
 | `--strummer-config` | `-s` | path | Path to strummer config JSON file |
 | `--live` | `-l` | flag | Live dashboard mode |
+
+---
+
+## ui
+
+Native Kivy dashboard for the Raspberry Pi appliance. Runs the strummer server as a subprocess and connects to it over a local WebSocket, keeping the HID reader and render loop in separate processes.
+
+### Usage
+
+```bash
+sudo ./venv/bin/python -u -m sketchatone.cli.ui --throttle 33 \
+    -c public/configs/default.json
+```
+
+### Hot Reload (development)
+
+To rebuild the widget tree in place on save (via [Kaki](https://github.com/tito/kaki)) while keeping the bridge/WebSocket/HID reader alive, install the optional extra first:
+
+```bash
+pip install -e ".[hotreload]"
+```
+
+Then pass `--hot-reload`:
+
+```bash
+sudo ./venv/bin/python -u -m sketchatone.cli.ui \
+    --hot-reload --throttle 33 \
+    -c public/configs/default.json \
+    --enable-ws
+```
+
+Edits under `python/sketchatone/ui/` trigger a soft rebuild. Edits to `app.py` or `hotreload.py` trigger a full process restart. `bridge.py` and anything under `cli/` are intentionally not watched — change those and restart manually.
+
+### Optional Arguments
+
+| Argument | Short | Type | Description |
+|----------|-------|------|-------------|
+| `--config` | `-c` | path | Combined config file path |
+| `--enable-ws` | | flag | Also start the WebSocket server (for browser dashboard or LAN access) |
+| `--ws-port` | | int | WebSocket port when `--enable-ws` is set (default: 8081) |
+| `--throttle` | | ms | Event throttle interval in milliseconds (default: 150) |
+| `--poll` | | ms | Device poll interval; waits for tablet if not present (default: 2000) |
+| `--fps` | | int | Kivy render framerate cap (default: 15) |
+| `--dev` | | flag | Dev mode: skip tablet detection entirely (no HID reader) |
+| `--fullscreen` | | flag | Launch fullscreen (recommended on the device) |
+| `--hot-reload` | | flag | Watch `sketchatone/ui/` and rebuild widget tree on save |
+| `--shell` | | flag | Debug: blank 1 fps Kivy window with server subprocess running but no UI panels |
+
+See **[Performance](/about/performance/)** for details on the `--fps` and `--shell` flags.
 
 ---
 

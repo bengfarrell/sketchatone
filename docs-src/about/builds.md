@@ -137,6 +137,38 @@ pip install -e .
 python -m sketchatone.cli.server -c /path/to/config.json
 ```
 
+### Native Pi UI Package
+
+The headless server `.deb` above installs the WebSocket server and web dashboard. If you have a Raspberry Pi with a DSI touchscreen and want the native Kivy dashboard, there is a separate **`sketchatone-ui` package**:
+
+#### On your development machine:
+
+```bash
+./create-deb-ui.sh
+```
+
+This creates `dist/sketchatone-ui-X.X.X-linux-armhf.deb`.
+
+#### On the Raspberry Pi:
+
+```bash
+scp dist/sketchatone-ui-*.deb pi@<pi-hostname>:~/
+ssh pi@<pi-hostname>
+sudo apt install ./sketchatone-ui-*.deb
+```
+
+Then run the interactive configuration menu to set up autostart on tty1 and boot-time trimming:
+
+```bash
+sudo sketchatone-ui-configure
+```
+
+The UI package installs alongside the headless server package — you can run both. The native UI starts the server as a subprocess internally, so you don't need the headless service running at the same time when using the UI appliance mode.
+
+See **[Native Pi UI](/about/native-ui/)** for usage details.
+
+---
+
 ### Post-Install Configuration
 
 After installation, the interactive menu covers autostart mode, USB MIDI gadget mode, and boot-time trimming in one place:
@@ -144,8 +176,6 @@ After installation, the interactive menu covers autostart mode, USB MIDI gadget 
 ```bash
 sudo sketchatone-configure
 ```
-
-The **UI variant** ships an equivalent `sudo sketchatone-ui-configure` menu (autostart on tty1 + boot-trim).
 
 The individual helper commands documented below (`sketchatone-setup`, `sketchatone-setup-usb-gadget`, `sketchatone-boot-trim`) remain available for scripting and advanced use.
 

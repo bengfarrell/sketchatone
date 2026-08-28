@@ -40,7 +40,7 @@ npm run midi-strummer [-- options]
 |----------|-------|------|-------------|
 | `--tablet-config` | `-t` | path | Path to tablet config JSON file or directory |
 | `--strummer-config` | `-s` | path | Path to strummer/MIDI config JSON file |
-| `--channel` | | 0-15 | MIDI channel (overrides config) |
+| `--channel` | | 1-16 | MIDI channel (overrides config) |
 | `--port` | `-p` | string/int | MIDI output port name or index |
 | `--duration` | `-d` | float | Note duration in seconds |
 | `--live` | `-l` | flag | Live dashboard mode |

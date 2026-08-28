@@ -1857,9 +1857,10 @@ class StrummerWebSocketServer {
       }
       this.prevAuxCodes = currentAuxCodes;
 
-      // Apply pitch bend based on configuration (throttled to avoid MIDI flooding)
+      // Apply pitch bend based on configuration (throttled to avoid MIDI flooding).
+      // Skip out-of-range events: pen leaving proximity produces Y=0 which maps to PB=-1.0.
       const pitchBendCfg = this.config.pitchBend;
-      if (pitchBendCfg && this.backend) {
+      if (pitchBendCfg && this.backend && state !== 'out-of-range') {
         const controlValue = this.getControlValue(pitchBendCfg.control, {
           x,
           y,
@@ -1878,13 +1879,11 @@ class StrummerWebSocketServer {
           }
 
           // Apply deadzone around center (±0.02) to avoid sending tiny changes near zero
-          // This prevents MIDI flooding when there's no actual pitch bend
           if (Math.abs(bendValue) < 0.02) {
             bendValue = 0.0;
           }
 
           // Only send if value changed significantly
-          // Don't send repeated messages with the same value
           const valueChanged =
             this.lastPitchBendValue === null ||
             Math.abs(bendValue - this.lastPitchBendValue) > 0.01;
