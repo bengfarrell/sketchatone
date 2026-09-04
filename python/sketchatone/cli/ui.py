@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import os
 
@@ -316,6 +317,11 @@ def _run_shell_app(
 
 
 def main() -> None:
+    import faulthandler
+    _dump_log = open('/tmp/sketchatone-threads.log', 'w')
+    faulthandler.enable(file=_dump_log, all_threads=True)
+    faulthandler.register(signal.SIGUSR2, file=_dump_log, all_threads=True, chain=False)
+
     args = build_arg_parser().parse_args()
     effective_ws_port = args.ws_port if args.enable_ws else None
 

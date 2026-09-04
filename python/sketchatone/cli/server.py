@@ -760,7 +760,8 @@ class StrummerWebSocketServer:
         self.actions = Actions(
             config=self.config,
             strummer=self.strummer,
-            chord_progressions=self.config.strummer.chord_progressions
+            chord_progressions=self.config.strummer.chord_progressions,
+            chord_modes=self.config.strummer.chord_modes,
         )
 
         # Configure action rules so button-to-action mapping works
@@ -1176,11 +1177,11 @@ class StrummerWebSocketServer:
         # Clear the chord so that initial_notes are used instead
         self.config.strummer.strumming.chord = None
 
-        # Reconfigure strummer with new notes
+        # Reconfigure strummer with new notes.
+        # _setup_notes triggers notes_changed → broadcast_notes_changed(); no
+        # full config broadcast needed here since the transient initial_notes /
+        # chord changes don't need to be reflected in the UI panels.
         self._setup_notes()
-
-        # Broadcast config change to all connected clients
-        self.broadcast_config()
 
         print(colored(
             f'[MIDI Input {mode}] Held: {", ".join(note_strings)} -> Notes: {", ".join(base_note_strings)}',
@@ -1468,15 +1469,28 @@ class StrummerWebSocketServer:
     def _on_strummer_notes_changed(self) -> None:
         """
         Callback for when strummer notes change.
-        Broadcasts config update to all clients.
+        Emits a lightweight notes-changed event rather than a full config
+        broadcast so that chord changes driven by MIDI don't trigger
+        expensive UI rebuilds in panels that don't care about the current notes.
         """
         _t0 = time.perf_counter()
         # Chord change implies the user is about to strum: block the idle
         # GC scheduler from firing a sweep in the next ~120 ms window, so
         # we don't collide with the strum that follows the chord button.
         self._last_strum_activity_ts = _t0
-        self.broadcast_config()
+        self.broadcast_notes_changed()
         self._perf.mark_now('notes_changed.cb', _t0)
+
+    def broadcast_notes_changed(self) -> None:
+        """Broadcast the current strummer notes to all clients (lightweight, no full config)."""
+        message = {
+            'type': 'notes-changed',
+            'notes': [
+                {'notation': n.notation, 'octave': n.octave}
+                for n in self.strummer.notes
+            ],
+        }
+        self._broadcast(json.dumps(message))
 
     def broadcast_config(self, is_saved_state: bool = False) -> None:
         """
@@ -1845,6 +1859,10 @@ class StrummerWebSocketServer:
             # Update chord progressions in Actions if they changed
             if path == 'strummer.chordProgressions':
                 self.actions.set_chord_progressions(self.config.strummer.chord_progressions)
+
+            # Update chord modes in Actions if they changed
+            if path == 'strummer.chordModes' and self.config.strummer.chord_modes:
+                self.actions.set_chord_modes(self.config.strummer.chord_modes)
 
             # Update action rules if they changed
             if path == 'strummer.actionRules':

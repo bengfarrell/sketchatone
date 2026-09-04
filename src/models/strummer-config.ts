@@ -157,6 +157,8 @@ export interface StrummerConfigData {
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
   chordProgressions?: Record<string, string[]>;
+  harmonicContext?: { root: string; octave: number; major: boolean; mode: string };
+  chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
 }
 
 /**
@@ -181,6 +183,8 @@ export class StrummerConfig {
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
   chordProgressions: Record<string, string[]>;
+  harmonicContext: { root: string; octave: number; major: boolean; mode: string } | undefined;
+  chordModes: Record<string, Array<{ degree: string; quality: string }>> | undefined;
 
   constructor(data: {
     mode?: StrummerMode;
@@ -192,6 +196,8 @@ export class StrummerConfig {
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
     chordProgressions?: Record<string, string[]>;
+    harmonicContext?: { root: string; octave: number; major: boolean; mode: string };
+    chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
   } = {}) {
     this.mode = data.mode ?? DEFAULT_STRUMMER_MODE;
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
@@ -202,6 +208,8 @@ export class StrummerConfig {
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
     this.chordProgressions = data.chordProgressions ?? {};
+    this.harmonicContext = data.harmonicContext;
+    this.chordModes = data.chordModes;
   }
 
   // Convenience properties for backward compatibility
@@ -242,6 +250,8 @@ export class StrummerConfig {
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
     const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
+    const harmonicContextData = (data.harmonicContext ?? data.harmonic_context) as { root: string; octave: number; major: boolean; mode: string } | undefined;
+    const chordModesData = (data.chordModes ?? data.chord_modes) as Record<string, Array<{ degree: string; quality: string }>> | undefined;
 
     const rawMode = data.mode as string | undefined;
     const mode: StrummerMode = VALID_STRUMMER_MODES.includes(rawMode as StrummerMode)
@@ -272,6 +282,8 @@ export class StrummerConfig {
         ? ActionRulesConfig.fromDict(actionRulesData)
         : new ActionRulesConfig(),
       chordProgressions: chordProgressionsData,
+      harmonicContext: harmonicContextData,
+      chordModes: chordModesData,
     });
   }
 
@@ -299,9 +311,14 @@ export class StrummerConfig {
       actionRules: this.actionRules.toDict(),
     };
 
-    // Only include chordProgressions if it has entries
     if (Object.keys(this.chordProgressions).length > 0) {
       result.chordProgressions = this.chordProgressions;
+    }
+    if (this.harmonicContext) {
+      result.harmonicContext = this.harmonicContext;
+    }
+    if (this.chordModes) {
+      result.chordModes = this.chordModes;
     }
 
     return result;

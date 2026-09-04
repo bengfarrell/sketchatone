@@ -173,6 +173,23 @@ interface TransposeState {
   semitones: number;
 }
 
+// Roman numeral degree to semitone offset from tonic
+const DEGREE_TO_SEMITONES: Record<string, number> = {
+  'I': 0, 'i': 0,
+  'bII': 1, 'bii': 1,
+  'II': 2, 'ii': 2,
+  'bIII': 3, 'biii': 3,
+  'III': 4, 'iii': 4,
+  'IV': 5, 'iv': 5,
+  'bV': 6, 'bv': 6,
+  'V': 7, 'v': 7,
+  'V/V': 2, // secondary dominant — same root as II
+  'bVI': 8, 'bvi': 8,
+  'VI': 9, 'vi': 9,
+  'bVII': 10, 'bvii': 10,
+  'VII': 11, 'vii': 11,
+};
+
 export class Actions extends EventEmitter {
   private config: ActionsConfig;
   private strummer: Strummer | null;
@@ -180,6 +197,7 @@ export class Actions extends EventEmitter {
   progressionState: ChordProgressionState;
   private actionRulesConfig: ActionRulesConfig | null = null;
   private chordProgressions: Record<string, string[]> = {};
+  private chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
 
   // Internal state for repeater and transpose (managed by actions, not config)
   private repeaterState: RepeaterState = {
@@ -198,12 +216,19 @@ export class Actions extends EventEmitter {
    * @param config - Configuration instance that will be modified by actions
    * @param strummer - Optional Strummer instance for setting notes
    * @param chordProgressions - Optional chord progressions from config
+   * @param chordModes - Optional chord modes from config
    */
-  constructor(config: ActionsConfig, strummer: Strummer | null = null, chordProgressions?: Record<string, string[]>) {
+  constructor(
+    config: ActionsConfig,
+    strummer: Strummer | null = null,
+    chordProgressions?: Record<string, string[]>,
+    chordModes?: Record<string, Array<{ degree: string; quality: string }>>,
+  ) {
     super();
     this.config = config;
     this.strummer = strummer;
     this.chordProgressions = chordProgressions ?? {};
+    this.chordModes = chordModes ?? {};
 
     // Map action names to handler methods
     this.actionHandlers = new Map<string, ActionHandler>([
@@ -216,6 +241,7 @@ export class Actions extends EventEmitter {
       ['set-chord-in-progression', this.setChordInProgression.bind(this)],
       ['increment-chord-in-progression', this.incrementChordInProgression.bind(this)],
       ['set-group-progression', this.setGroupProgression.bind(this)],
+      ['set-chord-from-mode', this.setChordFromMode.bind(this)],
     ]);
 
     // Chord progression state
@@ -278,6 +304,13 @@ export class Actions extends EventEmitter {
         }
       }
     }
+  }
+
+  /**
+   * Update chord modes (called when harmonicContext config changes).
+   */
+  setChordModes(chordModes: Record<string, Array<{ degree: string; quality: string }>>): void {
+    this.chordModes = chordModes;
   }
 
   /**
@@ -883,6 +916,81 @@ export class Actions extends EventEmitter {
 
     // Emit config changed event
     this.emit('config_changed');
+  }
+
+  /**
+   * Set the strummer chord based on a chord mode entry at a specific button index.
+   * Translates the Roman numeral degree + quality from the mode into a chord string,
+   * then applies it to the strummer (same path as setChordInProgression).
+   */
+  setChordFromMode(params: unknown[], context: ActionContext): void {
+    if (params.length < 2) {
+      console.log('[ACTIONS] Error: set-chord-from-mode requires mode name and button index');
+      return;
+    }
+    if (typeof params[0] !== 'string') {
+      console.log('[ACTIONS] Error: First parameter must be mode name (string)');
+      return;
+    }
+    if (typeof params[1] !== 'number') {
+      console.log('[ACTIONS] Error: Second parameter must be button index (number)');
+      return;
+    }
+
+    const modeName = params[0] as string;
+    const buttonIndex = Math.floor(params[1] as number);
+    const octave = typeof params[2] === 'number' ? Math.floor(params[2] as number) : 4;
+    const root = typeof params[3] === 'string' ? (params[3] as string) : 'C';
+    const preferFlat = root.includes('b');
+
+    if (!this.strummer) {
+      console.log('[ACTIONS] Error: No strummer instance available');
+      return;
+    }
+
+    const modeEntries = this.chordModes[modeName];
+    if (!modeEntries) {
+      console.log(`[ACTIONS] Error: Unknown chord mode '${modeName}'`);
+      return;
+    }
+
+    const entry = modeEntries[buttonIndex];
+    if (!entry) {
+      console.log(`[ACTIONS] Error: No chord at button index ${buttonIndex} in mode '${modeName}'`);
+      return;
+    }
+    const semitones = DEGREE_TO_SEMITONES[entry.degree];
+    if (semitones === undefined) {
+      console.log(`[ACTIONS] Error: Unknown degree '${entry.degree}'`);
+      return;
+    }
+
+    const rootIndex = Note.indexOfNotation(root.replace(/[0-9]/, ''));
+    if (rootIndex === -1) {
+      console.log(`[ACTIONS] Error: Unknown root note '${root}'`);
+      return;
+    }
+
+    const chordRootIndex = (rootIndex + semitones) % 12;
+    const chordRoot = Note.notationAtIndex(chordRootIndex, preferFlat);
+    const chordNotation = chordRoot + entry.quality;
+
+    try {
+      const notes = Note.parseChord(chordNotation, octave);
+      if (!notes || notes.length === 0) {
+        console.log(`[ACTIONS] Error: Failed to parse chord '${chordNotation}'`);
+        return;
+      }
+
+      const lowerSpread = this.config.lowerSpread ?? 0;
+      const upperSpread = this.config.upperSpread ?? 0;
+      this.strummer.notes = Note.fillNoteSpread(notes, lowerSpread, upperSpread);
+
+      const button = context.button ?? 'Unknown';
+      console.log(`[ACTIONS] ${button} set chord-mode '${modeName}'[${buttonIndex}] → ${entry.degree}${entry.quality} → ${chordNotation} (oct ${octave})`);
+    } catch (e) {
+      console.log(`[ACTIONS] Error setting chord from mode: ${e}`);
+    }
   }
 
   /**

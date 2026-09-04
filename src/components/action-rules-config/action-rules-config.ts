@@ -115,6 +115,10 @@ export class ActionRulesConfigComponent extends LitElement {
   @property({ type: Object })
   chordProgressions: Record<string, string[]> = {};
 
+  /** Chord modes from config */
+  @property({ type: Object })
+  chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
+
   /** Map of triggered action rule IDs to timestamps (for status dot display) */
   @property({ type: Object })
   triggeredActions: Map<string, number> = new Map();
@@ -147,12 +151,18 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private formParams: unknown[] = [];
 
-  // Group action specific (for chord-progression)
+  // Group action specific
   @state()
   private formGroupActionType: GroupActionType = 'chord-progression';
 
   @state()
   private formGroupProgression: string = 'c-major-pop';
+
+  @state()
+  private formGroupMode: string = 'major';
+
+  @state()
+  private formGroupRoot: string = 'C';
 
   @state()
   private formGroupOctave: number = 4;
@@ -405,7 +415,9 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formGroupId = rule.groupId;
     this.formName = rule.name ?? '';
     this.formGroupActionType = rule.action.type;
-    this.formGroupProgression = rule.action.progression;
+    this.formGroupProgression = rule.action.progression ?? this.progressionNames[0] ?? 'c-major-pop';
+    this.formGroupMode = rule.action.mode ?? Object.keys(this.chordModes)[0] ?? 'major';
+    this.formGroupRoot = rule.action.root ?? 'C';
     this.formGroupOctave = rule.action.octave;
     this.formGroupTrigger = rule.trigger ?? 'release';
   }
@@ -517,11 +529,10 @@ export class ActionRulesConfigComponent extends LitElement {
     if (!this.config) return;
 
     // Build the group action based on the selected type
-    const groupAction: GroupAction = {
-      type: this.formGroupActionType,
-      progression: this.formGroupProgression,
-      octave: this.formGroupOctave,
-    };
+    const groupAction: GroupAction =
+      this.formGroupActionType === 'chord-mode'
+        ? { type: 'chord-mode', mode: this.formGroupMode, root: this.formGroupRoot, octave: this.formGroupOctave }
+        : { type: 'chord-progression', progression: this.formGroupProgression, octave: this.formGroupOctave };
 
     if (this.formMode === 'add-action') {
       this.config.addGroupRule({
@@ -682,7 +693,7 @@ export class ActionRulesConfigComponent extends LitElement {
                         </sketch-button>
                       </div>
                     </div>
-                    <span class="rule-action">${rule.action.type}: ${rule.action.progression} (Oct ${rule.action.octave})</span>
+                    <span class="rule-action">${rule.action.type}: ${rule.action.type === 'chord-mode' ? rule.action.mode : rule.action.progression} (Oct ${rule.action.octave})</span>
                     ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
                   </div>
                 `;
@@ -911,21 +922,43 @@ export class ActionRulesConfigComponent extends LitElement {
               <label class="sketch-label">Action Type</label>
               <select class="native-select" .value=${live(this.formGroupActionType)} @change=${(e: Event) => (this.formGroupActionType = (e.target as HTMLSelectElement).value as GroupActionType)}>
                 <option value="chord-progression" ?selected=${this.formGroupActionType === 'chord-progression'}>Chord Progression</option>
+                <option value="chord-mode" ?selected=${this.formGroupActionType === 'chord-mode'}>Chord Mode</option>
               </select>
             </div>
 
+            ${this.formGroupActionType === 'chord-progression' ? html`
             <div class="form-field">
               <label class="sketch-label">Chord Progression</label>
               <select
                 class="native-select"
                 .value=${live(this.formGroupProgression)}
-                @change=${(e: Event) => {
-                  this.formGroupProgression = (e.target as HTMLSelectElement).value;
-                }}
+                @change=${(e: Event) => { this.formGroupProgression = (e.target as HTMLSelectElement).value; }}
               >
                 ${this.progressionNames.map((name) => html`<option value="${name}" ?selected=${name === this.formGroupProgression}>${name}</option>`)}
               </select>
             </div>
+            ` : html`
+            <div class="form-field">
+              <label class="sketch-label">Chord Mode</label>
+              <select
+                class="native-select"
+                .value=${live(this.formGroupMode)}
+                @change=${(e: Event) => { this.formGroupMode = (e.target as HTMLSelectElement).value; }}
+              >
+                ${Object.keys(this.chordModes).map((name) => html`<option value="${name}" ?selected=${name === this.formGroupMode}>${name}</option>`)}
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="sketch-label">Root</label>
+              <select
+                class="native-select"
+                .value=${live(this.formGroupRoot)}
+                @change=${(e: Event) => { this.formGroupRoot = (e.target as HTMLSelectElement).value; }}
+              >
+                ${ROOT_NOTE_OPTIONS.map(({ value, label }) => html`<option value="${value}" ?selected=${value === this.formGroupRoot}>${label}</option>`)}
+              </select>
+            </div>
+            `}
 
             <div class="form-field">
               <label class="sketch-label">Octave</label>

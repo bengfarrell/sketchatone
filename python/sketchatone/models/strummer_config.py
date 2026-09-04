@@ -124,6 +124,8 @@ class StrummerConfig:
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
     action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
     chord_progressions: Dict[str, List[str]] = field(default_factory=dict)
+    harmonic_context: Optional[Dict[str, Any]] = field(default=None)
+    chord_modes: Optional[Dict[str, Any]] = field(default=None)
 
     # Convenience properties for backward compatibility
     @property
@@ -164,6 +166,8 @@ class StrummerConfig:
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
         action_rules_data = data.get('action_rules', data.get('actionRules', {}))
         chord_progressions_data = data.get('chordProgressions', data.get('chord_progressions', {}))
+        harmonic_context_data = data.get('harmonicContext', data.get('harmonic_context'))
+        chord_modes_data = data.get('chordModes', data.get('chord_modes'))
 
         mode = data.get('mode', DEFAULT_MODE)
         if mode not in VALID_MODES:
@@ -178,7 +182,9 @@ class StrummerConfig:
             slide=SliderConfig.from_dict(slide_data) if slide_data else SliderConfig(),
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
             action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig(),
-            chord_progressions=chord_progressions_data
+            chord_progressions=chord_progressions_data,
+            harmonic_context=harmonic_context_data,
+            chord_modes=chord_modes_data,
         )
 
     @classmethod
@@ -201,9 +207,12 @@ class StrummerConfig:
             'actionRules': self.action_rules.to_dict()
         }
 
-        # Only include chordProgressions if it has entries
         if self.chord_progressions:
             result['chordProgressions'] = self.chord_progressions
+        if self.harmonic_context is not None:
+            result['harmonicContext'] = self.harmonic_context
+        if self.chord_modes is not None:
+            result['chordModes'] = self.chord_modes
 
         return result
 

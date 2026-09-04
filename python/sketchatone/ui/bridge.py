@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Optional
 # Event names accepted by UIBridge.on. Mirrors a subset of the web-side
 # StrummerWebSocketClientEvents so panel widgets share one interface.
 EVENT_NAMES = ('device-status', 'tablet', 'strum', 'combined', 'config',
-               'midi-devices', 'midi-input', 'button-detection-state')
+               'midi-devices', 'midi-input', 'button-detection-state', 'notes-changed')
 
 Listener = Callable[[Any], None]
 
@@ -319,6 +319,9 @@ class UIBridge:
             enabled = bool(msg.get('enabled', False))
             self._last_button_detection = enabled
             self._emit('button-detection-state', {'enabled': enabled})
+
+        elif msg_type == 'notes-changed':
+            self._emit('notes-changed', msg)
 
     # ---- Outgoing command API (callable from any thread) -------------------
 

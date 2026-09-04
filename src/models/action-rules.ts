@@ -30,9 +30,8 @@ export type ActionCategory = 'button' | 'group' | 'startup';
 
 /**
  * Group action type - actions that can be assigned to button groups
- * Currently only chord-progression is supported
  */
-export type GroupActionType = 'chord-progression';
+export type GroupActionType = 'chord-progression' | 'chord-mode';
 
 /**
  * Group action definition - action with parameters for button groups
@@ -41,8 +40,12 @@ export interface GroupAction {
   /** Type of group action */
   type: GroupActionType;
   /** Chord progression preset name (for chord-progression type) */
-  progression: string;
-  /** Octave for chord playback (for chord-progression type) */
+  progression?: string;
+  /** Chord mode name (for chord-mode type) */
+  mode?: string;
+  /** Root note for chord-mode (e.g., "C", "F#", "Bb") */
+  root?: string;
+  /** Octave for chord playback */
   octave: number;
 }
 
@@ -427,9 +430,14 @@ export class ActionRulesConfig implements ActionRulesConfigData {
           if (ruleTrigger === trigger) {
             // Handle group action based on type
             if (groupRule.action.type === 'chord-progression') {
-              // Return a set-chord-in-progression action
               return {
                 action: ['set-chord-in-progression', groupRule.action.progression, buttonIndex, groupRule.action.octave],
+                ruleId: groupRule.id
+              };
+            }
+            if (groupRule.action.type === 'chord-mode') {
+              return {
+                action: ['set-chord-from-mode', groupRule.action.mode, buttonIndex, groupRule.action.octave, groupRule.action.root ?? 'C'],
                 ruleId: groupRule.id
               };
             }

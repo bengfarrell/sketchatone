@@ -19,6 +19,7 @@ export type PanelId =
   | 'groups'
   | 'deviceButtons'
   | 'chordProgressions'
+  | 'chordModePerformance'
   | 'serverSettings';
 
 export interface PanelInfo {
@@ -44,6 +45,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'groups', label: 'Groups', icon: '📦' },
   { id: 'deviceButtons', label: 'Device Buttons', icon: '🔘' },
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
+  { id: 'chordModePerformance', label: 'Chord Mode', icon: '🎹' },
   { id: 'serverSettings', label: 'Server', icon: '⚙️' },
 ];
 
@@ -68,6 +70,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   groups: true,
   deviceButtons: true,
   chordProgressions: true,
+  chordModePerformance: true,
   serverSettings: true,
 };
 

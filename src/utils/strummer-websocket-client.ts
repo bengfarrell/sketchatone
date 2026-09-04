@@ -85,6 +85,7 @@ export interface StrummerWebSocketClientEvents {
   'strum': StrumEventData;
   'combined': CombinedEventData;
   'config': ServerConfigData;
+  'notes-changed': { notes: Array<{ notation: string; octave: number }> };
   'midi-input': ServerMidiInputEvent;
   'midi-input-status': ServerMidiInputStatus;
   'midi-devices': ServerMidiDevices;
@@ -412,6 +413,14 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Subscribe to notes-changed events (lightweight chord updates from MIDI)
+   */
+  onNotesChanged(callback: (data: { notes: Array<{ notation: string; octave: number }> }) => void): () => void {
+    this.on('notes-changed', callback);
+    return () => this.off('notes-changed', callback as any);
+  }
+
+  /**
    * Subscribe to action events from server
    */
   onActionEvent(callback: (event: ServerActionEvent) => void): () => void {
@@ -539,6 +548,16 @@ export class StrummerWebSocketClient extends EventEmitter {
           this.emit<{ enabled: boolean }>('button-detection-state', {
             enabled: Boolean(message.enabled),
           });
+          break;
+        case 'notes-changed':
+          // Lightweight chord update — mutate the cached config so callers
+          // reading client.config.notes always see the current notes without
+          // waiting for a full config broadcast.
+          if (this._config) {
+            this._config = { ...this._config, notes: message.notes ?? [] };
+          }
+          this.emit<{ notes: Array<{ notation: string; octave: number }> }>(
+            'notes-changed', { notes: message.notes ?? [] });
           break;
       }
     } catch (error) {

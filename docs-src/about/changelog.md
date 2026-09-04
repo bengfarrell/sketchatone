@@ -50,6 +50,14 @@ description: Release notes and version history
 - **Removed hardcoded presets**: Chord progressions are now defined entirely in the config file (`chordProgressions` section), providing full flexibility for users
 - **Default progressions included**: The default config file includes all standard progressions (pop, jazz, blues, gospel, etc.) previously hardcoded
 
+### Chord Modes (Harmonic Layouts)
+
+- **Positional keypad layouts** (`chordModes` config): New system for assigning each button a fixed **harmonic function** (Roman-numeral scale degree) rather than a specific chord, so the physical gesture for a progression stays the same across keys and songs. A separate transpose control determines the actual root. See **[Chord Modes](/about/chord-modes/)**
+- **3×3 layout convention**: Tonic (I) at button 5, dominant (V) at button 8, so 8→5 is always tension-to-resolution regardless of key; I–V–vi–IV is always the 5→8→1→4 gesture
+- **Bundled modes**: `major`, `minor`, and `jazz` layouts included in the default config, each defined as 9 `{ degree, quality }` entries (one per button)
+- **Chord Mode Performance panel** (Node.js dashboard): New UI panel for playing/practicing with the current chord mode, plus a transpose control
+- **Full parity**: Identical implementation in Python and Node.js
+
 ### Keyboard Input Support
 
 - **Computer keyboard as button controller**: Map computer keyboard keys to tablet button actions for testing and development without physical tablet hardware
@@ -98,6 +106,10 @@ description: Release notes and version history
 - **Explicit input disable**: Empty array explicitly disables all MIDI inputs
 - **Enhanced JACK support** (Python): Improved JACK MIDI input implementation
 - **Better port exclusion**: Improved logic for excluding internal ports to prevent feedback loops
+- **Scale-based MIDI input modes** (`midi.inputMode`): The strummer strings can now be driven from held MIDI notes in three new ways, in addition to the existing `direct` (held notes map 1:1 to strings). Selectable from the dashboard MIDI panel on both the Node.js web UI and the Kivy Pi UI. See **[Scales & MIDI-Driven Mode](/about/scales-and-midi-driven-mode/#midi-input-mode)**
+  - `majorScale` — lowest held note is the root of a major scale
+  - `minorScale` — lowest held note is the root of a natural minor scale
+  - `autoScale` — 1 held note → neutral scale (`[1, 2, 4, 5]`); 2 held notes → major or minor scale inferred from the interval (minor 3rd → minor); 3+ notes → falls back to `direct`
 
 ### Server Management
 

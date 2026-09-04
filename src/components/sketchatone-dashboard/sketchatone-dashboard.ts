@@ -38,6 +38,9 @@ import '../server-settings-panel/server-settings-panel.js';
 // Chord progressions component
 import '../chord-progression-creator/chord-progression-creator.js';
 
+// Chord mode performance panel
+import '../chord-mode-performance/chord-mode-performance.js';
+
 // Device buttons management panel
 import '../device-buttons-panel/device-buttons-panel.js';
 
@@ -209,6 +212,10 @@ export class SketchatoneDashboard extends LitElement {
   @state()
   private triggeredActions: Map<string, number> = new Map();
 
+  // Index of the last-pressed chord mode button (for performance panel highlight)
+  @state()
+  private chordModeActiveIndex: number | null = null;
+
   // Form state for the Actions/Groups panels (drives the panel header swap)
   @state()
   private actionsFormState: { open: boolean; title: string } = { open: false, title: '' };
@@ -278,6 +285,12 @@ export class SketchatoneDashboard extends LitElement {
       this.availableConfigs = config.availableConfigs ?? [];
     });
 
+    this.client.onNotesChanged((data) => {
+      if (this.strummerConfig) {
+        this.strummerConfig = { ...this.strummerConfig, notes: data.notes };
+      }
+    });
+
     this.client.onCombinedEvent((data: CombinedEventData) => {
       this.handleTabletData(data);
     });
@@ -311,6 +324,11 @@ export class SketchatoneDashboard extends LitElement {
 
     // Listen for action events (button presses and their actions)
     this.client.onActionEvent((event: ServerActionEvent) => {
+      // Track active chord mode button index for performance panel
+      if (event.action === 'set-chord-from-mode' && typeof event.params[1] === 'number') {
+        this.chordModeActiveIndex = event.params[1] as number;
+      }
+
       // Track triggered action by rule ID for status dot display
       if (event.ruleId) {
         const newMap = new Map(this.triggeredActions);
@@ -1022,6 +1040,7 @@ export class SketchatoneDashboard extends LitElement {
 
 
 
+
   /**
    * Compute the list of panels eligible for compact-mode navigation
    * (only ones the user has left visible in the toggle bar).
@@ -1584,6 +1603,7 @@ export class SketchatoneDashboard extends LitElement {
                 mode="actions"
                 .config=${this.getActionRulesConfig()}
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
+                .chordModes=${(this.strummerConfig?.config as any)?.strummer?.chordModes ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .triggeredActions=${this.triggeredActions}
                 .knownAuxCodes=${this.getDeviceButtonCodes()}
@@ -1618,6 +1638,7 @@ export class SketchatoneDashboard extends LitElement {
                 mode="groups"
                 .config=${this.getActionRulesConfig()}
                 .chordProgressions=${(this.strummerConfig?.config as any)?.strummer?.chordProgressions ?? {}}
+                .chordModes=${(this.strummerConfig?.config as any)?.strummer?.chordModes ?? {}}
                 .pressedButtons=${this.getPressedButtonIds()}
                 .knownAuxCodes=${this.getDeviceButtonCodes()}
                 .knownKeys=${this.getDeviceKeyChars()}
@@ -1704,6 +1725,32 @@ export class SketchatoneDashboard extends LitElement {
                 @progressions-change=${this.handleChordProgressionsChange}>
               </chord-progression-creator>
             </dashboard-panel>
+          ` : ''}
+
+          <!-- Chord Mode Performance Panel -->
+          ${vis.chordModePerformance ? html`
+            ${(() => {
+              const groupRules: any[] = (this.strummerConfig?.config as any)?.strummer?.actionRules?.groupRules ?? [];
+              const modeRule = groupRules.find((r: any) => r.action?.type === 'chord-mode');
+              return html`
+                <dashboard-panel title="Chord Mode" panelId="chordModePerformance" .closable=${true} .draggable=${false} .minimizable=${false}
+                  @panel-close=${() => this.handlePanelClose('chordModePerformance')}>
+                  <div style="display:flex;flex-direction:column;height:100%">
+                    <chord-mode-performance
+                      .chordModes=${(this.strummerConfig?.config as any)?.strummer?.chordModes ?? {}}
+                      .modeName=${modeRule?.action?.mode ?? ''}
+                      .root=${modeRule?.action?.root ?? 'C'}
+                      .octave=${modeRule?.action?.octave ?? 4}
+                      .activeIndex=${this.chordModeActiveIndex}>
+                    </chord-mode-performance>
+                    <div style="flex:1"></div>
+                    <div style="margin-top:16px">
+                      ${this.renderPerformanceStrip(hasActiveConnection)}
+                    </div>
+                  </div>
+                </dashboard-panel>
+              `;
+            })()}
           ` : ''}
 
           <!-- Server Settings Panel -->

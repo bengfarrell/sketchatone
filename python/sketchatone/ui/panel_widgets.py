@@ -623,6 +623,7 @@ class _StringStripWidget(Widget):
             self._baseline_color = Color(*theme.GRAY_300)
             self._baseline = Line(points=[0, 0, 0, 0], width=1.0)
         self._string_color = None
+        self._string_colors: list = []  # Color instruction per string for in-place updates
         self._string_lines: list = []
         with self.canvas:
             self._pen_color = Color(0.45, 0.75, 1.0, 0.0)
@@ -635,8 +636,24 @@ class _StringStripWidget(Widget):
         self._redraw()
 
     def set_plucked(self, idx: int) -> None:
+        prev = self._plucked
         self._plucked = int(idx) if idx is not None else -1
-        self._redraw()
+        # Fast path: mutate existing canvas instructions in place — no Label
+        # creation, no canvas rebuild. Falls back to full redraw only if the
+        # string instructions haven't been built yet.
+        if not self._string_colors:
+            self._redraw()
+            return
+        if 0 <= prev < len(self._string_colors):
+            self._string_colors[prev].rgba = theme.GRAY_500
+            self._string_lines[prev].width = 1.0
+            if prev < len(self._labels):
+                self._labels[prev].color = theme.TEXT_MUTED
+        if 0 <= self._plucked < len(self._string_colors):
+            self._string_colors[self._plucked].rgba = theme.STATUS_CONNECTED
+            self._string_lines[self._plucked].width = 1.6
+            if self._plucked < len(self._labels):
+                self._labels[self._plucked].color = theme.STATUS_CONNECTED
 
     def update_pen(self, x: float, pressure: float, in_range: bool) -> None:
         self._pen_x = max(0.0, min(1.0, float(x or 0.0)))
@@ -645,7 +662,8 @@ class _StringStripWidget(Widget):
         self._update_pen_only()
 
     def _redraw(self, *_args) -> None:
-        for line in self._string_lines:
+        for color, line in zip(self._string_colors, self._string_lines):
+            self.canvas.remove(color)
             self.canvas.remove(line)
         # Sweep every Label child rather than just the tracked ones so
         # a stale label from a previous note set (chord change,
@@ -654,6 +672,7 @@ class _StringStripWidget(Widget):
         for child in list(self.children):
             if isinstance(child, Label):
                 self.remove_widget(child)
+        self._string_colors.clear()
         self._string_lines.clear()
         self._labels.clear()
 
@@ -672,9 +691,10 @@ class _StringStripWidget(Widget):
             sx = x0 + ((i + 1) / (n + 1)) * w
             plucked = (i == self._plucked)
             with self.canvas:
-                Color(*(theme.STATUS_CONNECTED if plucked else theme.GRAY_500))
+                c = Color(*(theme.STATUS_CONNECTED if plucked else theme.GRAY_500))
                 line = Line(points=[sx, bot, sx, top],
                             width=1.6 if plucked else 1.0)
+            self._string_colors.append(c)
             self._string_lines.append(line)
 
             label_text = f"{note.get('notation', '')}{note.get('octave', '')}"
@@ -729,6 +749,8 @@ class PerformancePanel(BoxLayout):
         self._pressed: set = set()
         self._stylus_chips: dict = {}
         self._button_chips: dict = {}
+        self._render_event = None  # cancellable Clock event for debounced render
+        self._notes_event = None   # cancellable Clock event for debounced strip redraw
 
         self._mappings_scroll = ScrollView(do_scroll_x=False, bar_width=4)
         self._mappings_container = BoxLayout(
@@ -751,6 +773,7 @@ class PerformancePanel(BoxLayout):
         self._viz_active = False
         if bridge is not None:
             bridge.on('config', self._on_config)
+            bridge.on('notes-changed', self._on_notes_changed)
             bridge.on('tablet', self._on_tablet)
             bridge.on('strum', self._on_strum)
 
@@ -762,6 +785,26 @@ class PerformancePanel(BoxLayout):
         self._stylus = mappings['stylus']
         self._buttons = mappings['buttons']
         self._notes = extract_notes(payload)
+        self._schedule_render()
+
+    def _on_notes_changed(self, payload: Any) -> None:
+        # Update data immediately so _on_strum lookups see the current chord.
+        self._notes = extract_notes(payload)
+        # Debounce the visual redraw — set_notes recreates a Label per string,
+        # so calling it at MIDI rate (100+/s) saturates the frame budget.
+        if self._notes_event is not None:
+            self._notes_event.cancel()
+        from kivy.clock import Clock
+        self._notes_event = Clock.schedule_once(
+            lambda _dt: self._strip.set_notes(self._notes), 0.08)
+
+    def _schedule_render(self) -> None:
+        from kivy.clock import Clock
+        if self._render_event is not None:
+            self._render_event.cancel()
+        self._render_event = Clock.schedule_once(lambda _dt: self._do_render(), 0.15)
+
+    def _do_render(self) -> None:
         self._render_mappings()
         self._strip.set_notes(self._notes)
 
@@ -3765,6 +3808,7 @@ class ActionRulesPanel(BoxLayout):
         self._form_group_trigger: str = 'release'
 
         self._body = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        self._render_event = None  # cancellable Clock event for debounced render
         self.add_widget(self._body)
         self._render()
 
@@ -3777,7 +3821,13 @@ class ActionRulesPanel(BoxLayout):
         self._full = extract_action_rules(payload)
         self._progressions = extract_chord_progressions(payload)
         if self._mode == 'list':
-            self._render()
+            self._schedule_render()
+
+    def _schedule_render(self) -> None:
+        from kivy.clock import Clock
+        if self._render_event is not None:
+            self._render_event.cancel()
+        self._render_event = Clock.schedule_once(lambda _dt: self._render(), 0.15)
 
     # ---- Top-level render --------------------------------------------
 
@@ -4364,6 +4414,7 @@ class GroupsPanel(BoxLayout):
         self._form_buttons: list = []
 
         self._body = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        self._render_event = None  # cancellable Clock event for debounced render
         self.add_widget(self._body)
         self._render()
 
@@ -4375,7 +4426,13 @@ class GroupsPanel(BoxLayout):
     def _on_config(self, payload: Any) -> None:
         self._full = extract_action_rules(payload)
         if self._mode == 'list':
-            self._render()
+            self._schedule_render()
+
+    def _schedule_render(self) -> None:
+        from kivy.clock import Clock
+        if self._render_event is not None:
+            self._render_event.cancel()
+        self._render_event = Clock.schedule_once(lambda _dt: self._render(), 0.15)
 
     # ---- Top-level render --------------------------------------------
 
@@ -4633,6 +4690,7 @@ class DeviceButtonsPanel(BoxLayout):
         self._buttons: list = []
         self._keys: list = []
         self._detecting: bool = False
+        self._render_event = None  # cancellable Clock event for debounced render
 
         self._body = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
         self.add_widget(self._body)
@@ -4656,7 +4714,7 @@ class DeviceButtonsPanel(BoxLayout):
         data = extract_device_buttons(payload)
         self._buttons = data['buttons']
         self._keys = data['keys']
-        self._render()
+        self._schedule_render()
 
     def _on_detection_state(self, payload: Any) -> None:
         enabled = bool((payload or {}).get('enabled', False)) \
@@ -4664,7 +4722,13 @@ class DeviceButtonsPanel(BoxLayout):
         if enabled == self._detecting:
             return
         self._detecting = enabled
-        self._render()
+        self._schedule_render()
+
+    def _schedule_render(self) -> None:
+        from kivy.clock import Clock
+        if self._render_event is not None:
+            self._render_event.cancel()
+        self._render_event = Clock.schedule_once(lambda _dt: self._render(), 0.15)
 
     # ---- Render -------------------------------------------------------
 
@@ -4854,6 +4918,7 @@ class ChordProgressionsPanel(BoxLayout):
         self._extension: str = ''
 
         self._body = BoxLayout(orientation='vertical', spacing=theme.SPACE_2)
+        self._render_event = None  # cancellable Clock event for debounced render
         self.add_widget(self._body)
         self._render()
 
@@ -4864,7 +4929,13 @@ class ChordProgressionsPanel(BoxLayout):
 
     def _on_config(self, payload: Any) -> None:
         self._progressions = extract_chord_progressions(payload)
-        self._render()
+        self._schedule_render()
+
+    def _schedule_render(self) -> None:
+        from kivy.clock import Clock
+        if self._render_event is not None:
+            self._render_event.cancel()
+        self._render_event = Clock.schedule_once(lambda _dt: self._render(), 0.15)
 
     # ---- Render -------------------------------------------------------
 

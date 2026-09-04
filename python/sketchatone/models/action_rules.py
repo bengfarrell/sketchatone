@@ -21,7 +21,7 @@ import string
 ButtonId = str  # Format: "button:primary", "button:secondary", or "code:<hidcode>"
 TriggerType = Literal['press', 'release', 'hold']
 ActionCategory = Literal['button', 'group', 'startup']
-GroupActionType = Literal['chord-progression']
+GroupActionType = Literal['chord-progression', 'chord-mode']
 
 # Action definition can be a string or list with params
 ActionDefinition = Union[str, List[Any], None]
@@ -31,28 +31,37 @@ ActionDefinition = Union[str, List[Any], None]
 class GroupAction:
     """
     Group action definition - action with parameters for button groups.
-    Currently only chord-progression is supported.
     """
     type: GroupActionType
-    progression: str  # Chord progression preset name
-    octave: int = 4   # Octave for chord playback
+    octave: int = 4
+    progression: Optional[str] = None  # for chord-progression type
+    mode: Optional[str] = None         # for chord-mode type
+    root: Optional[str] = None         # for chord-mode type
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'GroupAction':
         """Create from dictionary"""
         return cls(
             type=data.get('type', 'chord-progression'),
-            progression=data.get('progression', 'c-major-pop'),
-            octave=data.get('octave', 4)
+            octave=data.get('octave', 4),
+            progression=data.get('progression'),
+            mode=data.get('mode'),
+            root=data.get('root'),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
-        return {
+        result: Dict[str, Any] = {
             'type': self.type,
-            'progression': self.progression,
-            'octave': self.octave
+            'octave': self.octave,
         }
+        if self.progression is not None:
+            result['progression'] = self.progression
+        if self.mode is not None:
+            result['mode'] = self.mode
+        if self.root is not None:
+            result['root'] = self.root
+        return result
 
 
 @dataclass
@@ -445,9 +454,13 @@ class ActionRulesConfig:
                     if rule_trigger == trigger:
                         # Handle group action based on type
                         if group_rule.action.type == 'chord-progression':
-                            # Return a set-chord-in-progression action
                             return {
                                 'action': ['set-chord-in-progression', group_rule.action.progression, button_index, group_rule.action.octave],
+                                'rule_id': group_rule.id
+                            }
+                        if group_rule.action.type == 'chord-mode':
+                            return {
+                                'action': ['set-chord-from-mode', group_rule.action.mode, button_index, group_rule.action.octave, group_rule.action.root or 'C'],
                                 'rule_id': group_rule.id
                             }
 

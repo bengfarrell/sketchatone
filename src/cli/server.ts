@@ -298,16 +298,22 @@ class StrummerWebSocketServer {
     // Set up notes
     this.setupNotes();
 
-    // Listen for notes_changed events to broadcast config updates
-    // This ensures the visualizer updates when actions change the chord
+    // Listen for notes_changed events to broadcast a lightweight notes-changed
+    // event rather than a full config snapshot, so rapid chord changes from
+    // MIDI don't trigger expensive UI rebuilds in panels that don't need it.
     this.strummer.on('notes_changed', () => {
-      this.broadcastConfig();
+      this.broadcastNotesChanged();
     });
 
     // Create Actions handler for stylus buttons
     // Pass the actual config object so Actions can access live values
     // (e.g., lowerSpread/upperSpread that may be updated via UI)
-    this.actions = new Actions(this.config, this.strummer, this.config.strummer.chordProgressions);
+    this.actions = new Actions(
+      this.config,
+      this.strummer,
+      this.config.strummer.chordProgressions,
+      this.config.strummer.chordModes,
+    );
 
     // Configure action rules so button-to-action mapping works
     this.actions.setActionRulesConfig(this.config.strummer.actionRules);
@@ -760,11 +766,11 @@ class StrummerWebSocketServer {
     // This allows MIDI input to override any preset chord
     this.config.strummer.strumming.chord = undefined;
 
-    // Reconfigure strummer with new notes
+    // Reconfigure strummer with new notes.
+    // setupNotes triggers notes_changed → broadcastNotesChanged(); no full
+    // config broadcast needed here since the transient initialNotes / chord
+    // changes don't need to be reflected in the UI panels.
     this.setupNotes();
-
-    // Broadcast config change to all connected clients
-    this.broadcastConfig();
 
     console.log(chalk.cyan(`[MIDI Input ${mode}] Held: ${noteStrings.join(', ')} -> Notes: ${baseNoteStrings.join(', ')}`));
   }
@@ -878,6 +884,19 @@ class StrummerWebSocketServer {
       data: configData,
     });
 
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  private broadcastNotesChanged(): void {
+    if (!this.wss) return;
+    const message = JSON.stringify({
+      type: 'notes-changed',
+      notes: this.strummer.notes.map((n) => ({ notation: n.notation, octave: n.octave })),
+    });
     this.wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
@@ -1031,6 +1050,11 @@ class StrummerWebSocketServer {
       // Update chord progressions in Actions if they changed
       if (path === 'strummer.chordProgressions') {
         this.actions.setChordProgressions(this.config.strummer.chordProgressions);
+      }
+
+      // Update chord modes in Actions if they changed
+      if (path === 'strummer.chordModes' && this.config.strummer.chordModes) {
+        this.actions.setChordModes(this.config.strummer.chordModes);
       }
 
       // Update action rules if they changed

@@ -13,6 +13,23 @@ from ..models.note import Note, NoteObject
 if TYPE_CHECKING:
     from ..models.action_rules import ActionRulesConfig, TriggerType, ButtonId
 
+# Roman numeral degree to semitone offset from tonic
+DEGREE_TO_SEMITONES: Dict[str, int] = {
+    'I': 0, 'i': 0,
+    'bII': 1, 'bii': 1,
+    'II': 2, 'ii': 2,
+    'bIII': 3, 'biii': 3,
+    'III': 4, 'iii': 4,
+    'IV': 5, 'iv': 5,
+    'bV': 6, 'bv': 6,
+    'V': 7, 'v': 7,
+    'V/V': 2,  # secondary dominant — same root as II
+    'bVI': 8, 'bvi': 8,
+    'VI': 9, 'vi': 9,
+    'bVII': 10, 'bvii': 10,
+    'VII': 11, 'vii': 11,
+}
+
 
 class ChordProgressionState:
     """
@@ -122,7 +139,13 @@ class Actions(EventEmitter):
         - 'config_changed': When an action modifies the configuration
     """
 
-    def __init__(self, config: Any, strummer: Any = None, chord_progressions: Optional[Dict[str, List[str]]] = None):
+    def __init__(
+        self,
+        config: Any,
+        strummer: Any = None,
+        chord_progressions: Optional[Dict[str, List[str]]] = None,
+        chord_modes: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    ):
         """
         Initialize Actions with a configuration instance.
 
@@ -135,6 +158,7 @@ class Actions(EventEmitter):
         self.config = config
         self.strummer = strummer
         self.chord_progressions = chord_progressions or {}
+        self.chord_modes: Dict[str, List[Dict[str, str]]] = chord_modes or {}
 
         # Map action names to handler methods
         self._action_handlers: Dict[str, Callable] = {
@@ -146,6 +170,7 @@ class Actions(EventEmitter):
             'set-strum-scale': self.set_strum_scale,
             'set-chord-in-progression': self.set_chord_in_progression,
             'increment-chord-in-progression': self.increment_chord_in_progression,
+            'set-chord-from-mode': self.set_chord_from_mode,
         }
 
         # Chord progression state
@@ -220,6 +245,83 @@ class Actions(EventEmitter):
                         # Note: broadcast happens automatically via strummer's notes_changed event
                 except Exception as e:
                     print(f"[ACTIONS] Error re-applying chord after progression update: {e}")
+
+    def set_chord_modes(self, chord_modes: Dict[str, List[Dict[str, str]]]) -> None:
+        """Update chord modes (called when config changes)."""
+        self.chord_modes = chord_modes
+
+    def set_chord_from_mode(self, params: List[Any], context: Dict[str, Any]) -> None:
+        """
+        Set the strummer chord from a chord mode entry at a specific button index.
+
+        Args:
+            params[0] (str): Mode name (e.g., "major", "jazz")
+            params[1] (int): Button index (0-8)
+            params[2] (int, optional): Octave override (defaults to harmonicContext.octave or 4)
+        """
+        if len(params) < 2:
+            print('[ACTIONS] Error: set-chord-from-mode requires mode name and button index')
+            return
+
+        if not isinstance(params[0], str):
+            print('[ACTIONS] Error: First parameter must be mode name (string)')
+            return
+
+        if not isinstance(params[1], (int, float)):
+            print('[ACTIONS] Error: Second parameter must be button index (number)')
+            return
+
+        mode_name = params[0]
+        button_index = int(params[1])
+        octave = int(params[2]) if len(params) > 2 and isinstance(params[2], (int, float)) else 4
+        root = params[3] if len(params) > 3 and isinstance(params[3], str) else 'C'
+        prefer_flat = 'b' in root
+
+        if self.strummer is None:
+            print('[ACTIONS] Error: No strummer instance available')
+            return
+
+        mode_entries = self.chord_modes.get(mode_name)
+        if mode_entries is None:
+            print(f"[ACTIONS] Error: Unknown chord mode '{mode_name}'")
+            return
+
+        if button_index < 0 or button_index >= len(mode_entries):
+            print(f"[ACTIONS] Error: No chord at button index {button_index} in mode '{mode_name}'")
+            return
+
+        entry = mode_entries[button_index]
+
+        semitones = DEGREE_TO_SEMITONES.get(entry.get('degree', ''))
+        if semitones is None:
+            print(f"[ACTIONS] Error: Unknown degree '{entry.get('degree')}'")
+            return
+
+        root_index = Note.index_of_notation(root.rstrip('0123456789'))
+        if root_index == -1:
+            print(f"[ACTIONS] Error: Unknown root note '{root}'")
+            return
+
+        chord_root_index = (root_index + semitones) % 12
+        chord_root = Note.notation_at_index(chord_root_index, prefer_flat)
+        chord_notation = chord_root + entry.get('quality', '')
+
+        try:
+            notes = Note.parse_chord(chord_notation, octave)
+            if not notes:
+                print(f"[ACTIONS] Error: Failed to parse chord '{chord_notation}'")
+                return
+
+            lower_spread = getattr(self.config, 'lower_spread', 0)
+            upper_spread = getattr(self.config, 'upper_spread', 0)
+            self.strummer.notes = Note.fill_note_spread(notes, lower_spread, upper_spread)
+
+            button = context.get('button', 'Unknown')
+            degree = entry.get('degree', '?')
+            quality = entry.get('quality', '')
+            print(f"[ACTIONS] {button} set chord-mode '{mode_name}'[{button_index}] → {degree}{quality} → {chord_notation} (oct {octave})")
+        except Exception as e:
+            print(f"[ACTIONS] Error setting chord from mode: {e}")
 
     def handle_button_event(self, button_id: 'ButtonId', trigger: 'TriggerType') -> bool:
         """
