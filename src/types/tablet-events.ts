@@ -119,6 +119,10 @@ export interface ServerConfigData {
   availableConfigs?: string[];
   /** True when config represents the saved state (after load/save), false for updates */
   isSavedState?: boolean;
+  /** Current runtime pitch offset in semitones (modified by transpose actions) */
+  pitchOffset?: number;
+  /** Current harmonic context mode name (modified by cycle-chord-mode actions) */
+  harmonicContextMode?: string;
 }
 
 /**

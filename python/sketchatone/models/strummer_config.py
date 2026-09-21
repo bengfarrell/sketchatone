@@ -57,13 +57,13 @@ class StrummingConfig:
             midi_channel = channel_from_config - 1  # Convert 1-16 to 0-15
 
         return cls(
-            pressure_threshold=data.get('pressure_threshold', data.get('pressureThreshold', 0.1)),
-            pressure_buffer_size=data.get('pressure_buffer_size', data.get('pressureBufferSize', 10)),
+            pressure_threshold=float(data.get('pressure_threshold', data.get('pressureThreshold', 0.1))),
+            pressure_buffer_size=int(data.get('pressure_buffer_size', data.get('pressureBufferSize', 10))),
             midi_channel=midi_channel,
             initial_notes=data.get('initial_notes', data.get('initialNotes', ["C4", "E4", "G4"])),
             chord=data.get('chord'),
-            upper_note_spread=data.get('upper_note_spread', data.get('upperNoteSpread', 3)),
-            lower_note_spread=data.get('lower_note_spread', data.get('lowerNoteSpread', 3)),
+            upper_note_spread=int(data.get('upper_note_spread', data.get('upperNoteSpread', 3))),
+            lower_note_spread=int(data.get('lower_note_spread', data.get('lowerNoteSpread', 3))),
             invert_x=data.get('invert_x', data.get('invertX', False)),
         )
 
@@ -124,7 +124,8 @@ class StrummerConfig:
     strum_release: StrumReleaseConfig = field(default_factory=StrumReleaseConfig)
     action_rules: ActionRulesConfig = field(default_factory=ActionRulesConfig)
     chord_progressions: Dict[str, List[str]] = field(default_factory=dict)
-    harmonic_context: Optional[Dict[str, Any]] = field(default=None)
+    pitch: Dict[str, Any] = field(default_factory=lambda: {'startingOffset': 0, 'startingOctave': 4})
+    harmonic_context: Dict[str, Any] = field(default_factory=lambda: {'startingRoot': 'C', 'startingMode': 'major'})
     chord_modes: Optional[Dict[str, Any]] = field(default=None)
 
     # Convenience properties for backward compatibility
@@ -166,8 +167,12 @@ class StrummerConfig:
         strum_release_data = data.get('strum_release', data.get('strumRelease', {}))
         action_rules_data = data.get('action_rules', data.get('actionRules', {}))
         chord_progressions_data = data.get('chordProgressions', data.get('chord_progressions', {}))
-        harmonic_context_data = data.get('harmonicContext', data.get('harmonic_context'))
+        pitch_data = data.get('pitch') or {}
+        harmonic_context_data = data.get('harmonicContext', data.get('harmonic_context')) or {}
         chord_modes_data = data.get('chordModes', data.get('chord_modes'))
+
+        pitch_merged = {'startingOffset': 0, 'startingOctave': 4, **pitch_data}
+        harmonic_context_merged = {'startingRoot': 'C', 'startingMode': 'major', **harmonic_context_data}
 
         mode = data.get('mode', DEFAULT_MODE)
         if mode not in VALID_MODES:
@@ -183,7 +188,8 @@ class StrummerConfig:
             strum_release=StrumReleaseConfig.from_dict(strum_release_data) if strum_release_data else StrumReleaseConfig(),
             action_rules=ActionRulesConfig.from_dict(action_rules_data) if action_rules_data else ActionRulesConfig(),
             chord_progressions=chord_progressions_data,
-            harmonic_context=harmonic_context_data,
+            pitch=pitch_merged,
+            harmonic_context=harmonic_context_merged,
             chord_modes=chord_modes_data,
         )
 
@@ -209,8 +215,8 @@ class StrummerConfig:
 
         if self.chord_progressions:
             result['chordProgressions'] = self.chord_progressions
-        if self.harmonic_context is not None:
-            result['harmonicContext'] = self.harmonic_context
+        result['pitch'] = dict(self.pitch)
+        result['harmonicContext'] = dict(self.harmonic_context)
         if self.chord_modes is not None:
             result['chordModes'] = self.chord_modes
 

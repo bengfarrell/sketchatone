@@ -109,6 +109,10 @@ interface ServerConfigData {
   availableConfigs?: string[];
   /** True when config represents the saved state (after load/save), false for updates */
   isSavedState?: boolean;
+  /** Current runtime pitch offset in semitones (modified by transpose actions) */
+  pitchOffset: number;
+  /** Current harmonic context mode name (modified by cycle-chord-mode actions) */
+  harmonicContextMode: string;
 }
 
 /**
@@ -313,6 +317,8 @@ class StrummerWebSocketServer {
       this.strummer,
       this.config.strummer.chordProgressions,
       this.config.strummer.chordModes,
+      this.config.strummer.pitch,
+      this.config.strummer.harmonicContext,
     );
 
     // Configure action rules so button-to-action mapping works
@@ -321,6 +327,11 @@ class StrummerWebSocketServer {
     // Listen for action events to broadcast to clients
     this.actions.on('action_executed', (event: ActionExecutedEvent) => {
       this.broadcastActionEvent(event);
+    });
+
+    // Broadcast config whenever transpose or other runtime state changes
+    this.actions.on('config_changed', () => {
+      this.broadcastConfig();
     });
 
     // Execute any startup rules defined in the config
@@ -835,6 +846,8 @@ class StrummerWebSocketServer {
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
       isSavedState,
+      pitchOffset: this.actions.getPitchOffset(),
+      harmonicContextMode: this.actions.getHarmonicContext().mode,
     };
 
     client.send(
@@ -877,6 +890,8 @@ class StrummerWebSocketServer {
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
       isSavedState,
+      pitchOffset: this.actions.getPitchOffset(),
+      harmonicContextMode: this.actions.getHarmonicContext().mode,
     };
 
     const message = JSON.stringify({
@@ -1978,9 +1993,9 @@ class StrummerWebSocketServer {
       const pressureMultiplier = repeaterConfig.pressureMultiplier;
       const frequencyMultiplier = repeaterConfig.frequencyMultiplier;
 
-      // Get transpose state from actions
-      const transposeEnabled = this.actions.isTransposeActive();
-      const transposeSemitones = this.actions.getTransposeSemitones();
+      // Get pitch offset from actions (applied to every strummed note)
+      const transposeSemitones = this.actions.getPitchOffset();
+      const transposeEnabled = transposeSemitones !== 0;
 
       if (event) {
         if (event.type === 'strum') {

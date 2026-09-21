@@ -26,6 +26,35 @@ import {
 } from './action-rules.js';
 
 /**
+ * Authored starting values for the global pitch state. `startingOffset` is the
+ * transpose offset applied at MIDI output; `startingOctave` is the default
+ * octave chord-setting actions use unless they explicitly override it.
+ */
+export interface PitchConfigData {
+  startingOffset: number;
+  startingOctave: number;
+}
+
+export const DEFAULT_PITCH_CONFIG: PitchConfigData = {
+  startingOffset: 0,
+  startingOctave: 4,
+};
+
+/**
+ * Authored starting values for the chord-mode harmonic context. Only meaningful
+ * for chord-mode features (other features don't consume `root`/`mode`).
+ */
+export interface HarmonicContextConfigData {
+  startingRoot: string;
+  startingMode: string;
+}
+
+export const DEFAULT_HARMONIC_CONTEXT_CONFIG: HarmonicContextConfigData = {
+  startingRoot: 'C',
+  startingMode: 'major',
+};
+
+/**
  * Core strumming configuration data
  */
 export interface StrummingConfigData {
@@ -157,7 +186,10 @@ export interface StrummerConfigData {
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
   chordProgressions?: Record<string, string[]>;
-  harmonicContext?: { root: string; octave: number; major: boolean; mode: string };
+  /** Authored starting values for the global pitch state. */
+  pitch?: PitchConfigData;
+  /** Authored starting values for the chord-mode harmonic context. */
+  harmonicContext?: HarmonicContextConfigData;
   chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
 }
 
@@ -183,7 +215,8 @@ export class StrummerConfig {
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
   chordProgressions: Record<string, string[]>;
-  harmonicContext: { root: string; octave: number; major: boolean; mode: string } | undefined;
+  pitch: PitchConfigData;
+  harmonicContext: HarmonicContextConfigData;
   chordModes: Record<string, Array<{ degree: string; quality: string }>> | undefined;
 
   constructor(data: {
@@ -196,7 +229,8 @@ export class StrummerConfig {
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
     chordProgressions?: Record<string, string[]>;
-    harmonicContext?: { root: string; octave: number; major: boolean; mode: string };
+    pitch?: Partial<PitchConfigData>;
+    harmonicContext?: Partial<HarmonicContextConfigData>;
     chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
   } = {}) {
     this.mode = data.mode ?? DEFAULT_STRUMMER_MODE;
@@ -208,7 +242,8 @@ export class StrummerConfig {
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
     this.chordProgressions = data.chordProgressions ?? {};
-    this.harmonicContext = data.harmonicContext;
+    this.pitch = { ...DEFAULT_PITCH_CONFIG, ...(data.pitch ?? {}) };
+    this.harmonicContext = { ...DEFAULT_HARMONIC_CONTEXT_CONFIG, ...(data.harmonicContext ?? {}) };
     this.chordModes = data.chordModes;
   }
 
@@ -250,7 +285,8 @@ export class StrummerConfig {
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
     const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
-    const harmonicContextData = (data.harmonicContext ?? data.harmonic_context) as { root: string; octave: number; major: boolean; mode: string } | undefined;
+    const pitchData = (data.pitch ?? {}) as Partial<PitchConfigData>;
+    const harmonicContextData = (data.harmonicContext ?? data.harmonic_context ?? {}) as Partial<HarmonicContextConfigData>;
     const chordModesData = (data.chordModes ?? data.chord_modes) as Record<string, Array<{ degree: string; quality: string }>> | undefined;
 
     const rawMode = data.mode as string | undefined;
@@ -282,6 +318,7 @@ export class StrummerConfig {
         ? ActionRulesConfig.fromDict(actionRulesData)
         : new ActionRulesConfig(),
       chordProgressions: chordProgressionsData,
+      pitch: pitchData,
       harmonicContext: harmonicContextData,
       chordModes: chordModesData,
     });
@@ -314,9 +351,8 @@ export class StrummerConfig {
     if (Object.keys(this.chordProgressions).length > 0) {
       result.chordProgressions = this.chordProgressions;
     }
-    if (this.harmonicContext) {
-      result.harmonicContext = this.harmonicContext;
-    }
+    result.pitch = { ...this.pitch };
+    result.harmonicContext = { ...this.harmonicContext };
     if (this.chordModes) {
       result.chordModes = this.chordModes;
     }

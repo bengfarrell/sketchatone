@@ -384,9 +384,9 @@ class MidiStrummer {
       const pressureMultiplier = repeaterConfig.pressureMultiplier;
       const frequencyMultiplier = repeaterConfig.frequencyMultiplier;
 
-      // Get transpose state from actions
-      const transposeEnabled = this.actions.isTransposeActive();
-      const transposeSemitones = this.actions.getTransposeSemitones();
+      // Get pitch offset from actions (applied to every strummed note)
+      const transposeSemitones = this.actions.getPitchOffset();
+      const transposeEnabled = transposeSemitones !== 0;
 
       if (event) {
         this.lastEvent = event;

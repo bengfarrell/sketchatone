@@ -27,18 +27,15 @@ from sketchatone.ui.panel_widgets import (
     ParameterMappingPanel,
     PerformancePanel,
     PlaceholderPanel,
-    ServerSettingsPanel,
     SlidePanel,
     StrumReleasePanel,
     StrummingSettingsPanel,
     TabletVisualizerPanel,
     calculate_curve_output,
-    compute_dirty,
     extract_action_rules,
     extract_chord_progressions,
     extract_device_buttons,
     extract_parameter_mapping,
-    extract_server_state,
     extract_slide,
     extract_strum_release,
     extract_strumming,
@@ -160,12 +157,6 @@ class TestMakePanel:
         panel = make_panel(panel_id, panel_id, bridge=None)
         assert isinstance(panel, ParameterMappingPanel)
         assert panel._spec.field == panel_id
-
-    def test_server_settings_panel_factory(self):
-        assert isinstance(
-            make_panel('serverSettings', 'Server', bridge=None),
-            ServerSettingsPanel,
-        )
 
     def test_device_buttons_panel_factory(self):
         assert isinstance(
@@ -761,190 +752,6 @@ class TestHoverPositionFromTablet:
         ev = TabletEventData(x=0.5, y=0.5, pressure=0.5)
         assert hover_position_from_tablet('none', ev) is None
         assert hover_position_from_tablet('velocity', ev) is None
-
-
-class TestExtractServerState:
-    def test_missing_payload_returns_defaults(self):
-        out = extract_server_state(None)
-        assert out == {'currentConfigName': None, 'availableConfigs': [],
-                       'isSavedState': False, 'config': None, 'throttleMs': 150}
-
-    def test_extracts_fields(self):
-        out = extract_server_state({
-            'currentConfigName': 'default.json',
-            'availableConfigs': ['a.json', 'b.json'],
-            'isSavedState': True,
-            'config': {'strummer': {}},
-        })
-        assert out['currentConfigName'] == 'default.json'
-        assert out['availableConfigs'] == ['a.json', 'b.json']
-        assert out['isSavedState'] is True
-        assert out['config'] == {'strummer': {}}
-
-
-class TestComputeDirty:
-    def test_no_snapshot_returns_clean(self):
-        assert compute_dirty({'a': 1}, None) is False
-
-    def test_matching_snapshot_returns_clean(self):
-        import json
-        snap = json.dumps({'a': 1, 'b': 2}, sort_keys=True)
-        assert compute_dirty({'b': 2, 'a': 1}, snap) is False
-
-    def test_differing_snapshot_returns_dirty(self):
-        import json
-        snap = json.dumps({'a': 1}, sort_keys=True)
-        assert compute_dirty({'a': 2}, snap) is True
-
-
-def _make_server_bridge():
-    b = UIBridge()
-    b._load_calls = []  # type: ignore[attr-defined]
-    b._create_calls = []  # type: ignore[attr-defined]
-    b._throttle_calls = []  # type: ignore[attr-defined]
-
-    def _load(name):
-        b._load_calls.append(name)  # type: ignore[attr-defined]
-
-    def _create(name):
-        b._create_calls.append(name)  # type: ignore[attr-defined]
-
-    def _set_throttle(value):
-        b._throttle_calls.append(value)  # type: ignore[attr-defined]
-    b.load_config = _load  # type: ignore[assignment]
-    b.create_config = _create  # type: ignore[assignment]
-    b.set_throttle = _set_throttle  # type: ignore[assignment]
-    return b
-
-
-def _emit_server_config(b: UIBridge, *, current='default.json',
-                       available=('default.json',), is_saved=True,
-                       throttle_ms=150, extra=None):
-    payload = {
-        'currentConfigName': current,
-        'availableConfigs': list(available),
-        'isSavedState': is_saved,
-        'throttleMs': throttle_ms,
-        'config': {'strummer': {'mode': 'strum'}, **(extra or {})},
-    }
-    b._emit('config', payload)
-
-
-class TestServerSettingsPanel:
-    def test_initial_state_has_no_current_config(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        assert panel._current_name is None
-        assert '(none)' in panel._status.text
-
-    def test_config_event_populates_list_and_marks_active(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, current='default.json',
-                            available=('default.json', 'jazz.json'))
-        rows = panel._list_items.children
-        assert len(rows) == 2
-        # Children render in reverse insertion order; check the active marker.
-        names = [c.text for c in rows]
-        assert any(n.startswith('● ') and 'default.json' in n for n in names)
-        assert any(n.startswith('○ ') and 'jazz.json' in n for n in names)
-
-    def test_config_event_updates_status_label(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, current='jazz.json')
-        assert panel._status.text == 'Current: jazz.json'
-
-    def test_clicking_config_loads_it(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, current='default.json',
-                            available=('default.json', 'jazz.json'))
-        jazz = next(c for c in panel._list_items.children if 'jazz.json' in c.text)
-        jazz.dispatch('on_release')
-        assert b._load_calls == ['jazz.json']
-
-    def test_clicking_active_config_is_noop(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, current='default.json',
-                            available=('default.json',))
-        active = next(c for c in panel._list_items.children if 'default.json' in c.text)
-        active.dispatch('on_release')
-        assert b._load_calls == []
-
-    def test_empty_available_shows_empty_row(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, current=None, available=())
-        rows = panel._list_items.children
-        assert len(rows) == 1
-        assert 'No saved configs' in rows[0].text
-
-    def test_throttle_stepper_reflects_config(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, throttle_ms=33)
-        assert panel._throttle_stepper.value == 33
-        assert panel._throttle_stepper.text == '33'
-
-    def test_throttle_stepper_commit_calls_bridge(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, throttle_ms=150)
-        panel._throttle_stepper.input.text = '33'
-        panel._throttle_stepper.commit()
-        assert b._throttle_calls == [33]
-
-    def test_throttle_commit_noop_when_unchanged(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        _emit_server_config(b, throttle_ms=150)
-        panel._throttle_stepper.commit()
-        assert b._throttle_calls == []
-
-    def test_create_input_invokes_bridge(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        panel._create_input.text = 'jazz'
-        panel._create()
-        assert b._create_calls == ['jazz']
-        assert panel._create_input.text == ''
-
-    def test_create_strips_whitespace(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        panel._create_input.text = '  rock  '
-        panel._create()
-        assert b._create_calls == ['rock']
-
-    def test_create_empty_name_ignored(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        panel._create_input.text = '   '
-        panel._create()
-        assert b._create_calls == []
-
-    def test_create_via_enter_key(self):
-        b = _make_server_bridge()
-        panel = ServerSettingsPanel(bridge=b)
-        panel._create_input.text = 'blues.json'
-        panel._create_input.dispatch('on_text_validate')
-        assert b._create_calls == ['blues.json']
-
-
-class TestExtractServerStateThrottle:
-    def test_missing_throttle_defaults_to_150(self):
-        out = extract_server_state({})
-        assert out['throttleMs'] == 150
-
-    def test_throttle_coerced_to_int(self):
-        out = extract_server_state({'throttleMs': '33'})
-        assert out['throttleMs'] == 33
-
-    def test_invalid_throttle_falls_back_to_default(self):
-        out = extract_server_state({'throttleMs': 'abc'})
-        assert out['throttleMs'] == 150
 
 
 def _make_cfg_bridge():

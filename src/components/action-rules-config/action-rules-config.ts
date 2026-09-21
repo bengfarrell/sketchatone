@@ -158,14 +158,9 @@ export class ActionRulesConfigComponent extends LitElement {
   @state()
   private formGroupProgression: string = 'c-major-pop';
 
+  // Optional octave override for chord-progression. null means "use pitch state".
   @state()
-  private formGroupMode: string = 'major';
-
-  @state()
-  private formGroupRoot: string = 'C';
-
-  @state()
-  private formGroupOctave: number = 4;
+  private formGroupOctave: number | null = null;
 
   @state()
   private formGroupTrigger: TriggerType = 'release';
@@ -232,6 +227,22 @@ export class ActionRulesConfigComponent extends LitElement {
           defaultValue: 'c-major-pop',
           // Note: Options are populated dynamically from config in renderParamFields()
           options: [],
+        },
+      ],
+    },
+    {
+      value: 'cycle-chord-mode',
+      label: 'Cycle Chord Mode',
+      params: [
+        {
+          key: 'direction',
+          label: 'Direction',
+          type: 'select',
+          defaultValue: '1',
+          options: [
+            { label: 'Next', value: '1' },
+            { label: 'Previous', value: '-1' },
+          ],
         },
       ],
     },
@@ -322,6 +333,10 @@ export class ActionRulesConfigComponent extends LitElement {
 
   private buildActionDefinition(actionName: string, params: unknown[]): ActionDefinition {
     if (actionName === 'none' || !actionName) return null;
+    if (actionName === 'cycle-chord-mode') {
+      const direction = Number(params[0] ?? 1);
+      return ['cycle-chord-mode', direction];
+    }
     // set-strum-scale form stores [root, scaleType, octave]; combine into notation "root:scaleType"
     if (actionName === 'set-strum-scale') {
       const root = (params[0] as string) ?? 'C';
@@ -354,6 +369,9 @@ export class ActionRulesConfigComponent extends LitElement {
       }
       return [root, scaleType, octave];
     }
+    if (actionName === 'cycle-chord-mode') {
+      return [String(params[0] ?? '1')];
+    }
     return params;
   }
 
@@ -383,7 +401,7 @@ export class ActionRulesConfigComponent extends LitElement {
     // Group action defaults
     this.formGroupActionType = 'chord-progression';
     this.formGroupProgression = 'c-major-pop';
-    this.formGroupOctave = 4;
+    this.formGroupOctave = null;
     this.formGroupTrigger = 'release';
   }
 
@@ -416,9 +434,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formName = rule.name ?? '';
     this.formGroupActionType = rule.action.type;
     this.formGroupProgression = rule.action.progression ?? this.progressionNames[0] ?? 'c-major-pop';
-    this.formGroupMode = rule.action.mode ?? Object.keys(this.chordModes)[0] ?? 'major';
-    this.formGroupRoot = rule.action.root ?? 'C';
-    this.formGroupOctave = rule.action.octave;
+    this.formGroupOctave = typeof rule.action.octave === 'number' ? rule.action.octave : null;
     this.formGroupTrigger = rule.trigger ?? 'release';
   }
 
@@ -531,8 +547,12 @@ export class ActionRulesConfigComponent extends LitElement {
     // Build the group action based on the selected type
     const groupAction: GroupAction =
       this.formGroupActionType === 'chord-mode'
-        ? { type: 'chord-mode', mode: this.formGroupMode, root: this.formGroupRoot, octave: this.formGroupOctave }
-        : { type: 'chord-progression', progression: this.formGroupProgression, octave: this.formGroupOctave };
+        ? { type: 'chord-mode' }
+        : {
+            type: 'chord-progression',
+            progression: this.formGroupProgression,
+            ...(this.formGroupOctave !== null ? { octave: this.formGroupOctave } : {}),
+          };
 
     if (this.formMode === 'add-action') {
       this.config.addGroupRule({
@@ -693,7 +713,9 @@ export class ActionRulesConfigComponent extends LitElement {
                         </sketch-button>
                       </div>
                     </div>
-                    <span class="rule-action">${rule.action.type}: ${rule.action.type === 'chord-mode' ? rule.action.mode : rule.action.progression} (Oct ${rule.action.octave})</span>
+                    <span class="rule-action">${rule.action.type === 'chord-mode'
+                      ? 'chord-mode'
+                      : `chord-progression: ${rule.action.progression ?? ''}${typeof rule.action.octave === 'number' ? ` (Oct ${rule.action.octave})` : ''}`}</span>
                     ${rule.name ? html`<span class="rule-name">${rule.name}</span>` : ''}
                   </div>
                 `;
@@ -848,7 +870,7 @@ export class ActionRulesConfigComponent extends LitElement {
     this.formParams = [];
     this.formGroupActionType = 'chord-progression';
     this.formGroupProgression = 'c-major-pop';
-    this.formGroupOctave = 4;
+    this.formGroupOctave = null;
     this.formGroupTrigger = 'release';
   }
 
@@ -937,33 +959,20 @@ export class ActionRulesConfigComponent extends LitElement {
                 ${this.progressionNames.map((name) => html`<option value="${name}" ?selected=${name === this.formGroupProgression}>${name}</option>`)}
               </select>
             </div>
-            ` : html`
             <div class="form-field">
-              <label class="sketch-label">Chord Mode</label>
-              <select
-                class="native-select"
-                .value=${live(this.formGroupMode)}
-                @change=${(e: Event) => { this.formGroupMode = (e.target as HTMLSelectElement).value; }}
-              >
-                ${Object.keys(this.chordModes).map((name) => html`<option value="${name}" ?selected=${name === this.formGroupMode}>${name}</option>`)}
-              </select>
+              <label class="sketch-label">Octave (optional override)</label>
+              <input
+                type="number"
+                class="sketch-input"
+                .value=${this.formGroupOctave === null ? '' : String(this.formGroupOctave)}
+                placeholder="Use pitch state default"
+                min="0" max="8" step="1"
+                @change=${(e: Event) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  this.formGroupOctave = v === '' ? null : Number(v);
+                }}>
             </div>
-            <div class="form-field">
-              <label class="sketch-label">Root</label>
-              <select
-                class="native-select"
-                .value=${live(this.formGroupRoot)}
-                @change=${(e: Event) => { this.formGroupRoot = (e.target as HTMLSelectElement).value; }}
-              >
-                ${ROOT_NOTE_OPTIONS.map(({ value, label }) => html`<option value="${value}" ?selected=${value === this.formGroupRoot}>${label}</option>`)}
-              </select>
-            </div>
-            `}
-
-            <div class="form-field">
-              <label class="sketch-label">Octave</label>
-              <input type="number" class="sketch-input" .value=${this.formGroupOctave} min="0" max="8" step="1" @change=${(e: Event) => (this.formGroupOctave = Number((e.target as HTMLInputElement).value))}>
-            </div>
+            ` : ''}
 
             <div class="form-field">
               <label class="sketch-label">Trigger</label>

@@ -133,15 +133,38 @@ export interface ActionsConfig {
     pressureMultiplier: number;
     frequencyMultiplier: number;
   };
-  transpose?: {
-    active: boolean;
-    semitones: number;
-  };
   lowerSpread?: number;
   upperSpread?: number;
   get?: (key: string, defaultValue?: unknown) => unknown;
   set?: (key: string, value: unknown) => void;
 }
+
+/**
+ * Authored starting values for the global pitch state.
+ * Loaded once from config; runtime session offsets layer on top.
+ */
+export interface PitchStartingConfig {
+  startingOffset: number;
+  startingOctave: number;
+}
+
+/**
+ * Authored starting values for the chord-mode harmonic context.
+ */
+export interface HarmonicContextStartingConfig {
+  startingRoot: string;
+  startingMode: string;
+}
+
+export const DEFAULT_PITCH_STARTING: PitchStartingConfig = {
+  startingOffset: 0,
+  startingOctave: 4,
+};
+
+export const DEFAULT_HARMONIC_CONTEXT_STARTING: HarmonicContextStartingConfig = {
+  startingRoot: 'C',
+  startingMode: 'major',
+};
 
 /**
  * Handles various user actions that can be triggered by stylus buttons or other inputs.
@@ -166,11 +189,22 @@ interface RepeaterState {
 }
 
 /**
- * State for the transpose feature.
+ * Runtime pitch state. `offset` is the canonical mutable value shifted by
+ * transpose actions; `octave` is a shared default that chord-setting actions
+ * use unless overridden.
  */
-interface TransposeState {
-  active: boolean;
-  semitones: number;
+interface PitchState {
+  offset: number;
+  octave: number;
+}
+
+/**
+ * Runtime harmonic context for chord-mode features. `root` and `mode` are
+ * only meaningful for chord-mode; other features don't consume them.
+ */
+interface HarmonicContextState {
+  root: string;
+  mode: string;
 }
 
 // Roman numeral degree to semitone offset from tonic
@@ -199,15 +233,24 @@ export class Actions extends EventEmitter {
   private chordProgressions: Record<string, string[]> = {};
   private chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
 
-  // Internal state for repeater and transpose (managed by actions, not config)
+  // Internal state for repeater (managed by actions, not config)
   private repeaterState: RepeaterState = {
     active: false,
     pressureMultiplier: 1.0,
     frequencyMultiplier: 1.0,
   };
-  private transposeState: TransposeState = {
-    active: false,
-    semitones: 0,
+
+  // Authored starting values (from config) and the runtime session state that
+  // layers on top. Runtime state resets to starting values on load.
+  private pitchStarting: PitchStartingConfig = { ...DEFAULT_PITCH_STARTING };
+  private pitchState: PitchState = {
+    offset: DEFAULT_PITCH_STARTING.startingOffset,
+    octave: DEFAULT_PITCH_STARTING.startingOctave,
+  };
+  private harmonicContextStarting: HarmonicContextStartingConfig = { ...DEFAULT_HARMONIC_CONTEXT_STARTING };
+  private harmonicContextState: HarmonicContextState = {
+    root: DEFAULT_HARMONIC_CONTEXT_STARTING.startingRoot,
+    mode: DEFAULT_HARMONIC_CONTEXT_STARTING.startingMode,
   };
 
   /**
@@ -217,18 +260,25 @@ export class Actions extends EventEmitter {
    * @param strummer - Optional Strummer instance for setting notes
    * @param chordProgressions - Optional chord progressions from config
    * @param chordModes - Optional chord modes from config
+   * @param pitchStarting - Optional authored pitch starting values
+   * @param harmonicContextStarting - Optional authored harmonic context starting values
    */
   constructor(
     config: ActionsConfig,
     strummer: Strummer | null = null,
     chordProgressions?: Record<string, string[]>,
     chordModes?: Record<string, Array<{ degree: string; quality: string }>>,
+    pitchStarting?: Partial<PitchStartingConfig>,
+    harmonicContextStarting?: Partial<HarmonicContextStartingConfig>,
   ) {
     super();
     this.config = config;
     this.strummer = strummer;
     this.chordProgressions = chordProgressions ?? {};
     this.chordModes = chordModes ?? {};
+
+    if (pitchStarting) this.setPitchStartingConfig(pitchStarting);
+    if (harmonicContextStarting) this.setHarmonicContextStartingConfig(harmonicContextStarting);
 
     // Map action names to handler methods
     this.actionHandlers = new Map<string, ActionHandler>([
@@ -242,10 +292,37 @@ export class Actions extends EventEmitter {
       ['increment-chord-in-progression', this.incrementChordInProgression.bind(this)],
       ['set-group-progression', this.setGroupProgression.bind(this)],
       ['set-chord-from-mode', this.setChordFromMode.bind(this)],
+      ['cycle-chord-mode', this.cycleChordMode.bind(this)],
     ]);
 
     // Chord progression state
     this.progressionState = new ChordProgressionState(this.chordProgressions);
+  }
+
+  /**
+   * Apply authored pitch starting values. Runtime session state resets to
+   * these values so a config edit produces a predictable starting point.
+   */
+  setPitchStartingConfig(starting: Partial<PitchStartingConfig>): void {
+    this.pitchStarting = {
+      startingOffset: starting.startingOffset ?? this.pitchStarting.startingOffset,
+      startingOctave: starting.startingOctave ?? this.pitchStarting.startingOctave,
+    };
+    this.pitchState.offset = this.pitchStarting.startingOffset;
+    this.pitchState.octave = this.pitchStarting.startingOctave;
+  }
+
+  /**
+   * Apply authored harmonic context starting values. Runtime session state
+   * resets to these values.
+   */
+  setHarmonicContextStartingConfig(starting: Partial<HarmonicContextStartingConfig>): void {
+    this.harmonicContextStarting = {
+      startingRoot: starting.startingRoot ?? this.harmonicContextStarting.startingRoot,
+      startingMode: starting.startingMode ?? this.harmonicContextStarting.startingMode,
+    };
+    this.harmonicContextState.root = this.harmonicContextStarting.startingRoot;
+    this.harmonicContextState.mode = this.harmonicContextStarting.startingMode;
   }
 
   /**
@@ -447,41 +524,30 @@ export class Actions extends EventEmitter {
   }
 
   /**
-   * Toggle transpose on/off.
+   * Toggle transpose on/off on the shared pitch offset.
+   * If offset is zero, sets it to the supplied semitones; otherwise resets to zero.
    *
    * @param params - Optional parameters:
-   *   - params[0]: semitones (number, default 12) - Number of semitones to transpose
+   *   - params[0]: semitones (number, default 12) - Semitones to apply when toggling on
    * @param context - Context data (e.g., which button triggered the action)
    */
   toggleTranspose(params: unknown[], context: ActionContext): void {
-    const newState = !this.transposeState.active;
-
-    // Parse optional semitones parameter
     const semitones = typeof params[0] === 'number' ? Math.floor(params[0]) : 12;
-
-    // Update internal state
-    this.transposeState.active = newState;
-    if (newState) {
-      // Only update semitones when turning on
-      this.transposeState.semitones = semitones;
-    }
-
-    // Log which button triggered the action if available
     const button = context.button ?? 'Unknown';
-    if (newState) {
+
+    if (this.pitchState.offset === 0) {
+      this.pitchState.offset = semitones;
       console.log(`[ACTIONS] ${button} button enabled transpose: ${semitones > 0 ? '+' : ''}${semitones} semitones`);
     } else {
+      this.pitchState.offset = 0;
       console.log(`[ACTIONS] ${button} button disabled transpose`);
     }
 
-    // Emit config changed event
     this.emit('config_changed');
   }
 
   /**
-   * Add semitones to the current transpose value (cumulative).
-   * Each press adds the specified semitones to the current transpose amount.
-   * Transpose is automatically enabled when non-zero, disabled when zero.
+   * Add semitones to the shared pitch offset (cumulative).
    *
    * @param params - Required parameters:
    *   - params[0]: semitones (number) - Number of semitones to add (can be negative)
@@ -496,43 +562,65 @@ export class Actions extends EventEmitter {
     const semitonesToAdd = Math.floor(params[0] as number);
     const button = context.button ?? 'Unknown';
 
-    // Add to current semitones (cumulative)
-    const newSemitones = this.transposeState.semitones + semitonesToAdd;
-    this.transposeState.semitones = newSemitones;
-    // Active when non-zero
-    this.transposeState.active = newSemitones !== 0;
+    const newOffset = this.pitchState.offset + semitonesToAdd;
+    this.pitchState.offset = newOffset;
 
-    if (newSemitones === 0) {
+    if (newOffset === 0) {
       console.log(`[ACTIONS] ${button} button reset transpose to 0`);
     } else {
-      console.log(`[ACTIONS] ${button} button transposed ${semitonesToAdd > 0 ? '+' : ''}${semitonesToAdd} → total: ${newSemitones > 0 ? '+' : ''}${newSemitones} semitones`);
+      console.log(`[ACTIONS] ${button} button transposed ${semitonesToAdd > 0 ? '+' : ''}${semitonesToAdd} → total: ${newOffset > 0 ? '+' : ''}${newOffset} semitones`);
     }
 
-    // Emit config changed event
     this.emit('config_changed');
   }
 
   /**
-   * Get the current transpose semitones.
-   *
-   * @returns Current transpose semitones (0 if transpose is not active)
+   * Current pitch offset in semitones. Applied at MIDI output to all notes.
    */
-  getTransposeSemitones(): number {
-    return this.transposeState.active ? this.transposeState.semitones : 0;
+  getPitchOffset(): number {
+    return this.pitchState.offset;
   }
 
   /**
-   * Check if transpose is currently active.
+   * Default octave used by chord-setting actions when they don't override.
    */
-  isTransposeActive(): boolean {
-    return this.transposeState.active;
+  getPitchOctave(): number {
+    return this.pitchState.octave;
   }
 
   /**
-   * Get the transpose configuration.
+   * Get a snapshot of pitch state, including authored starting values.
    */
-  getTransposeConfig(): { active: boolean; semitones: number } {
-    return { ...this.transposeState };
+  getPitchState(): PitchState & PitchStartingConfig {
+    return {
+      offset: this.pitchState.offset,
+      octave: this.pitchState.octave,
+      startingOffset: this.pitchStarting.startingOffset,
+      startingOctave: this.pitchStarting.startingOctave,
+    };
+  }
+
+  /**
+   * Get a snapshot of harmonic context state, including authored starting values.
+   */
+  getHarmonicContext(): HarmonicContextState & HarmonicContextStartingConfig {
+    return {
+      root: this.harmonicContextState.root,
+      mode: this.harmonicContextState.mode,
+      startingRoot: this.harmonicContextStarting.startingRoot,
+      startingMode: this.harmonicContextStarting.startingMode,
+    };
+  }
+
+  /**
+   * Derive the effective root note by shifting the harmonic context root by
+   * the current pitch offset. Used by display and chord-mode consumers.
+   */
+  getEffectiveRoot(): string {
+    const rootIndex = Note.indexOfNotation(this.harmonicContextState.root);
+    if (rootIndex === -1) return this.harmonicContextState.root;
+    const shifted = ((rootIndex + this.pitchState.offset) % 12 + 12) % 12;
+    return Note.notationAtIndex(shifted, this.harmonicContextState.root.includes('b'));
   }
 
   /**
@@ -717,12 +805,8 @@ export class Actions extends EventEmitter {
 
     const progressionName = params[0] as string;
     const index = Math.floor(params[1] as number);
-    let octave = 4; // Default octave
-
-    // Check for optional octave parameter
-    if (params.length > 2 && typeof params[2] === 'number') {
-      octave = Math.floor(params[2]);
-    }
+    // Optional octave override; defaults to shared pitch state octave
+    const octave = typeof params[2] === 'number' ? Math.floor(params[2]) : this.pitchState.octave;
 
     if (!this.strummer) {
       console.log('[ACTIONS] Error: No strummer instance available');
@@ -786,18 +870,9 @@ export class Actions extends EventEmitter {
     }
 
     const progressionName = params[0] as string;
-    let incrementAmount = 1; // Default increment
-    let octave = 4; // Default octave
-
-    // Check for optional increment amount parameter
-    if (params.length > 1 && typeof params[1] === 'number') {
-      incrementAmount = Math.floor(params[1]);
-    }
-
-    // Check for optional octave parameter
-    if (params.length > 2 && typeof params[2] === 'number') {
-      octave = Math.floor(params[2]);
-    }
+    const incrementAmount = typeof params[1] === 'number' ? Math.floor(params[1]) : 1;
+    // Optional octave override; defaults to shared pitch state octave
+    const octave = typeof params[2] === 'number' ? Math.floor(params[2]) : this.pitchState.octave;
 
     if (!this.strummer) {
       console.log('[ACTIONS] Error: No strummer instance available');
@@ -920,27 +995,21 @@ export class Actions extends EventEmitter {
 
   /**
    * Set the strummer chord based on a chord mode entry at a specific button index.
-   * Translates the Roman numeral degree + quality from the mode into a chord string,
-   * then applies it to the strummer (same path as setChordInProgression).
+   * Mode name, root and octave are pulled from harmonic-context and pitch state,
+   * so this action only takes the button index.
+   *
+   * @param params - [buttonIndex]
    */
   setChordFromMode(params: unknown[], context: ActionContext): void {
-    if (params.length < 2) {
-      console.log('[ACTIONS] Error: set-chord-from-mode requires mode name and button index');
-      return;
-    }
-    if (typeof params[0] !== 'string') {
-      console.log('[ACTIONS] Error: First parameter must be mode name (string)');
-      return;
-    }
-    if (typeof params[1] !== 'number') {
-      console.log('[ACTIONS] Error: Second parameter must be button index (number)');
+    if (params.length < 1 || typeof params[0] !== 'number') {
+      console.log('[ACTIONS] Error: set-chord-from-mode requires button index (number)');
       return;
     }
 
-    const modeName = params[0] as string;
-    const buttonIndex = Math.floor(params[1] as number);
-    const octave = typeof params[2] === 'number' ? Math.floor(params[2] as number) : 4;
-    const root = typeof params[3] === 'string' ? (params[3] as string) : 'C';
+    const buttonIndex = Math.floor(params[0] as number);
+    const modeName = this.harmonicContextState.mode;
+    const root = this.harmonicContextState.root;
+    const octave = this.pitchState.octave;
     const preferFlat = root.includes('b');
 
     if (!this.strummer) {
@@ -991,6 +1060,28 @@ export class Actions extends EventEmitter {
     } catch (e) {
       console.log(`[ACTIONS] Error setting chord from mode: ${e}`);
     }
+  }
+
+  /**
+   * Cycle forward (+1) or backward (-1) through available chord modes.
+   * Updates harmonicContextState and emits config_changed so all clients
+   * receive the new mode in the next config broadcast.
+   *
+   * @param params - [direction] where direction >= 0 means next, < 0 means previous
+   */
+  cycleChordMode(params: unknown[], context: ActionContext): void {
+    const raw = typeof params[0] === 'number' ? params[0] : 1;
+    const direction = raw >= 0 ? 1 : -1;
+    const modes = Object.keys(this.chordModes);
+    if (modes.length === 0) return;
+    const currentIdx = modes.indexOf(this.harmonicContextState.mode);
+    const nextIdx = ((currentIdx + direction) + modes.length) % modes.length;
+    const nextMode = modes[nextIdx];
+    this.harmonicContextState.mode = nextMode;
+    this.harmonicContextStarting.startingMode = nextMode;
+    const button = context.button ?? 'Unknown';
+    console.log(`[ACTIONS] ${button} cycled chord mode '${modes[currentIdx < 0 ? 0 : currentIdx]}' → '${nextMode}'`);
+    this.emit('config_changed');
   }
 
   /**

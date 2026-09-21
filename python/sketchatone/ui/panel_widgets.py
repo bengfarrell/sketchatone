@@ -32,6 +32,8 @@ from kivy.uix.widget import Widget
 
 from . import theme
 from .bridge import UIBridge
+from ..models.note import Note
+from ..strummer.actions import DEGREE_TO_SEMITONES
 
 
 # ---- Pure helpers --------------------------------------------------------
@@ -2681,6 +2683,8 @@ def format_action(action: Any) -> str:
         kind = action.get('type', '?')
         if kind == 'chord-progression':
             return f"chord-progression: {action.get('progression', '?')} @ {action.get('octave', 4)}"
+        if kind == 'chord-mode':
+            return 'chord-mode'
         return kind
     return str(action)
 
@@ -2885,6 +2889,10 @@ _ACTION_CATALOG: Tuple[Dict[str, Any], ...] = (
          'default': 'major'},
         {'key': 'octave', 'label': 'Octave', 'type': 'number',
          'min': 0, 'max': 8, 'step': 1, 'default': 4},
+    )},
+    {'value': 'cycle-chord-mode', 'label': 'Cycle Chord Mode', 'params': (
+        {'key': 'direction', 'label': 'Direction', 'type': 'select',
+         'options': ('Next', 'Previous'), 'default': 'Next'},
     )},
 )
 
@@ -3790,6 +3798,8 @@ class ActionRulesPanel(BoxLayout):
         self._button_count = button_count
         self._full = extract_action_rules(None)
         self._progressions: Dict[str, list] = {}
+        self._device_keys: list = []
+        self._device_buttons: list = []
 
         # Form state — mirrors the web's @state fields.
         self._mode: str = 'list'  # 'list' | 'form'
@@ -3820,6 +3830,9 @@ class ActionRulesPanel(BoxLayout):
     def _on_config(self, payload: Any) -> None:
         self._full = extract_action_rules(payload)
         self._progressions = extract_chord_progressions(payload)
+        dev = extract_device_buttons(payload)
+        self._device_keys = dev.get('keys', [])
+        self._device_buttons = dev.get('buttons', [])
         if self._mode == 'list':
             self._schedule_render()
 
@@ -4132,7 +4145,19 @@ class ActionRulesPanel(BoxLayout):
         return wrap
 
     def _build_button_fields(self, form: GridLayout) -> None:
-        buttons = _enabled_buttons(self._button_count)
+        base = list(_enabled_buttons(self._button_count))
+        for entry in self._device_buttons:
+            btn_id = f"code:{entry['code']}"
+            if btn_id not in base:
+                base.append(btn_id)
+        for entry in self._device_keys:
+            btn_id = f"key:{entry['key']}"
+            if btn_id not in base:
+                base.append(btn_id)
+        # Also include the current button if it's not already in the list
+        if self._form_button and self._form_button not in base:
+            base.insert(0, self._form_button)
+        buttons = tuple(base)
         form.add_widget(_setting_row('Button', _dropdown(
             buttons, self._form_button,
             on_change=lambda v: self._set_attr('_form_button', v))))
@@ -4159,15 +4184,18 @@ class ActionRulesPanel(BoxLayout):
             on_change=lambda v: self._set_attr('_form_group_id',
                                                name_to_id.get(v, v)))))
         form.add_widget(_setting_row('Action Type', _dropdown(
-            ('chord-progression',), 'chord-progression')))
-        progs = self._progression_names()
-        form.add_widget(_setting_row('Chord Progression', _dropdown(
-            progs, self._form_group_progression,
-            on_change=lambda v: self._set_attr('_form_group_progression', v))))
-        oct_in = _number_input(self._form_group_octave, width_hint=1.0)
-        oct_in.bind(text=lambda _w, v: self._set_int_attr(
-            '_form_group_octave', v, default=4))
-        form.add_widget(_setting_row('Octave', oct_in))
+            ('chord-progression', 'chord-mode'),
+            self._form_group_action_type,
+            on_change=self._on_group_action_type_change)))
+        if self._form_group_action_type == 'chord-progression':
+            progs = self._progression_names()
+            form.add_widget(_setting_row('Chord Progression', _dropdown(
+                progs, self._form_group_progression,
+                on_change=lambda v: self._set_attr('_form_group_progression', v))))
+            oct_in = _number_input(self._form_group_octave, width_hint=1.0)
+            oct_in.bind(text=lambda _w, v: self._set_int_attr(
+                '_form_group_octave', v, default=4))
+            form.add_widget(_setting_row('Octave', oct_in))
         form.add_widget(_setting_row('Trigger', _dropdown(
             _TRIGGER_OPTIONS, self._form_group_trigger,
             on_change=lambda v: self._set_attr('_form_group_trigger', v))))
@@ -4240,6 +4268,10 @@ class ActionRulesPanel(BoxLayout):
                              for p in (defn.get('params') or ())}
         self._render()
 
+    def _on_group_action_type_change(self, value: str) -> None:
+        self._form_group_action_type = value
+        self._render()
+
     def _default_progression(self) -> str:
         names = self._progression_names()
         return names[0] if names else ''
@@ -4277,9 +4309,12 @@ class ActionRulesPanel(BoxLayout):
     def _save_group_rule(self) -> None:
         if not self._form_group_id:
             return
-        action = {'type': self._form_group_action_type,
-                  'progression': self._form_group_progression,
-                  'octave': self._form_group_octave}
+        if self._form_group_action_type == 'chord-mode':
+            action: dict = {'type': 'chord-mode'}
+        else:
+            action = {'type': self._form_group_action_type,
+                      'progression': self._form_group_progression,
+                      'octave': self._form_group_octave}
         rule = {'groupId': self._form_group_id,
                 'trigger': self._form_group_trigger, 'action': action}
         if self._form_name:
@@ -4358,6 +4393,11 @@ def _split_action(action: Any) -> Tuple[str, Dict[str, Any]]:
         for i, p in enumerate(defn.get('params') or ()):
             if i + 1 < len(action):
                 params[p['key']] = action[i + 1]
+        if name == 'cycle-chord-mode' and 'direction' in params:
+            try:
+                params['direction'] = 'Previous' if float(params['direction']) < 0 else 'Next'
+            except (TypeError, ValueError):
+                params['direction'] = 'Next'
         return name, params
     if isinstance(action, dict):
         kind = str(action.get('type') or 'none')
@@ -4379,6 +4419,8 @@ def _materialize_action(name: str, params: Dict[str, Any]) -> Any:
     if not pdefs:
         return name
     values = [params.get(p['key'], p.get('default')) for p in pdefs]
+    if name == 'cycle-chord-mode':
+        values = [1 if str(values[0]).lower() != 'previous' else -1]
     return [name, *values]
 
 
@@ -4406,6 +4448,8 @@ class GroupsPanel(BoxLayout):
         self._bridge = bridge
         self._button_count = button_count
         self._full = extract_action_rules(None)
+        self._device_keys: list = []    # [{'key': str, 'name': str}]
+        self._device_buttons: list = [] # [{'code': int, 'name': str}]
 
         # Form state
         self._mode: str = 'list'  # 'list' | 'form'
@@ -4425,6 +4469,9 @@ class GroupsPanel(BoxLayout):
 
     def _on_config(self, payload: Any) -> None:
         self._full = extract_action_rules(payload)
+        dev = extract_device_buttons(payload)
+        self._device_keys = dev['keys']
+        self._device_buttons = dev['buttons']
         if self._mode == 'list':
             self._schedule_render()
 
@@ -4571,7 +4618,16 @@ class GroupsPanel(BoxLayout):
         chip_h = int(theme.CONTROL_HEIGHT * 1.5)
         grid = GridLayout(cols=4, spacing=theme.SPACE_2, size_hint_y=None)
         grid.bind(minimum_height=grid.setter('height'))
-        for btn_id in _enabled_buttons(self._button_count):
+        all_btn_ids: list = list(_enabled_buttons(self._button_count))
+        for entry in self._device_buttons:
+            bid = f"code:{entry['code']}"
+            if bid not in all_btn_ids:
+                all_btn_ids.append(bid)
+        for entry in self._device_keys:
+            bid = f"key:{entry['key']}"
+            if bid not in all_btn_ids:
+                all_btn_ids.append(bid)
+        for btn_id in all_btn_ids:
             selected = btn_id in self._form_buttons
             grid.add_widget(_button_chip(
                 btn_id, selected=selected,
@@ -5307,187 +5363,271 @@ class ChordProgressionsPanel(BoxLayout):
 
 
 
-def extract_server_state(config_event: Any) -> dict:
-    """Pull config-management fields out of a ``'config'`` event.
-
-    The Server panel only needs ``currentConfigName``, the
-    ``availableConfigs`` list, and ``isSavedState`` (which controls
-    when the saved snapshot is refreshed for dirty tracking).
-    """
-    if not isinstance(config_event, dict):
-        return {'currentConfigName': None, 'availableConfigs': [],
-                'isSavedState': False, 'config': None, 'throttleMs': 150}
-    try:
-        throttle = int(config_event.get('throttleMs', 150))
-    except (TypeError, ValueError):
-        throttle = 150
-    return {
-        'currentConfigName': config_event.get('currentConfigName'),
-        'availableConfigs': list(config_event.get('availableConfigs') or []),
-        'isSavedState': bool(config_event.get('isSavedState')),
-        'config': config_event.get('config'),
-        'throttleMs': throttle,
-    }
+def _chord_name_from_degree(degree: str, quality: str, root: str) -> str:
+    """Compute a chord name (e.g. 'Am') from a degree, quality, and root note."""
+    semitones = DEGREE_TO_SEMITONES.get(degree)
+    if semitones is None:
+        return '?'
+    root_clean = root.rstrip('0123456789')
+    root_idx = Note.index_of_notation(root_clean)
+    if root_idx == -1:
+        return '?'
+    chord_idx = (root_idx + semitones) % 12
+    chord_root = Note.notation_at_index(chord_idx, prefer_flat='b' in root_clean)
+    return chord_root + quality
 
 
-def compute_dirty(current_config: Any, saved_snapshot: Optional[str]) -> bool:
-    """``True`` when the current config differs from the last saved snapshot.
+class _ChordCell(BoxLayout):
+    """One cell in the chord mode grid."""
 
-    Snapshots are JSON strings (kept deterministic via ``sort_keys``) so a
-    cheap string compare answers the question without recursing through
-    nested dicts. A missing snapshot means we've never seen a saved
-    state, so we report clean (the Save button will pick up the next
-    real change).
-    """
-    import json
-    if saved_snapshot is None or current_config is None:
-        return False
-    try:
-        current = json.dumps(current_config, sort_keys=True)
-    except (TypeError, ValueError):
-        return False
-    return current != saved_snapshot
+    _ACTIVE_BG = (0.259, 0.396, 0.839, 1.0)
+    _IDLE_BG   = (0.176, 0.196, 0.235, 1.0)
+    _IDLE_FG   = (1.0, 1.0, 1.0, 0.95)
+    _IDLE_DIM  = (1.0, 1.0, 1.0, 0.55)
+
+    def __init__(self, button_label: str, degree: str, chord: str, **kwargs) -> None:
+        super().__init__(orientation='vertical', **kwargs)
+        self._active = False
+        self._bg_color = None
+        with self.canvas.before:
+            from kivy.graphics import Color, RoundedRectangle
+            self._bg_color = Color(*self._IDLE_BG)
+            self._bg_rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[4])
+        self.bind(pos=self._update_rect, size=self._update_rect)
+
+        # Key label — top-right, padding provided by a BoxLayout wrapper so
+        # it isn't eaten by the text_size constraint.
+        key_row = BoxLayout(
+            orientation='horizontal',
+            size_hint=(1, None), height=36,
+            padding=[0, 10, 14, 0],  # top=10, right=14
+        )
+        key_row.add_widget(Widget())  # spacer pushes label to the right
+        key_lbl = Label(
+            text=button_label, font_size='13sp',
+            color=self._IDLE_DIM,
+            size_hint=(None, 1), width=80,
+            halign='right', valign='middle',
+        )
+        key_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self._key_label = key_lbl
+        key_row.add_widget(key_lbl)
+        self.add_widget(key_row)
+
+        degree_lbl = Label(
+            text=degree, font_size='27sp',
+            bold=True, color=self._IDLE_FG,
+            size_hint=(1, 1),
+            halign='center', valign='center',
+        )
+        degree_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self._degree_label = degree_lbl
+        self.add_widget(degree_lbl)
+
+        # Chord label — bottom-center, padding via wrapper.
+        chord_row = BoxLayout(
+            orientation='horizontal',
+            size_hint=(1, None), height=36,
+            padding=[0, 0, 0, 10],  # bottom=10
+        )
+        chord_lbl = Label(
+            text=chord, font_size='14sp',
+            color=self._IDLE_DIM,
+            size_hint=(1, 1),
+            halign='center', valign='middle',
+        )
+        chord_lbl.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self._chord_label = chord_lbl
+        chord_row.add_widget(chord_lbl)
+        self.add_widget(chord_row)
+
+    def _update_rect(self, *_) -> None:
+        self._bg_rect.pos = self.pos
+        self._bg_rect.size = self.size
+
+    def set_active(self, active: bool) -> None:
+        if active == self._active:
+            return
+        self._active = active
+        self._bg_color.rgba = self._ACTIVE_BG if active else self._IDLE_BG
+        self._degree_label.color = (1, 1, 1, 1)       if active else self._IDLE_FG
+        self._chord_label.color  = (1, 1, 1, 0.85)    if active else self._IDLE_DIM
+        self._key_label.color    = (1, 1, 1, 0.85)    if active else self._IDLE_DIM
 
 
-class ServerSettingsPanel(BoxLayout):
-    """Config load surface.
+class ChordModePanel(BoxLayout):
+    """Native mirror of the web Chord Mode performance panel.
 
-    Lists every ``.json`` file in the server's config directory, marks
-    the active one, and lets the user switch between them. Every config
-    edit auto-persists on the backend, so this panel exposes no explicit
-    Save; a richer config-management surface is planned to replace it.
-    """
+    Displays a grid of chords for the active chord mode, derived from
+    ``strummer.chordModes`` and ``strummer.harmonicContext``. Subscribes
+    to ``'config'`` to populate the grid and to ``'action'`` to highlight
+    the cell that was most recently triggered."""
+
+    _COLS = 3
+    _CLEAR_DELAY = 0.75   # seconds before the active highlight fades
 
     def __init__(self, bridge: Optional[UIBridge] = None, **kwargs) -> None:
-        super().__init__(orientation='vertical', spacing=theme.SPACE_3, **kwargs)
+        super().__init__(orientation='vertical', spacing=0, **kwargs)
         self._bridge = bridge
-        self._current_name: Optional[str] = None
-        self._available: list = []
-        self._throttle_ms: int = 150
+        self._chord_modes: dict = {}
+        self._mode_name: str = ''
+        self._root: str = 'C'
+        self._active_index: Optional[int] = None
+        self._cells: list = []
+        self._clear_event = None
+        self._chord_mode_buttons: list = []
 
-        self.add_widget(self._build_header_row())
-        self.add_widget(self._build_config_list())
-        self.add_widget(self._build_create_row())
-        # Push remaining space below the controls.
-        self.add_widget(Widget())
+        self._header = Label(
+            text='', font_size='9.5sp',
+            color=theme.TEXT_MUTED,
+            size_hint=(1, None), height=30,
+            halign='left', valign='middle',
+            padding_x=12,
+        )
+        self._header.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self.add_widget(self._header)
+
+        # Mode strip: row of pill labels, one per available chord mode
+        self._mode_strip = BoxLayout(
+            orientation='horizontal', spacing=6,
+            size_hint=(1, None), height=0, padding=[12, 4, 12, 4],
+        )
+        self.add_widget(self._mode_strip)
+
+        self._grid_container = BoxLayout(orientation='vertical')
+        self.add_widget(self._grid_container)
 
         if bridge is not None:
             bridge.on('config', self._on_config)
-
-    # ---- Rows ---------------------------------------------------------
-
-    def _build_header_row(self) -> GridLayout:
-        """Status | Throttle stepper, packed into a 2-column grid."""
-        form = _two_col_form()
-
-        status_cell = BoxLayout(orientation='horizontal', size_hint_y=None,
-                                height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
-        self._status = Label(
-            text='Current: (none)', color=theme.TEXT_SECONDARY,
-            font_size='8.5sp', halign='left', valign='middle',
-        )
-        self._status.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        status_cell.add_widget(self._status)
-        form.add_widget(status_cell)
-
-        self._throttle_stepper = _NumberStepper(
-            value=self._throttle_ms,
-            min_value=0, max_value=250, step=1, decimals=0,
-            on_commit=self._on_throttle_commit,
-        )
-        form.add_widget(_setting_row('Throttle (ms)', self._throttle_stepper))
-
-        return form
-
-    def _build_create_row(self) -> BoxLayout:
-        row = BoxLayout(orientation='horizontal', size_hint_y=None,
-                        height=theme.CONTROL_HEIGHT, spacing=theme.SPACE_2)
-        row.add_widget(_setting_label('New config'))
-        self._create_input = TextInput(
-            text='', multiline=False, write_tab=False,
-            size_hint=(1, None), height=theme.CONTROL_HEIGHT, font_size='9.5sp',
-            background_color=theme.BG_SURFACE_ALT,
-            foreground_color=theme.TEXT_PRIMARY,
-            cursor_color=theme.ACCENT,
-            hint_text='name (.json optional)',
-        )
-        self._create_input.bind(on_text_validate=lambda *_: self._create())
-        row.add_widget(self._create_input)
-        self._create_btn = _mode_button('Create', active=False)
-        self._create_btn.size = (104, theme.CONTROL_HEIGHT)
-        self._create_btn.font_size = '14sp'
-        self._create_btn.bind(on_release=lambda *_: self._create())
-        row.add_widget(self._create_btn)
-        return row
-
-    def _build_config_list(self) -> BoxLayout:
-        wrap = BoxLayout(orientation='vertical', spacing=theme.SPACE_1)
-        header = Label(
-            text='[b]Available configs[/b]', markup=True, color=theme.TEXT_PRIMARY,
-            font_size='9.5sp', size_hint_y=None, height=22,
-            halign='left', valign='middle',
-        )
-        header.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
-        wrap.add_widget(header)
-        scroll = ScrollView(do_scroll_x=False, bar_width=4)
-        self._list_items = BoxLayout(orientation='vertical', size_hint_y=None,
-                                     spacing=theme.SPACE_1)
-        self._list_items.bind(minimum_height=self._list_items.setter('height'))
-        scroll.add_widget(self._list_items)
-        wrap.add_widget(scroll)
-        return wrap
-
-    # ---- Events from the bridge --------------------------------------
+            bridge.on('action', self._on_action)
 
     def _on_config(self, payload: Any) -> None:
-        state = extract_server_state(payload)
-        self._current_name = state['currentConfigName']
-        self._available = state['availableConfigs']
-        self._throttle_ms = state['throttleMs']
-        self._throttle_stepper.set_value(self._throttle_ms)
-        self._sync_header()
-        self._populate_list()
-
-    # ---- User actions -------------------------------------------------
-
-    def _load(self, name: str) -> None:
-        if self._bridge is None or name == self._current_name:
+        if not isinstance(payload, dict):
             return
-        self._bridge.load_config(name)
+        strummer = (payload.get('config') or {}).get('strummer') or {}
+        self._chord_modes = strummer.get('chordModes') or {}
+        hc = strummer.get('harmonicContext') or {}
+        # harmonicContextMode is the runtime mode (may differ from startingMode after cycling)
+        runtime_mode = payload.get('harmonicContextMode')
+        self._mode_name = runtime_mode if runtime_mode else hc.get('startingMode', '')
+        starting_root: str = hc.get('startingRoot', 'C')
+        pitch_offset: int = int(payload.get('pitchOffset') or 0)
+        if pitch_offset:
+            root_idx = Note.index_of_notation(starting_root.rstrip('0123456789'))
+            if root_idx != -1:
+                shifted = ((root_idx + pitch_offset) % 12 + 12) % 12
+                starting_root = Note.notation_at_index(shifted, 'b' in starting_root)
+        self._root = starting_root
 
-    def _create(self) -> None:
-        if self._bridge is None:
+        action_rules = strummer.get('actionRules') or {}
+        chord_mode_rule = next(
+            (r for r in (action_rules.get('groupRules') or [])
+             if (r.get('action') or {}).get('type') == 'chord-mode'),
+            None,
+        )
+        if chord_mode_rule:
+            group_id = chord_mode_rule.get('groupId', '')
+            group = next(
+                (g for g in (action_rules.get('groups') or [])
+                 if g.get('id') == group_id),
+                None,
+            )
+            self._chord_mode_buttons = list(group.get('buttons') or []) if group else []
+        else:
+            self._chord_mode_buttons = []
+
+        self._rebuild_grid()
+
+    def _on_action(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
             return
-        name = (self._create_input.text or '').strip()
-        if not name:
+        if payload.get('action') != 'set-chord-from-mode':
             return
-        self._bridge.create_config(name)
-        self._create_input.text = ''
+        trigger = payload.get('trigger')
+        params = payload.get('params') or []
+        if trigger == 'release':
+            self._set_active(None)
+        elif params and isinstance(params[0], (int, float)):
+            self._set_active(int(params[0]))
 
-    def _on_throttle_commit(self, raw: float) -> None:
-        value = int(raw)
-        if value == self._throttle_ms:
+    def _set_active(self, index: Optional[int]) -> None:
+        from kivy.clock import Clock
+        if self._clear_event is not None:
+            self._clear_event.cancel()
+            self._clear_event = None
+        self._active_index = index
+        self._refresh_active_states()
+        if index is not None:
+            self._clear_event = Clock.schedule_once(
+                lambda _dt: self._set_active(None), self._CLEAR_DELAY)
+
+    def _refresh_active_states(self) -> None:
+        for i, cell in enumerate(self._cells):
+            cell.set_active(i == self._active_index)
+
+    def _rebuild_mode_strip(self) -> None:
+        self._mode_strip.clear_widgets()
+        all_modes = list(self._chord_modes.keys())
+        if len(all_modes) <= 1:
+            self._mode_strip.height = 0
             return
-        self._throttle_ms = value
-        if self._bridge is not None:
-            self._bridge.set_throttle(value)
+        self._mode_strip.height = 30
+        for m in all_modes:
+            is_current = m == self._mode_name
+            pill = Label(
+                text=m,
+                font_size='11sp',
+                size_hint=(None, 1),
+                color=theme.ACCENT if is_current else theme.TEXT_MUTED,
+            )
+            pill.bind(texture_size=lambda w, ts: setattr(w, 'width', ts[0] + 14))
+            self._mode_strip.add_widget(pill)
 
-    # ---- View sync helpers -------------------------------------------
-
-    def _sync_header(self) -> None:
-        name = self._current_name or '(none)'
-        self._status.text = f'Current: {name}'
-
-    def _populate_list(self) -> None:
-        self._list_items.clear_widgets()
-        if not self._available:
-            self._list_items.add_widget(_empty_row('No saved configs'))
+    def _rebuild_grid(self) -> None:
+        self._grid_container.clear_widgets()
+        self._cells = []
+        self._rebuild_mode_strip()
+        entries = self._chord_modes.get(self._mode_name) or []
+        if not entries:
+            self._header.text = self._mode_name or ''
+            placeholder = Label(
+                text='No chord mode configured',
+                color=theme.TEXT_MUTED,
+                font_size='9.5sp',
+            )
+            self._grid_container.add_widget(placeholder)
             return
-        for name in self._available:
-            is_active = (name == self._current_name)
-            btn = _port_button(name, is_active)
-            btn.bind(on_release=lambda _b, n=name: self._load(n))
-            self._list_items.add_widget(btn)
+
+        self._header.text = f'{self._root}  —  {self._mode_name}'
+
+        cols = self._COLS
+        rows = (len(entries) + cols - 1) // cols
+        grid = GridLayout(
+            cols=cols, rows=rows,
+            spacing=1,
+            size_hint=(1, 1),
+        )
+
+        for idx, entry in enumerate(entries):
+            degree = entry.get('degree', '')
+            quality = entry.get('quality', '')
+            chord = _chord_name_from_degree(degree, quality, self._root)
+            btn_id = self._chord_mode_buttons[idx] if idx < len(self._chord_mode_buttons) else ''
+            colon = btn_id.find(':')
+            btn_lbl = btn_id[colon + 1:] if colon >= 0 else btn_id
+
+            cell = _ChordCell(
+                button_label=btn_lbl,
+                degree=degree + quality,
+                chord=chord,
+                size_hint=(1, 1),
+            )
+            if idx == self._active_index:
+                cell.set_active(True)
+            grid.add_widget(cell)
+            self._cells.append(cell)
+
+        self._grid_container.add_widget(grid)
 
 
 def make_panel(panel_id: str, label: str, bridge: Optional[UIBridge]) -> BoxLayout:
@@ -5496,6 +5636,8 @@ def make_panel(panel_id: str, label: str, bridge: Optional[UIBridge]) -> BoxLayo
         return EventsPanel(bridge=bridge)
     if panel_id == 'performance':
         return PerformancePanel(bridge=bridge)
+    if panel_id == 'chordMode':
+        return ChordModePanel(bridge=bridge)
     if panel_id == 'tabletVisualizer':
         return TabletVisualizerPanel(bridge=bridge)
     if panel_id == 'midiInput':
@@ -5516,8 +5658,6 @@ def make_panel(panel_id: str, label: str, bridge: Optional[UIBridge]) -> BoxLayo
         return DeviceButtonsPanel(bridge=bridge)
     if panel_id == 'chordProgressions':
         return ChordProgressionsPanel(bridge=bridge)
-    if panel_id == 'serverSettings':
-        return ServerSettingsPanel(bridge=bridge)
     if panel_id in PARAMETER_MAPPING_SPECS:
         return ParameterMappingPanel(PARAMETER_MAPPING_SPECS[panel_id], bridge=bridge)
     return PlaceholderPanel(label=label)

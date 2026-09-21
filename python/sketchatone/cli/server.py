@@ -699,7 +699,15 @@ class StrummerWebSocketServer:
 
         # Load config
         if self.strummer_config_path:
-            self.config = MidiStrummerConfig.from_json_file(self.strummer_config_path)
+            try:
+                self.config = MidiStrummerConfig.from_json_file(self.strummer_config_path)
+            except Exception as exc:
+                print(colored(
+                    f'[Config] Failed to load {self.strummer_config_path}: {exc}',
+                    Colors.RED,
+                ))
+                print(colored('[Config] Falling back to default config', Colors.YELLOW))
+                self.config = MidiStrummerConfig()
         else:
             self.config = MidiStrummerConfig()
 
@@ -762,6 +770,8 @@ class StrummerWebSocketServer:
             strummer=self.strummer,
             chord_progressions=self.config.strummer.chord_progressions,
             chord_modes=self.config.strummer.chord_modes,
+            pitch_starting=self.config.strummer.pitch,
+            harmonic_context_starting=self.config.strummer.harmonic_context,
         )
 
         # Configure action rules so button-to-action mapping works
@@ -769,6 +779,9 @@ class StrummerWebSocketServer:
 
         # Listen for action events to broadcast to clients
         self.actions.on('action_executed', self._broadcast_action_event)
+
+        # Broadcast config whenever transpose or other runtime state changes
+        self.actions.on('config_changed', self._on_actions_config_changed)
 
         # Execute any startup rules defined in the config
         self.actions.execute_startup_rules()
@@ -1464,6 +1477,8 @@ class StrummerWebSocketServer:
             'currentConfigName': self.current_config_name,
             'availableConfigs': self._list_configs(),
             'isSavedState': is_saved_state,
+            'pitchOffset': self.actions.get_pitch_offset(),
+            'harmonicContextMode': self.actions.get_harmonic_context_mode(),
         }
 
     def _on_strummer_notes_changed(self) -> None:
@@ -1557,6 +1572,11 @@ class StrummerWebSocketServer:
                 gc.collect(0)
                 gen0_count += 1
                 self._perf.mark_now('gc.idle_sweep_gen0', _t)
+
+    def _on_actions_config_changed(self) -> None:
+        """Called when Actions emits config_changed (e.g. after a transpose). Broadcasts
+        the updated config (including the new pitchOffset) to all connected clients."""
+        self.broadcast_config()
 
     def _broadcast_action_event(self, event: Dict[str, Any]) -> None:
         """
@@ -1863,6 +1883,13 @@ class StrummerWebSocketServer:
             # Update chord modes in Actions if they changed
             if path == 'strummer.chordModes' and self.config.strummer.chord_modes:
                 self.actions.set_chord_modes(self.config.strummer.chord_modes)
+
+            # Re-seed pitch or harmonic-context runtime state when authored
+            # starting values change.
+            if path == 'strummer.pitch':
+                self.actions.set_pitch_starting_config(self.config.strummer.pitch)
+            if path == 'strummer.harmonicContext':
+                self.actions.set_harmonic_context_starting_config(self.config.strummer.harmonic_context)
 
             # Update action rules if they changed
             if path == 'strummer.actionRules':
@@ -2529,6 +2556,23 @@ class StrummerWebSocketServer:
         if isinstance(value, dict):
             value = self._convert_dict_to_config(snake_last, value)
 
+        # Coerce string values to match the type of the existing attribute so
+        # form inputs from the web UI (which may arrive as strings) don't
+        # corrupt the saved config with the wrong JSON type.
+        if hasattr(current, snake_last) and isinstance(value, str):
+            existing = getattr(current, snake_last)
+            if existing is not None and not isinstance(existing, bool):
+                if isinstance(existing, int):
+                    try:
+                        value = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                elif isinstance(existing, float):
+                    try:
+                        value = float(value)
+                    except (ValueError, TypeError):
+                        pass
+
         if hasattr(current, snake_last):
             setattr(current, snake_last, value)
         elif hasattr(current, last_part):
@@ -2727,9 +2771,9 @@ class StrummerWebSocketServer:
             pressure_multiplier = repeater_config['pressure_multiplier']
             frequency_multiplier = repeater_config['frequency_multiplier']
 
-            # Get transpose state from actions
-            transpose_enabled = self.actions.is_transpose_active()
-            transpose_semitones = self.actions.get_transpose_semitones()
+            # Get transpose state from shared pitch offset
+            transpose_semitones = self.actions.get_pitch_offset()
+            transpose_enabled = transpose_semitones != 0
 
             if event:
                 # Create strum event data

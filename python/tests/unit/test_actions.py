@@ -307,10 +307,10 @@ class TestActionsToggleTranspose:
         config = MidiStrummerConfig()
         actions = Actions(config=config)
 
-        # Transpose state is now managed internally by Actions
-        assert actions.get_transpose_config()['active'] is False
+        # Pitch offset is the canonical transpose state
+        assert actions.get_pitch_offset() == 0
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is True
+        assert actions.get_pitch_offset() != 0
 
     def test_toggle_transpose_off(self):
         """Test toggling transpose off."""
@@ -319,11 +319,11 @@ class TestActionsToggleTranspose:
 
         # First toggle on
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is True
+        assert actions.get_pitch_offset() != 0
 
         # Then toggle off
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is False
+        assert actions.get_pitch_offset() == 0
 
 
 class TestActionsChordProgression:

@@ -129,7 +129,10 @@ class MidiStrummer:
         self.actions = Actions(
             config=self.config,
             strummer=self.strummer,
-            chord_progressions=self.config.strummer.chord_progressions
+            chord_progressions=self.config.strummer.chord_progressions,
+            chord_modes=self.config.strummer.chord_modes,
+            pitch_starting=self.config.strummer.pitch,
+            harmonic_context_starting=self.config.strummer.harmonic_context,
         )
 
         # Configure action rules so button-to-action mapping works
@@ -470,9 +473,9 @@ class MidiStrummer:
             pressure_multiplier = repeater_config['pressure_multiplier']
             frequency_multiplier = repeater_config['frequency_multiplier']
 
-            # Get transpose state from actions
-            transpose_enabled = self.actions.is_transpose_active()
-            transpose_semitones = self.actions.get_transpose_semitones()
+            # Get transpose state from shared pitch offset
+            transpose_semitones = self.actions.get_pitch_offset()
+            transpose_enabled = transpose_semitones != 0
 
             if event:
                 self.last_event = event

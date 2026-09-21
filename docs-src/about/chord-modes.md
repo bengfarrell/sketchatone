@@ -7,9 +7,41 @@ description: Consistent harmonic layouts for keypad-based chord control
 
 Chord modes solve a specific problem: when each song maps different chords to the same physical buttons, you build no muscle memory and have to re-learn the layout for every song.
 
-The alternative is to assign each button a **harmonic function** — a Roman numeral scale degree — and let a **transpose control** handle the key. The physical gesture for a I–V–vi–IV progression is then the same whether you're playing in C, G, or Eb. The chords change; your fingers don't.
+The alternative is to assign each button a **harmonic function** — a Roman numeral scale degree — and let a shared harmonic context handle the key and quality. The physical gesture for a I–V–vi–IV progression is then the same whether you're playing in C, G, or E♭. The chords change; your fingers don't.
 
-`chordModes` defines what chord *quality* plays at each scale degree for a given mode. The transpose setting determines the actual root.
+`chordModes` defines what chord *quality* plays at each scale degree for a given mode. Which mode is active, and which root it's transposed to, are set in `strummer.harmonicContext` and can be shifted at runtime by transpose actions.
+
+## Configuration Overview
+
+Three top-level sections work together:
+
+- **`strummer.chordModes`** — the layouts themselves (degree + quality per button).
+- **`strummer.harmonicContext`** — the starting `root` (e.g. `"C"`) and `mode` name (e.g. `"major"`).
+- **`strummer.pitch`** — the shared `startingOffset` (semitones applied to every strummed note) and `startingOctave` (default register for chord-setting actions).
+
+A `chord-mode` group rule then binds a set of buttons to those settings — the group action itself carries no root/mode/octave, so multiple button groups can share a single harmonic context.
+
+```json
+{
+  "strummer": {
+    "pitch":            { "startingOffset": 0, "startingOctave": 4 },
+    "harmonicContext":  { "startingRoot": "C", "startingMode": "major" },
+    "chordModes":       { "major": [ /* … 9 entries … */ ] },
+    "actionRules": {
+      "groups": [
+        { "id": "chord-buttons", "name": "Chord Buttons",
+          "buttons": ["button:1","button:2","button:3","button:4","button:5","button:6","button:7","button:8","button:9"] }
+      ],
+      "groupRules": [
+        { "id": "chord-mode-rule", "groupId": "chord-buttons", "trigger": "press",
+          "action": { "type": "chord-mode" } }
+      ]
+    }
+  }
+}
+```
+
+The `transpose` and `toggle-transpose` actions mutate the shared pitch offset, so pressing one of them shifts the effective root of every chord-mode button without changing the layout. See **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)** for the full config reference.
 
 ## How It Works
 
@@ -33,7 +65,7 @@ Each mode is an array of 9 objects, one per button. Each object has a `degree` (
 
 **Array position = button number.** Index 0 is button 1, index 1 is button 2, and so on up to index 8 = button 9. This makes the keypad layout explicit and readable directly from the config.
 
-In C with `major` mode: button 5 (index 4, degree `I`, quality `""`) produces a C major triad. Transposing to G, the same button produces G major. The finger movement never changes.
+With `harmonicContext.startingRoot: "C"` and `startingMode: "major"`, button 5 (index 4, degree `I`, quality `""`) produces a C major triad. Applying a `+7` pitch offset shifts the effective root to G and the same button produces G major. The finger movement never changes.
 
 ## 3×3 Keypad Layout
 
@@ -184,3 +216,4 @@ Use progressions when you want to lock in a song's exact chord order. Use chord 
 
 - **[Chords & Progressions](/about/chords-and-progressions/)** — Song-specific chord lists
 - **[Action Rules](/about/action-rules/)** — Mapping buttons to chord changes
+- **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)** — `strummer.pitch` and `strummer.harmonicContext` reference

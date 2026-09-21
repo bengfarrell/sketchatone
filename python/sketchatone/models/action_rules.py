@@ -31,36 +31,35 @@ ActionDefinition = Union[str, List[Any], None]
 class GroupAction:
     """
     Group action definition - action with parameters for button groups.
+
+    Chord-mode actions no longer carry `mode`, `root`, or `octave` — those are
+    resolved from the shared harmonic-context and pitch state at press time.
+    Chord-progression actions carry the progression name; `octave` is optional
+    and defaults to the shared pitch state octave.
     """
     type: GroupActionType
-    octave: int = 4
     progression: Optional[str] = None  # for chord-progression type
-    mode: Optional[str] = None         # for chord-mode type
-    root: Optional[str] = None         # for chord-mode type
+    octave: Optional[int] = None       # optional override for chord-progression
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'GroupAction':
         """Create from dictionary"""
+        octave = data.get('octave')
         return cls(
             type=data.get('type', 'chord-progression'),
-            octave=data.get('octave', 4),
             progression=data.get('progression'),
-            mode=data.get('mode'),
-            root=data.get('root'),
+            octave=int(octave) if isinstance(octave, (int, float)) else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         result: Dict[str, Any] = {
             'type': self.type,
-            'octave': self.octave,
         }
         if self.progression is not None:
             result['progression'] = self.progression
-        if self.mode is not None:
-            result['mode'] = self.mode
-        if self.root is not None:
-            result['root'] = self.root
+        if self.octave is not None:
+            result['octave'] = self.octave
         return result
 
 
@@ -454,13 +453,16 @@ class ActionRulesConfig:
                     if rule_trigger == trigger:
                         # Handle group action based on type
                         if group_rule.action.type == 'chord-progression':
+                            action_params: List[Any] = ['set-chord-in-progression', group_rule.action.progression or '', button_index]
+                            if group_rule.action.octave is not None:
+                                action_params.append(group_rule.action.octave)
                             return {
-                                'action': ['set-chord-in-progression', group_rule.action.progression, button_index, group_rule.action.octave],
+                                'action': action_params,
                                 'rule_id': group_rule.id
                             }
                         if group_rule.action.type == 'chord-mode':
                             return {
-                                'action': ['set-chord-from-mode', group_rule.action.mode, button_index, group_rule.action.octave, group_rule.action.root or 'C'],
+                                'action': ['set-chord-from-mode', button_index],
                                 'rule_id': group_rule.id
                             }
 

@@ -267,10 +267,10 @@ describe('Actions toggle-transpose', () => {
     const config = new MidiStrummerConfig();
     const actions = new Actions(config);
 
-    // Transpose state is now managed internally by Actions
-    expect(actions.getTransposeConfig().active).toBe(false);
+    // Transpose is now expressed as a non-zero pitch offset.
+    expect(actions.getPitchOffset()).toBe(0);
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(true);
+    expect(actions.getPitchOffset()).not.toBe(0);
   });
 
   it('should toggle transpose off', () => {
@@ -279,11 +279,11 @@ describe('Actions toggle-transpose', () => {
 
     // First toggle on
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(true);
+    expect(actions.getPitchOffset()).not.toBe(0);
 
     // Then toggle off
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(false);
+    expect(actions.getPitchOffset()).toBe(0);
   });
 });
 

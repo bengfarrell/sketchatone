@@ -19,10 +19,11 @@ const DEGREE_TO_SEMITONES: Record<string, number> = {
   'VII': 11, 'vii': 11,
 };
 
-// Numpad key for each visual grid position (reading order top-left → bottom-right).
-// Tells the user which numpad key to bind to each slot so the layout aligns with
-// the standard keypad (7/8/9 top, 4/5/6 middle, 1/2/3 bottom).
-const NUMPAD_KEYS = [7, 8, 9, 4, 5, 6, 1, 2, 3];
+function buttonLabel(buttonId: string | undefined): string {
+  if (!buttonId) return '';
+  const colonIdx = buttonId.indexOf(':');
+  return colonIdx >= 0 ? buttonId.slice(colonIdx + 1) : buttonId;
+}
 
 function computeChordName(degree: string, quality: string, root: string): string {
   const semitones = DEGREE_TO_SEMITONES[degree];
@@ -66,7 +67,8 @@ export class ChordModePerformance extends LitElement {
       border-right: 1px solid var(--sketch-color-gray-400);
       border-bottom: 1px solid var(--sketch-color-gray-400);
       min-height: 70px;
-      transition: background 100ms ease;
+      /* Slow fade-out when active class is removed */
+      transition: background 750ms ease, color 750ms ease;
     }
 
     .cell-key {
@@ -77,10 +79,13 @@ export class ChordModePerformance extends LitElement {
       font-family: var(--sketch-font-mono, monospace);
       color: var(--sketch-color-gray-500);
       line-height: 1;
+      transition: color 750ms ease;
     }
 
     .cell.active .cell-key {
-      color: var(--sketch-color-accent-500);
+      color: white;
+      /* Quick transition in when active class is added */
+      transition: color 50ms ease;
     }
 
     .cell:nth-child(3n) {
@@ -92,7 +97,9 @@ export class ChordModePerformance extends LitElement {
     }
 
     .cell.active {
-      background: var(--sketch-color-accent-100, #e8f0fe);
+      background: var(--sketch-color-accent-500, #4265d6);
+      /* Quick transition in when active class is added */
+      transition: background 50ms ease, color 50ms ease;
     }
 
     .cell-degree {
@@ -102,10 +109,12 @@ export class ChordModePerformance extends LitElement {
       font-family: var(--sketch-font-mono, monospace);
       margin-bottom: 4px;
       line-height: 1;
+      transition: color 750ms ease;
     }
 
     .cell.active .cell-degree {
-      color: var(--sketch-color-accent-700, #3352b0);
+      color: white;
+      transition: color 50ms ease;
     }
 
     .cell-chord {
@@ -114,10 +123,39 @@ export class ChordModePerformance extends LitElement {
       color: var(--sketch-color-gray-600);
       font-family: var(--sketch-font-sans);
       line-height: 1;
+      transition: color 750ms ease;
     }
 
     .cell.active .cell-chord {
-      color: var(--sketch-color-accent-600, #4265d6);
+      color: rgba(255, 255, 255, 0.85);
+      transition: color 50ms ease;
+    }
+
+    .mode-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px 12px 8px;
+      border-bottom: 1px solid var(--sketch-color-gray-400);
+    }
+
+    .mode-pill {
+      font-size: 10px;
+      font-family: var(--sketch-font-sans);
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid var(--sketch-color-gray-400);
+      color: var(--sketch-color-gray-500);
+      background: transparent;
+      text-transform: capitalize;
+      line-height: 1.4;
+    }
+
+    .mode-pill.current {
+      border-color: var(--sketch-color-accent-500, #4265d6);
+      color: var(--sketch-color-accent-500, #4265d6);
+      background: color-mix(in srgb, var(--sketch-color-accent-500, #4265d6) 12%, transparent);
+      font-weight: 600;
     }
 
     .empty {
@@ -141,6 +179,12 @@ export class ChordModePerformance extends LitElement {
   @property({ type: Number })
   octave: number = 4;
 
+  @property({ type: Array })
+  buttons: string[] = [];
+
+  @property({ type: Array })
+  allModeNames: string[] = [];
+
   @property({ type: Number })
   activeIndex: number | null = null;
 
@@ -151,17 +195,27 @@ export class ChordModePerformance extends LitElement {
       return html`<div class="empty">No chord mode configured</div>`;
     }
 
+    const modeStrip = this.allModeNames.length > 1
+      ? html`
+        <div class="mode-strip">
+          ${this.allModeNames.map((m) => html`
+            <span class="mode-pill ${m === this.modeName ? 'current' : ''}">${m}</span>
+          `)}
+        </div>`
+      : '';
+
     return html`
       <div class="header">${this.root} — ${this.modeName}</div>
+      ${modeStrip}
       <div class="grid">
         ${entries.map((entry, idx) => {
-          const numpadKey = NUMPAD_KEYS[idx];
-          if (!entry) return html`<div class="cell"><span class="cell-key">${numpadKey}</span></div>`;
+          const label = buttonLabel(this.buttons[idx]);
+          if (!entry) return html`<div class="cell"><span class="cell-key">${label}</span></div>`;
           const chord = computeChordName(entry.degree, entry.quality, this.root);
           const degreeLabel = entry.degree + (entry.quality || '');
           return html`
             <div class="cell ${idx === this.activeIndex ? 'active' : ''}">
-              <span class="cell-key">${numpadKey}</span>
+              <span class="cell-key">${label}</span>
               <span class="cell-degree">${degreeLabel}</span>
               <span class="cell-chord">${chord}</span>
             </div>

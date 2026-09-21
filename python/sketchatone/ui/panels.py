@@ -27,6 +27,7 @@ class CategoryInfo:
 
 PANELS: List[PanelInfo] = [
     PanelInfo('performance',       'Performance'),
+    PanelInfo('chordMode',         'Chord Mode'),
     PanelInfo('midiDevices',       'MIDI Devices'),
     PanelInfo('tabletVisualizer',  'Tablet'),
     PanelInfo('midiInput',         'MIDI In'),
@@ -47,7 +48,7 @@ PANELS: List[PanelInfo] = [
 # category fall through to the first category's first panel.
 CATEGORIES: List[CategoryInfo] = [
     CategoryInfo('monitor', 'Monitor', (
-        'performance', 'midiDevices', 'tabletVisualizer',
+        'performance', 'chordMode', 'midiDevices', 'tabletVisualizer',
         'midiInput', 'events',
     )),
     CategoryInfo('sound', 'Sound', (

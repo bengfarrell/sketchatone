@@ -56,7 +56,18 @@ description: Release notes and version history
 - **3×3 layout convention**: Tonic (I) at button 5, dominant (V) at button 8, so 8→5 is always tension-to-resolution regardless of key; I–V–vi–IV is always the 5→8→1→4 gesture
 - **Bundled modes**: `major`, `minor`, and `jazz` layouts included in the default config, each defined as 9 `{ degree, quality }` entries (one per button)
 - **Chord Mode Performance panel** (Node.js dashboard): New UI panel for playing/practicing with the current chord mode, plus a transpose control
+- **Chord Mode Performance panel** (Python native UI): Mirror of the web panel — shows the active chord grid and highlights the last-pressed cell, fully live with transpose and mode changes
+- **`cycle-chord-mode` action**: Assign any button or key to step forward or backward through all configured chord modes (`major → minor → jazz → …`). Direction is configurable (Next / Previous) in both the web and Python action editors
+- **Mode strip in Chord Mode panels**: Both the web and Python chord mode panels now display a row of pills for every configured mode, with the currently active mode highlighted — so the player always knows what mode they are in and what's available
+- **Shared harmonic context** (`strummer.harmonicContext` + `strummer.pitch`): Root, mode, and default octave are now centralized on the strummer config instead of being duplicated on each chord-mode group action. Multiple chord-mode or chord-progression groups share a single harmonic context, and `transpose` mutates the shared offset so every strummed note — chord mode, progression, or explicit chord — shifts consistently. See **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)**
 - **Full parity**: Identical implementation in Python and Node.js
+
+### Bug Fixes (Chord Mode / Action Rules)
+
+- **Python chord mode panel transpose**: Transposing now correctly updates the chord mode panel — it reads the live `harmonicContextMode` runtime value from the server broadcast rather than the static `startingMode` from config
+- **Python action editor missing keys**: Keyboard key entries (`key:X`) now appear in the button dropdown when adding or editing a single button action, matching the behaviour already present in the group button selector
+- **Python chord mode panel button labels**: Fixed button labels in the chord mode performance grid — previously showed raw numpad indices; now shows the actual mapped button/key identifier (e.g. `7`, `numpad0`, `c`)
+- **Web chord mode panel button labels**: Same fix — labels are now derived from the group's actual `buttons` array instead of a hardcoded numpad sequence
 
 ### Keyboard Input Support
 
@@ -139,6 +150,7 @@ description: Release notes and version history
 - **Chord progressions required in config**: Old configs without `chordProgressions` section will have no progressions available. Users must add chord progressions to their config files (see `public/configs/default.json` for examples)
 - **Removed sample config files**: Users should use `public/configs/default.json` as a template
 - **Removed choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice and allow it to be configurable in UI (or JSON as always)
+- **Group actions no longer carry `root`, `mode`, or `octave` for chord mode**: Existing `chord-mode` group rules with those fields will have them silently dropped on load. To preserve a non-default starting key, move the values to `strummer.harmonicContext.startingRoot` / `startingMode` and `strummer.pitch.startingOctave`. `chord-progression` group actions still accept an optional `octave` override; when omitted, it defaults to `strummer.pitch.startingOctave` (previously hardcoded `4`)
 
 
 ---

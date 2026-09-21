@@ -108,13 +108,13 @@ class ParameterMapping:
     def from_dict(cls, data: Dict[str, Any]) -> 'ParameterMapping':
         """Create a ParameterMapping from a dictionary"""
         return cls(
-            min=data.get('min', 0.0),
-            max=data.get('max', 1.0),
-            multiplier=data.get('multiplier', 1.0),
-            curve=data.get('curve', 1.0),
+            min=float(data.get('min', 0.0)),
+            max=float(data.get('max', 1.0)),
+            multiplier=float(data.get('multiplier', 1.0)),
+            curve=float(data.get('curve', 1.0)),
             spread=data.get('spread', 'direct'),
             control=data.get('control', 'none'),
-            default=data.get('default', 0.5)
+            default=float(data.get('default', 0.5))
         )
     
     def to_dict(self) -> Dict[str, Any]:

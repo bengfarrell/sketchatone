@@ -41,12 +41,13 @@ class StrumReleaseConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrumReleaseConfig':
         """Create from dictionary (supports both snake_case and camelCase)"""
+        raw_channel = data.get('midi_channel', data.get('midiChannel'))
         return cls(
             active=data.get('active', False),
-            midi_note=data.get('midi_note', data.get('midiNote', 38)),
-            midi_channel=data.get('midi_channel', data.get('midiChannel')),
-            max_duration=data.get('max_duration', data.get('maxDuration', 0.25)),
-            velocity_multiplier=data.get('velocity_multiplier', data.get('velocityMultiplier', 1.0))
+            midi_note=int(data.get('midi_note', data.get('midiNote', 38))),
+            midi_channel=int(raw_channel) if raw_channel is not None else None,
+            max_duration=float(data.get('max_duration', data.get('maxDuration', 0.25))),
+            velocity_multiplier=float(data.get('velocity_multiplier', data.get('velocityMultiplier', 1.0)))
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -130,8 +131,8 @@ class SliderConfig:
         modulation = (PressureModulationConfig.from_dict(mod_data)
                       if isinstance(mod_data, dict) else PressureModulationConfig())
         return cls(
-            pressure_threshold=data.get('pressure_threshold', data.get('pressureThreshold', 0.1)),
-            max_bend_semitones=data.get('max_bend_semitones', data.get('maxBendSemitones', 24.0)),
+            pressure_threshold=float(data.get('pressure_threshold', data.get('pressureThreshold', 0.1))),
+            max_bend_semitones=float(data.get('max_bend_semitones', data.get('maxBendSemitones', 24.0))),
             pressure_modulation=modulation
         )
 

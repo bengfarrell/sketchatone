@@ -16,13 +16,36 @@ import subprocess
 import sys
 import threading
 import types
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+
+# Packaged fallback config used when the config pool is empty (all
+# user configs deleted). Shipped via ``[tool.setuptools.package-data]``
+# so it travels with the wheel / .deb / source install alike.
+_BUNDLED_DEFAULT_CONFIG_PATH = Path(__file__).parent / 'assets' / 'default_config.json'
+_bundled_default_cache: Optional[Any] = None
+
+
+def _load_bundled_default_config() -> Optional[Any]:
+    """Return the packaged default config data (parsed JSON), or None
+    if the file is missing / malformed. Result is cached after the
+    first successful read."""
+    global _bundled_default_cache
+    if _bundled_default_cache is not None:
+        return _bundled_default_cache
+    try:
+        with open(_BUNDLED_DEFAULT_CONFIG_PATH, 'r') as f:
+            _bundled_default_cache = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return _bundled_default_cache
 
 
 # Event names accepted by UIBridge.on. Mirrors a subset of the web-side
 # StrummerWebSocketClientEvents so panel widgets share one interface.
 EVENT_NAMES = ('device-status', 'tablet', 'strum', 'combined', 'config',
-               'midi-devices', 'midi-input', 'button-detection-state', 'notes-changed')
+               'midi-devices', 'midi-input', 'button-detection-state', 'notes-changed', 'action')
 
 Listener = Callable[[Any], None]
 
@@ -43,6 +66,29 @@ def _adapt_tablet_ns(msg: dict) -> types.SimpleNamespace:
     (``ev.x``, ``ev.pressure``, etc.) works in panel widgets.
     """
     return types.SimpleNamespace(**{k: v for k, v in msg.items() if k != 'type'})
+
+
+def _next_copy_name(current_name: Optional[str], available) -> str:
+    """Pick a fresh ``<stem> Copy[.n].json`` filename not in ``available``.
+
+    Falls back to ``Untitled Copy`` when no config is loaded. The numeric
+    suffix (`` 2``, `` 3``, ...) is appended only on collision so the
+    first duplicate stays clean.
+    """
+    taken = {n for n in (available or []) if isinstance(n, str)}
+    if current_name and current_name.endswith('.json'):
+        stem = current_name[:-len('.json')]
+    elif current_name:
+        stem = current_name
+    else:
+        stem = 'Untitled'
+    base = f'{stem} Copy'
+    candidate = f'{base}.json'
+    n = 2
+    while candidate in taken:
+        candidate = f'{base} {n}.json'
+        n += 1
+    return candidate
 
 
 def _adapt_strum_ns(strum_dict: dict) -> types.SimpleNamespace:
@@ -309,7 +355,7 @@ class UIBridge:
             self._emit('device-status', dict(self._last_status))
 
         elif msg_type == 'midi-devices':
-            self._emit('midi-devices', msg)
+            self._emit('midi-devices', msg.get('data', {}))
 
         elif msg_type == 'midi-input':
             self._last_midi_input = msg
@@ -322,6 +368,9 @@ class UIBridge:
 
         elif msg_type == 'notes-changed':
             self._emit('notes-changed', msg)
+
+        elif msg_type == 'action-event':
+            self._emit('action', msg)
 
     # ---- Outgoing command API (callable from any thread) -------------------
 
@@ -369,6 +418,36 @@ class UIBridge:
     def create_config(self, name: str) -> None:
         if name:
             self._send({'type': 'create-config', 'configName': name})
+
+    def duplicate_current_config(self) -> Optional[str]:
+        """Create a new config file on the server.
+
+        When the config pool already contains at least one file, this
+        clones the currently-loaded config under a new ' Copy' name.
+        When the pool is empty (all configs deleted), seeds a fresh
+        ``default.json`` from the packaged default so the user always
+        has a starting point. Returns the chosen filename, or ``None``
+        if neither source is available.
+        """
+        available = (self._last_config or {}).get('availableConfigs') or []
+        if not available:
+            config_data = _load_bundled_default_config()
+            if config_data is None:
+                return None
+            new_name = 'default.json'
+            self._send({'type': 'upload-config',
+                        'configName': new_name, 'configData': config_data})
+            return new_name
+        if not self._last_config:
+            return None
+        config_data = self._last_config.get('config')
+        if config_data is None:
+            return None
+        current_name = self._last_config.get('currentConfigName')
+        new_name = _next_copy_name(current_name, available)
+        self._send({'type': 'upload-config',
+                    'configName': new_name, 'configData': config_data})
+        return new_name
 
     def set_throttle(self, throttle_ms: int) -> None:
         try:

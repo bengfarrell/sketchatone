@@ -138,7 +138,10 @@ sudo systemctl restart sketchatone
 | `pitch_bend` | Pitch bend parameter mapping |
 | `strum_release` | Release trigger settings (drum sounds on pen lift) |
 | `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
+| `pitch` | Shared starting offset and default octave |
+| `harmonicContext` | Chord-mode starting root and mode |
 | `chordProgressions` | Chord progressions (required for progression actions) |
+| `chordModes` | Positional chord-mode layouts (required for chord-mode actions) |
 | `keyboard` | Keyboard input mappings (optional) |
 | `midi` | MIDI backend settings (ports, backend selection, JACK config) |
 | `server` | Server settings (HTTP/HTTPS/WS/WSS ports) |
@@ -274,18 +277,17 @@ Button-to-action mapping configuration. Maps tablet buttons and stylus buttons t
 
 | Action | Description | Parameters |
 |--------|-------------|------------|
-| `toggle-transpose` | Toggle transpose on/off | `semitones` (number, default: 12) |
+| `toggle-transpose` | Toggle shared pitch offset between 0 and semitones | `semitones` (number, default: 12) |
 | `toggle-repeater` | Toggle note repeater on/off | `pressureMultiplier` (number), `frequencyMultiplier` (number) |
-| `transpose` | Transpose notes | `semitones` (number) |
+| `transpose` | Add semitones to shared pitch offset (cumulative) | `semitones` (number) |
 | `set-chord` | Set chord | Chord notation string |
 | `set-strum-notes` | Set specific notes | Array of note strings |
-| `chord-progression` | Cycle through chord progression | Progression name, octave |
 
-**Note:** Transpose and repeater state is managed entirely by the Actions system. The `note_repeater` and `transpose` config sections that may appear in older config files are **ignored** by the CLI/server. Use `action_rules` to configure these features instead.
+**Note:** Transpose and repeater state is managed entirely by the Actions system. The `note_repeater` and `transpose` config sections that may appear in older config files are **ignored** by the CLI/server. Use `action_rules` to configure these features instead. Transpose is now a shared pitch offset — see `pitch` and `harmonicContext` below.
 
 ### Group Rule Format
 
-Used for chord progressions mapped to multiple buttons:
+Used for chord progressions and chord modes bound to a group of buttons:
 
 ```json
 {
@@ -295,11 +297,15 @@ Used for chord progressions mapped to multiple buttons:
   "trigger": "press",
   "action": {
     "type": "chord-progression",
-    "progression": "c-major-pop",
-    "octave": 4
+    "progression": "c-major-pop"
   }
 }
 ```
+
+| Group Action Type | Properties |
+|-------------------|------------|
+| `chord-progression` | `progression` (string, required), `octave` (number, optional — defaults to `pitch.startingOctave`) |
+| `chord-mode` | None — root, mode, and octave are resolved from `harmonicContext` and `pitch` at press time |
 
 See **[Action Rules](/about/action-rules/)** for complete action documentation.
 
@@ -351,8 +357,7 @@ Reference custom progressions by name in action rules:
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "my-song-verse",
-          "octave": 4
+          "progression": "my-song-verse"
         }
       }
     ]
@@ -366,6 +371,76 @@ Reference custom progressions by name in action rules:
 - See **[Chords & Progressions](/about/chords-and-progressions/)** for supported chord notation
 - If no progressions are defined and you use chord progression actions, those actions will fail
 - The default config file (`public/configs/default.json`) includes standard progressions you can use as a reference
+
+---
+
+## pitch
+
+Shared starting values for the runtime pitch state. Every chord-setting action applies the current offset at MIDI output and uses the default octave when it doesn't supply its own.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingOffset` | number | `0` | Initial transpose offset (semitones). Mutated by `transpose` and `toggle-transpose`. |
+| `startingOctave` | number | `4` | Default octave for chord-setting actions (`chord-progression`, `chord-mode`, `set-chord`). |
+
+```json
+{
+  "strummer": {
+    "pitch": {
+      "startingOffset": 0,
+      "startingOctave": 4
+    }
+  }
+}
+```
+
+---
+
+## harmonicContext
+
+Starting values for the chord-mode harmonic context. Consumed by `chord-mode` group actions; other action types ignore it.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingRoot` | string | `"C"` | Tonal root. Use `#` for sharps (`"F#"`) and `b` for flats (`"Bb"`) — a flat root selects flat-preferred spelling for the resulting chord names. |
+| `startingMode` | string | `"major"` | Name of a mode defined in `chordModes`. |
+
+```json
+{
+  "strummer": {
+    "harmonicContext": {
+      "startingRoot": "C",
+      "startingMode": "major"
+    }
+  }
+}
+```
+
+---
+
+## chordModes
+
+Positional chord-mode layouts. Each mode is an array of 9 `{ degree, quality }` entries, one per button. Required if any group rule uses `type: "chord-mode"`. See **[Chord Modes](/about/chord-modes/)** for the full description of degrees, qualities, and layout conventions.
+
+```json
+{
+  "strummer": {
+    "chordModes": {
+      "major": [
+        { "degree": "vi",   "quality": "m"   },
+        { "degree": "ii",   "quality": "m"   },
+        { "degree": "V/V",  "quality": "7"   },
+        { "degree": "IV",   "quality": ""    },
+        { "degree": "I",    "quality": ""    },
+        { "degree": "bVII", "quality": ""    },
+        { "degree": "iii",  "quality": "m"   },
+        { "degree": "V",    "quality": ""    },
+        { "degree": "vii",  "quality": "dim" }
+      ]
+    }
+  }
+}
+```
 
 ---
 

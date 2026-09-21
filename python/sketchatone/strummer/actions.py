@@ -145,6 +145,8 @@ class Actions(EventEmitter):
         strummer: Any = None,
         chord_progressions: Optional[Dict[str, List[str]]] = None,
         chord_modes: Optional[Dict[str, List[Dict[str, str]]]] = None,
+        pitch_starting: Optional[Dict[str, Any]] = None,
+        harmonic_context_starting: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize Actions with a configuration instance.
@@ -153,6 +155,9 @@ class Actions(EventEmitter):
             config: Configuration instance that will be modified by actions
             strummer: Optional Strummer instance for setting notes
             chord_progressions: Optional chord progressions from config
+            chord_modes: Optional chord modes from config
+            pitch_starting: Optional authored pitch starting values
+            harmonic_context_starting: Optional authored harmonic context starting values
         """
         super().__init__()
         self.config = config
@@ -171,6 +176,7 @@ class Actions(EventEmitter):
             'set-chord-in-progression': self.set_chord_in_progression,
             'increment-chord-in-progression': self.increment_chord_in_progression,
             'set-chord-from-mode': self.set_chord_from_mode,
+            'cycle-chord-mode': self.cycle_chord_mode,
         }
 
         # Chord progression state
@@ -179,16 +185,48 @@ class Actions(EventEmitter):
         # Action rules configuration (set via set_action_rules_config)
         self._action_rules_config: Optional['ActionRulesConfig'] = None
 
-        # Internal state for repeater and transpose (managed by actions, not config)
+        # Internal state for repeater (managed by actions, not config)
         self._repeater_state = {
             'active': False,
             'pressure_multiplier': 1.0,
             'frequency_multiplier': 1.0,
         }
-        self._transpose_state = {
-            'active': False,
-            'semitones': 0,
+
+        # Authored starting values and runtime session state that layers on top.
+        self._pitch_starting = {'startingOffset': 0, 'startingOctave': 4}
+        self._harmonic_context_starting = {'startingRoot': 'C', 'startingMode': 'major'}
+        if pitch_starting:
+            self.set_pitch_starting_config(pitch_starting)
+        if harmonic_context_starting:
+            self.set_harmonic_context_starting_config(harmonic_context_starting)
+        self._pitch_state = {
+            'offset': self._pitch_starting['startingOffset'],
+            'octave': self._pitch_starting['startingOctave'],
         }
+        self._harmonic_context_state = {
+            'root': self._harmonic_context_starting['startingRoot'],
+            'mode': self._harmonic_context_starting['startingMode'],
+        }
+
+    def set_pitch_starting_config(self, starting: Dict[str, Any]) -> None:
+        """Apply authored pitch starting values and reset runtime state to them."""
+        self._pitch_starting = {
+            'startingOffset': starting.get('startingOffset', self._pitch_starting['startingOffset']),
+            'startingOctave': starting.get('startingOctave', self._pitch_starting['startingOctave']),
+        }
+        if hasattr(self, '_pitch_state'):
+            self._pitch_state['offset'] = self._pitch_starting['startingOffset']
+            self._pitch_state['octave'] = self._pitch_starting['startingOctave']
+
+    def set_harmonic_context_starting_config(self, starting: Dict[str, Any]) -> None:
+        """Apply authored harmonic context starting values and reset runtime state."""
+        self._harmonic_context_starting = {
+            'startingRoot': starting.get('startingRoot', self._harmonic_context_starting['startingRoot']),
+            'startingMode': starting.get('startingMode', self._harmonic_context_starting['startingMode']),
+        }
+        if hasattr(self, '_harmonic_context_state'):
+            self._harmonic_context_state['root'] = self._harmonic_context_starting['startingRoot']
+            self._harmonic_context_state['mode'] = self._harmonic_context_starting['startingMode']
 
     @property
     def action_rules_config(self) -> Optional['ActionRulesConfig']:
@@ -253,28 +291,20 @@ class Actions(EventEmitter):
     def set_chord_from_mode(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
         Set the strummer chord from a chord mode entry at a specific button index.
+        Mode name, root and octave are pulled from harmonic-context and pitch state,
+        so this action only takes the button index.
 
         Args:
-            params[0] (str): Mode name (e.g., "major", "jazz")
-            params[1] (int): Button index (0-8)
-            params[2] (int, optional): Octave override (defaults to harmonicContext.octave or 4)
+            params[0] (int): Button index
         """
-        if len(params) < 2:
-            print('[ACTIONS] Error: set-chord-from-mode requires mode name and button index')
+        if len(params) < 1 or not isinstance(params[0], (int, float)):
+            print('[ACTIONS] Error: set-chord-from-mode requires button index (number)')
             return
 
-        if not isinstance(params[0], str):
-            print('[ACTIONS] Error: First parameter must be mode name (string)')
-            return
-
-        if not isinstance(params[1], (int, float)):
-            print('[ACTIONS] Error: Second parameter must be button index (number)')
-            return
-
-        mode_name = params[0]
-        button_index = int(params[1])
-        octave = int(params[2]) if len(params) > 2 and isinstance(params[2], (int, float)) else 4
-        root = params[3] if len(params) > 3 and isinstance(params[3], str) else 'C'
+        button_index = int(params[0])
+        mode_name = self._harmonic_context_state['mode']
+        root = self._harmonic_context_state['root']
+        octave = self._pitch_state['octave']
         prefer_flat = 'b' in root
 
         if self.strummer is None:
@@ -453,40 +483,30 @@ class Actions(EventEmitter):
 
     def toggle_transpose(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
-        Toggle transpose on/off.
+        Toggle transpose on/off on the shared pitch offset.
+        If offset is zero, sets it to the supplied semitones; otherwise resets to zero.
 
         Args:
             params: Optional parameters:
-                   - params[0]: semitones (int, default 12) - Number of semitones to transpose
+                   - params[0]: semitones (int, default 12) - Semitones to apply when toggling on
             context: Context data (e.g., which button triggered the action)
         """
-        new_state = not self._transpose_state['active']
-
-        # Parse optional semitones parameter
         semitones = int(params[0]) if len(params) > 0 and isinstance(params[0], (int, float)) else 12
-
-        # Update internal state
-        self._transpose_state['active'] = new_state
-        if new_state:
-            # Only update semitones when turning on
-            self._transpose_state['semitones'] = semitones
-
-        # Log which button triggered the action if available
         button = context.get('button', 'Unknown')
-        if new_state:
+
+        if self._pitch_state['offset'] == 0:
+            self._pitch_state['offset'] = semitones
             sign = '+' if semitones > 0 else ''
             print(f"[ACTIONS] {button} button enabled transpose: {sign}{semitones} semitones")
         else:
+            self._pitch_state['offset'] = 0
             print(f"[ACTIONS] {button} button disabled transpose")
 
-        # Emit config changed event
         self.emit('config_changed')
 
     def transpose(self, params: List[Any], context: Dict[str, Any]) -> None:
         """
-        Add semitones to the current transpose value (cumulative).
-        Each press adds the specified semitones to the current transpose amount.
-        Transpose is automatically enabled when non-zero, disabled when zero.
+        Add semitones to the shared pitch offset (cumulative).
 
         Args:
             params: Required parameters:
@@ -500,48 +520,67 @@ class Actions(EventEmitter):
         semitones_to_add = int(params[0])
         button = context.get('button', 'Unknown')
 
-        # Add to current semitones (cumulative)
-        new_semitones = self._transpose_state['semitones'] + semitones_to_add
-        self._transpose_state['semitones'] = new_semitones
-        # Active when non-zero
-        self._transpose_state['active'] = new_semitones != 0
+        new_offset = self._pitch_state['offset'] + semitones_to_add
+        self._pitch_state['offset'] = new_offset
 
-        if new_semitones == 0:
+        if new_offset == 0:
             print(f"[ACTIONS] {button} button reset transpose to 0")
         else:
-            print(f"[ACTIONS] {button} button transposed {semitones_to_add:+d} → total: {new_semitones:+d} semitones")
+            print(f"[ACTIONS] {button} button transposed {semitones_to_add:+d} → total: {new_offset:+d} semitones")
 
-        # Emit config changed event
         self.emit('config_changed')
 
-    def get_transpose_semitones(self) -> int:
-        """
-        Get the current transpose semitones.
+    def cycle_chord_mode(self, params: List[Any], context: Dict[str, Any]) -> None:
+        """Cycle forward (+1) or backward (-1) through available chord modes."""
+        raw = params[0] if params else 1
+        try:
+            direction = 1 if float(raw) >= 0 else -1
+        except (TypeError, ValueError):
+            direction = 1
+        modes = list(self.chord_modes.keys())
+        if not modes:
+            return
+        current = self._harmonic_context_state.get('mode', '')
+        try:
+            idx = modes.index(current)
+        except ValueError:
+            idx = 0
+        next_idx = (idx + direction) % len(modes)
+        next_mode = modes[next_idx]
+        self._harmonic_context_state['mode'] = next_mode
+        self._harmonic_context_starting['startingMode'] = next_mode
+        button = context.get('button', 'Unknown')
+        print(f'[ACTIONS] {button} cycled chord mode {current!r} → {next_mode!r}')
+        self.emit('config_changed')
 
-        Returns:
-            Current transpose semitones (0 if transpose is not active)
-        """
-        return self._transpose_state['semitones'] if self._transpose_state['active'] else 0
+    def get_harmonic_context_mode(self) -> str:
+        """Current chord mode name (may differ from config after cycle-chord-mode)."""
+        return self._harmonic_context_state.get('mode', '')
 
-    def is_transpose_active(self) -> bool:
-        """
-        Check if transpose is currently active.
+    def get_pitch_offset(self) -> int:
+        """Current pitch offset in semitones. Applied at MIDI output."""
+        return self._pitch_state['offset']
 
-        Returns:
-            True if transpose is active, False otherwise
-        """
-        return self._transpose_state['active']
+    def get_pitch_octave(self) -> int:
+        """Default octave used by chord-setting actions."""
+        return self._pitch_state['octave']
 
-    def get_transpose_config(self) -> Dict[str, Any]:
-        """
-        Get the transpose configuration.
-
-        Returns:
-            Dictionary with active, semitones
-        """
+    def get_pitch_state(self) -> Dict[str, Any]:
+        """Snapshot of pitch state, including authored starting values."""
         return {
-            'active': self._transpose_state['active'],
-            'semitones': self._transpose_state['semitones'],
+            'offset': self._pitch_state['offset'],
+            'octave': self._pitch_state['octave'],
+            'startingOffset': self._pitch_starting['startingOffset'],
+            'startingOctave': self._pitch_starting['startingOctave'],
+        }
+
+    def get_harmonic_context(self) -> Dict[str, Any]:
+        """Snapshot of harmonic context state, including authored starting values."""
+        return {
+            'root': self._harmonic_context_state['root'],
+            'mode': self._harmonic_context_state['mode'],
+            'startingRoot': self._harmonic_context_starting['startingRoot'],
+            'startingMode': self._harmonic_context_starting['startingMode'],
         }
 
     def is_repeater_active(self) -> bool:
@@ -740,21 +779,17 @@ class Actions(EventEmitter):
         
         progression_name = params[0]
         index = int(params[1])
-        octave = 4  # Default octave
-        
-        # Check for optional octave parameter
-        if len(params) > 2 and isinstance(params[2], (int, float)):
-            octave = int(params[2])
-        
+        octave = int(params[2]) if len(params) > 2 and isinstance(params[2], (int, float)) else self._pitch_state['octave']
+
         if self.strummer is None:
             print(f"[ACTIONS] Error: No strummer instance available")
             return
-        
+
         # Load progression if different from current
         if self.progression_state.progression_name != progression_name:
             if not self.progression_state.load_progression(progression_name):
                 return
-        
+
         # Set the index
         actual_index = self.progression_state.set_index(index)
         chord_notation = self.progression_state.get_current_chord()
@@ -807,16 +842,8 @@ class Actions(EventEmitter):
             return
         
         progression_name = params[0]
-        increment_amount = 1  # Default increment
-        octave = 4  # Default octave
-        
-        # Check for optional increment amount parameter
-        if len(params) > 1 and isinstance(params[1], (int, float)):
-            increment_amount = int(params[1])
-        
-        # Check for optional octave parameter
-        if len(params) > 2 and isinstance(params[2], (int, float)):
-            octave = int(params[2])
+        increment_amount = int(params[1]) if len(params) > 1 and isinstance(params[1], (int, float)) else 1
+        octave = int(params[2]) if len(params) > 2 and isinstance(params[2], (int, float)) else self._pitch_state['octave']
         
         if self.strummer is None:
             print(f"[ACTIONS] Error: No strummer instance available")

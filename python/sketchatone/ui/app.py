@@ -15,10 +15,11 @@ from __future__ import annotations
 import socket
 import sys
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from kivy.app import App
 from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.image import Image
@@ -399,9 +400,14 @@ def _ws_host() -> str:
     return name
 
 
+class _TapLabel(ButtonBehavior, Label):
+    """Label that dispatches ``on_release`` when tapped."""
+
+
 class StatusBar(BoxLayout):
     def __init__(self, ws_port: Optional[int], config: Optional[str],
-                 bridge: Optional[UIBridge] = None, **kwargs) -> None:
+                 bridge: Optional[UIBridge] = None,
+                 on_show_welcome=None, **kwargs) -> None:
         super().__init__(
             orientation='horizontal',
             size_hint_y=None,
@@ -426,16 +432,23 @@ class StatusBar(BoxLayout):
         # The label tracks the strummer config the backend is actually
         # using; ``config`` is the explicit ``--strummer-config`` arg
         # (if any) and acts as a fallback until the bridge replays its
-        # first ``'config'`` event with ``currentConfigName``.
-        self._right = Label(
+        # first ``'config'`` event with ``currentConfigName``. Tap to
+        # return to the welcome screen.
+        self._right = _TapLabel(
             text=self._format_config_label(config),
             color=theme.TEXT_MUTED,
             font_size='8sp',
             size_hint=(None, 1),
             halign='right', valign='middle',
         )
+        # Size the label to its rendered text. ``text_size`` is left
+        # unset so Kivy renders the label on a single line; binding
+        # ``text_size`` to the widget's own ``size`` would wrap on
+        # whitespace (e.g. ``default Copy.json`` -> two lines) as
+        # soon as the widget starts narrower than the text.
         self._right.bind(texture_size=lambda w, s: setattr(w, 'width', s[0]))
-        self._right.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        if on_show_welcome is not None:
+            self._right.bind(on_release=lambda *_: on_show_welcome())
 
         if bridge is not None:
             bridge.on('config', self._on_config)
@@ -470,12 +483,17 @@ class StatusBar(BoxLayout):
 
 # ---- Header (top + tab bars + branding column) --------------------------
 
+class _LogoButton(ButtonBehavior, Image):
+    """Image that dispatches ``on_release`` when tapped."""
+
+
 class HeaderArea(BoxLayout):
     """Top region: left column with TopBar + PanelTabBar, logo on the right."""
 
     LOGO_COLUMN_WIDTH = 160
 
-    def __init__(self, topbar: 'TopBar', tabbar: 'PanelTabBar', **kwargs) -> None:
+    def __init__(self, topbar: 'TopBar', tabbar: 'PanelTabBar',
+                 on_show_welcome=None, **kwargs) -> None:
         super().__init__(
             orientation='horizontal',
             size_hint_y=None,
@@ -497,12 +515,14 @@ class HeaderArea(BoxLayout):
         left.add_widget(tabbar)
         self.add_widget(left)
 
-        logo = Image(
+        logo = _LogoButton(
             source=LOGO_PATH,
             size_hint=(None, 1),
             width=self.LOGO_COLUMN_WIDTH,
             fit_mode='contain',
         )
+        if on_show_welcome is not None:
+            logo.bind(on_release=lambda *_: on_show_welcome())
         self.add_widget(logo)
 
     def _sync_bands(self, *_args: object) -> None:
@@ -524,6 +544,7 @@ class DashboardRoot(BoxLayout):
         bridge: Optional[UIBridge] = None,
         active_id: str = DEFAULT_PANEL_ID,
         on_toggle_theme=None,
+        on_show_welcome=None,
         **kwargs,
     ) -> None:
         super().__init__(orientation='vertical', spacing=0, **kwargs)
@@ -536,8 +557,10 @@ class DashboardRoot(BoxLayout):
             on_select_category=self._handle_category_select,
             on_toggle_theme=on_toggle_theme,
         )
-        self._header = HeaderArea(self._topbar, self._tabbar)
-        self._statusbar = StatusBar(ws_port=ws_port, config=config, bridge=bridge)
+        self._header = HeaderArea(self._topbar, self._tabbar,
+                                  on_show_welcome=on_show_welcome)
+        self._statusbar = StatusBar(ws_port=ws_port, config=config, bridge=bridge,
+                                    on_show_welcome=on_show_welcome)
 
         self.add_widget(self._header)
         self.add_widget(self._panel_area)
@@ -575,6 +598,162 @@ class DashboardRoot(BoxLayout):
         else:
             text = 'Disconnected'
         self._statusbar.badge.set_state(connected, text=text)
+
+
+# ---- Welcome screen ------------------------------------------------------
+
+class _ConfigRowButton(ButtonBehavior, BoxLayout):
+    """Full-width row used in the welcome-screen config list.
+
+    Renders a rounded background whose colour reflects the active
+    state, plus a left-aligned filename label. ``ButtonBehavior`` gives
+    it ``on_release`` so the welcome screen can hand it a per-row
+    callback without wrapping it in a real ``Button`` (which forces a
+    centered label and Kivy's default 9-patch background).
+    """
+
+    ROW_HEIGHT = 44
+
+    def __init__(self, name: str, active: bool, on_release, **kwargs) -> None:
+        super().__init__(
+            orientation='horizontal',
+            size_hint=(1, None),
+            height=self.ROW_HEIGHT,
+            padding=(theme.SPACE_4, 0),
+            **kwargs,
+        )
+        with self.canvas.before:
+            self._bg_color = Color(*(theme.ACCENT_BG if active else theme.BG_SURFACE))
+            self._bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[8])
+        self.bind(pos=self._sync_bg, size=self._sync_bg)
+        self._label = Label(
+            text=name,
+            color=(theme.TEXT_PRIMARY if active else theme.TEXT_SECONDARY),
+            font_size='11sp', bold=active,
+            halign='left', valign='middle',
+        )
+        self._label.bind(size=lambda w, *_: setattr(w, 'text_size', w.size))
+        self.add_widget(self._label)
+        self.bind(on_release=lambda *_: on_release(name))
+
+    def _sync_bg(self, *_args: object) -> None:
+        self._bg.pos = self.pos
+        self._bg.size = self.size
+
+
+class WelcomeScreen(BoxLayout):
+    """Full-screen config picker. Shown before a config is chosen and
+    reachable again by tapping the header logo or the footer config
+    label. Bypasses the dashboard chrome so touch targets are big.
+    """
+
+    LOGO_HEIGHT = 140
+    CREATE_BTN_WIDTH = 240
+    CREATE_BTN_HEIGHT = 48
+
+    def __init__(self, bridge: Optional[UIBridge] = None,
+                 on_config_chosen=None, **kwargs) -> None:
+        super().__init__(
+            orientation='vertical',
+            padding=(theme.SPACE_5, theme.SPACE_5),
+            spacing=theme.SPACE_4,
+            **kwargs,
+        )
+        _paint_bg(self, theme.BG_PAGE)
+        self._bridge = bridge
+        self._on_config_chosen = on_config_chosen
+        self._current_name: Optional[str] = None
+        self._available: list = []
+
+        logo_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                             height=self.LOGO_HEIGHT)
+        logo_row.add_widget(Widget(size_hint_x=1))
+        logo_row.add_widget(Image(
+            source=LOGO_PATH,
+            size_hint=(None, 1),
+            width=280,
+            fit_mode='contain',
+        ))
+        logo_row.add_widget(Widget(size_hint_x=1))
+        self.add_widget(logo_row)
+
+        self._scroll = ScrollView(size_hint=(1, 1), bar_width=4,
+                                  scroll_type=['bars', 'content'])
+        self._list = BoxLayout(orientation='vertical', size_hint_y=None,
+                               spacing=theme.SPACE_2)
+        self._list.bind(minimum_height=self._list.setter('height'))
+        self._scroll.add_widget(self._list)
+        self.add_widget(self._scroll)
+
+        create_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                               height=self.CREATE_BTN_HEIGHT)
+        create_row.add_widget(Widget(size_hint_x=1))
+        self._create_btn = Button(
+            text='Create New Config',
+            size_hint=(None, 1),
+            width=self.CREATE_BTN_WIDTH,
+            background_normal='', background_down='',
+            background_color=theme.ACCENT_BG,
+            color=theme.TEXT_PRIMARY,
+            font_size='12sp', bold=True,
+        )
+        self._create_btn.bind(on_release=lambda *_: self._handle_create())
+        create_row.add_widget(self._create_btn)
+        create_row.add_widget(Widget(size_hint_x=1))
+        self.add_widget(create_row)
+
+        self._rebuild_list()
+
+        if bridge is not None:
+            self._unsub = bridge.on('config', self._on_config)
+        else:
+            self._unsub = None
+
+    # ---- Bridge events ----------------------------------------------
+
+    def _on_config(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        self._current_name = payload.get('currentConfigName')
+        available = payload.get('availableConfigs') or []
+        self._available = [n for n in available if isinstance(n, str)]
+        self._rebuild_list()
+
+    # ---- View sync -------------------------------------------------
+
+    def _rebuild_list(self) -> None:
+        self._list.clear_widgets()
+        if not self._available:
+            self._list.add_widget(Label(
+                text='No configs available yet.',
+                color=theme.TEXT_MUTED, font_size='10sp',
+                size_hint_y=None, height=32,
+                halign='center', valign='middle',
+            ))
+            return
+        for name in self._available:
+            self._list.add_widget(_ConfigRowButton(
+                name=name,
+                active=(name == self._current_name),
+                on_release=self._handle_pick,
+            ))
+
+    # ---- User actions ---------------------------------------------
+
+    def _handle_pick(self, name: str) -> None:
+        if self._bridge is not None and name != self._current_name:
+            self._bridge.load_config(name)
+        if self._on_config_chosen is not None:
+            self._on_config_chosen()
+
+    def _handle_create(self) -> None:
+        if self._bridge is None:
+            return
+        new_name = self._bridge.duplicate_current_config()
+        if new_name is None:
+            return
+        if self._on_config_chosen is not None:
+            self._on_config_chosen()
 
 
 # ---- 2× scale container (macOS only) ------------------------------------
@@ -645,45 +824,66 @@ class SketchatoneUIApp(App):
         self._ws_port = ws_port
         self._bridge = bridge
 
-    def _make_root(self, active_id: str = DEFAULT_PANEL_ID) -> DashboardRoot:
-        kw: dict = {}
+    def _apply_kiosk_size(self, kw: dict) -> None:
+        # Scatter doesn't lay out its children, so we pin the size on
+        # macOS. On Linux the window layout stretches children instead.
         if sys.platform == 'darwin':
-            # Scatter doesn't lay out its children, so we must pin the size.
             kw['size_hint'] = (None, None)
             kw['size'] = (800, 480)
+
+    def _make_root(self, active_id: str = DEFAULT_PANEL_ID) -> DashboardRoot:
+        kw: dict = {}
+        self._apply_kiosk_size(kw)
         return DashboardRoot(
             ws_port=self._ws_port,
             config=self._config_path,
             bridge=self._bridge,
             active_id=active_id,
             on_toggle_theme=self.toggle_theme,
+            on_show_welcome=self.show_welcome,
             **kw,
         )
 
-    def build(self) -> Union[DashboardRoot, _ScaledContainer]:  # type: ignore[override]
-        dashboard = self._make_root()
+    def _make_welcome(self) -> WelcomeScreen:
+        kw: dict = {}
+        self._apply_kiosk_size(kw)
+        return WelcomeScreen(
+            bridge=self._bridge,
+            on_config_chosen=self.show_dashboard,
+            **kw,
+        )
+
+    def build(self):  # type: ignore[override]
+        # Boot straight into the dashboard when the CLI resolved a
+        # config; otherwise land on the welcome picker so the user can
+        # choose one before the chrome appears.
+        initial = self._make_root() if self._config_path else self._make_welcome()
         if sys.platform == 'darwin':
             container = _ScaledContainer()
-            container.add_widget(dashboard)
+            container.add_widget(initial)
             return container
-        return dashboard
+        return initial
 
     def _current_dashboard(self) -> Optional[DashboardRoot]:
         """Return the currently-mounted DashboardRoot, or None."""
-        if isinstance(self.root, DashboardRoot):
-            return self.root
+        screen = self._current_screen()
+        return screen if isinstance(screen, DashboardRoot) else None
+
+    def _current_screen(self):
+        """Return the currently-mounted top-level screen widget."""
         if isinstance(self.root, _ScaledContainer):
             for child in self.root.children:
-                if isinstance(child, DashboardRoot):
+                if isinstance(child, (DashboardRoot, WelcomeScreen)):
                     return child
-        return None
+            return None
+        return self.root
 
-    def _swap_dashboard(self, new_root: DashboardRoot) -> None:
-        """Replace the currently-mounted DashboardRoot with ``new_root``."""
+    def _swap_screen(self, new_root) -> None:
+        """Replace the currently-mounted top-level screen with ``new_root``."""
         if isinstance(self.root, _ScaledContainer):
             container = self.root
             for child in list(container.children):
-                if isinstance(child, DashboardRoot):
+                if isinstance(child, (DashboardRoot, WelcomeScreen)):
                     container.remove_widget(child)
             container.add_widget(new_root)
         else:
@@ -694,23 +894,54 @@ class SketchatoneUIApp(App):
             if window is not None:
                 window.add_widget(new_root)
 
+    # Retained for the hot-reload wrapper which overrides this to route
+    # rebuilds through Kaki's ``set_widget``.
+    def _swap_dashboard(self, new_root: DashboardRoot) -> None:
+        self._swap_screen(new_root)
+
+    def show_welcome(self) -> None:
+        """Tear down the dashboard and mount the welcome screen."""
+        if isinstance(self._current_screen(), WelcomeScreen):
+            return
+        if self._bridge is not None:
+            self._bridge.clear_listeners()
+        self._swap_screen(self._make_welcome())
+        if self._bridge is not None:
+            self._bridge.replay_status()
+            self._bridge.replay_config()
+
+    def show_dashboard(self, active_id: str = DEFAULT_PANEL_ID) -> None:
+        """Tear down the welcome screen and mount the dashboard."""
+        if isinstance(self._current_screen(), DashboardRoot):
+            return
+        if self._bridge is not None:
+            self._bridge.clear_listeners()
+        self._swap_screen(self._make_root(active_id=active_id))
+        if self._bridge is not None:
+            self._bridge.replay_status()
+            self._bridge.replay_config()
+
     def toggle_theme(self) -> None:
         """Swap palette and rebuild the root widget tree.
 
         Kivy ``Color`` instructions cache RGBA at construction, so a hot
         swap requires reconstructing every theme-coloured widget. We
         clear bridge subscriptions first to avoid leaks, then rebuild
-        and replay the cached device status so the badge stays correct.
+        the current screen (welcome or dashboard) and replay the cached
+        status/config so late subscribers pick up the last-known state.
         """
         new_theme = 'light' if theme.ACTIVE == 'dark' else 'dark'
         theme.set_theme(new_theme)
 
-        dash = self._current_dashboard()
-        active_id = dash.active_id if dash is not None else DEFAULT_PANEL_ID
+        screen = self._current_screen()
         if self._bridge is not None:
             self._bridge.clear_listeners()
 
-        self._swap_dashboard(self._make_root(active_id=active_id))
+        if isinstance(screen, WelcomeScreen):
+            self._swap_screen(self._make_welcome())
+        else:
+            active_id = screen.active_id if isinstance(screen, DashboardRoot) else DEFAULT_PANEL_ID
+            self._swap_dashboard(self._make_root(active_id=active_id))
 
         if self._bridge is not None:
             self._bridge.replay_status()
@@ -744,10 +975,9 @@ def run_app(
     )
     try:
         bridge.start()
-    except FileNotFoundError as exc:
-        # The bridge surfaces strummer-config load failures here so we
-        # can exit before initialising Kivy. Print a concise message
-        # rather than the full stack trace.
+    except (FileNotFoundError, RuntimeError) as exc:
+        # The bridge surfaces strummer-config load failures (FileNotFoundError)
+        # and server subprocess connection failures (RuntimeError) here.
         print(f'❌ Failed to start bridge: {exc}')
         bridge.stop()
         return 1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sketchatone"
-version = "0.3.0.dev59"
+version = "0.3.0.dev64"
 description = "Sketchatone - Python implementation"
 requires-python = ">=3.8"
 license = {text = "CC-BY-NC-SA-4.0"}
@@ -74,7 +74,7 @@ include = ["sketchatone*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"sketchatone.ui" = ["assets/*.png"]
+"sketchatone.ui" = ["assets/*.png", "assets/*.json"]
 "sketchatone.tablet.otd" = ["configs/**/*.json"]
 
 [tool.black]

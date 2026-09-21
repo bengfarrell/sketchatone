@@ -112,12 +112,12 @@ Individual button-to-action mappings.
 
 ### Toggle Transpose
 
-Toggle transpose on/off. When active, all notes are shifted by the specified number of semitones.
+Toggle the shared pitch offset between zero and the supplied semitones. Every strummed note — whether from chord mode, a progression, `set-chord`, or `set-strum-notes` — is shifted at MIDI output by the current offset.
 
 **Action:** `toggle-transpose`
 
 **Parameters:** `[semitones]`
-- `semitones` (number, default: 12) - Number of semitones to transpose
+- `semitones` (number, default: 12) - Semitones applied when toggling from zero
 
 **Example:**
 
@@ -177,12 +177,12 @@ Toggle note repeater on/off. When active, notes are automatically re-triggered w
 
 ### Transpose
 
-Set a specific transpose value (doesn't toggle).
+Add semitones to the shared pitch offset (cumulative). Repeated presses stack; a negative value undoes them.
 
 **Action:** `transpose`
 
 **Parameters:** `[semitones]`
-- `semitones` (number) - Number of semitones to transpose
+- `semitones` (number) - Semitones to add to the current offset
 
 **Example:**
 
@@ -311,23 +311,9 @@ Button groups allow you to assign multiple buttons to work together, typically f
 
 ## Group Rules
 
-Group rules assign actions to button groups, typically for chord progressions.
+Group rules assign actions to button groups. Two action types are supported: `chord-progression` and `chord-mode`.
 
-### Group Rule Format
-
-```json
-{
-  "id": "rule-id",
-  "name": "Rule Name",
-  "group_id": "group-id",
-  "trigger": "press",
-  "action": {
-    "type": "chord-progression",
-    "progression": "c-major-pop",
-    "octave": 4
-  }
-}
-```
+Both types read the default octave from `strummer.pitch.startingOctave`, and `chord-mode` additionally reads root and mode from `strummer.harmonicContext`. See **[Pitch and Harmonic Context](#pitch-and-harmonic-context)** below.
 
 ### Chord Progression Action
 
@@ -335,7 +321,7 @@ Group rules assign actions to button groups, typically for chord progressions.
 
 **Properties:**
 - `progression` (string) - Progression name (see **[Chords & Progressions](/about/chords-and-progressions/)** for full list)
-- `octave` (number, default: 4) - Base octave
+- `octave` (number, optional) - Base octave override; defaults to `strummer.pitch.startingOctave`
 
 **Example:**
 
@@ -357,8 +343,7 @@ Group rules assign actions to button groups, typically for chord progressions.
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "c-major-pop",
-          "octave": 4
+          "progression": "c-major-pop"
         }
       }
     ]
@@ -371,6 +356,84 @@ This maps:
 - Button 2 → G major
 - Button 3 → A minor
 - Button 4 → F major
+
+### Chord Mode Action
+
+**Action Type:** `chord-mode`
+
+Assigns a positional chord-mode layout to a group of buttons. The mode (e.g. `major`, `minor`, `jazz`), the tonal root, and the octave are all resolved from `strummer.harmonicContext` and `strummer.pitch` at press time, so the action itself carries no parameters.
+
+See **[Chord Modes](/about/chord-modes/)** for how the layouts are defined.
+
+**Example:**
+
+```json
+{
+  "action_rules": {
+    "groups": [
+      {
+        "id": "chord-buttons",
+        "name": "Chord Buttons",
+        "buttons": ["button:1", "button:2", "button:3", "button:4", "button:5", "button:6", "button:7", "button:8", "button:9"]
+      }
+    ],
+    "group_rules": [
+      {
+        "id": "chord-mode-rule",
+        "name": "Chord Mode",
+        "group_id": "chord-buttons",
+        "trigger": "press",
+        "action": {
+          "type": "chord-mode"
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Pitch and Harmonic Context
+
+Two top-level `strummer` sections seed the runtime pitch state used by every chord-setting action.
+
+### `strummer.pitch`
+
+Authored starting values for the shared pitch state.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingOffset` | number | `0` | Initial transpose offset in semitones. Applied to every strummed note at MIDI output. |
+| `startingOctave` | number | `4` | Default octave for chord-setting actions when they don't specify their own. |
+
+`transpose` and `toggle-transpose` mutate the runtime offset, which starts at `startingOffset` on load.
+
+### `strummer.harmonicContext`
+
+Authored starting values for the chord-mode harmonic context. Only meaningful for `chord-mode` group actions.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingRoot` | string | `"C"` | Initial tonal root. Sharps use `#` (e.g. `"F#"`); flats use `b` (e.g. `"Bb"`) and cause flat-preferred note spelling. |
+| `startingMode` | string | `"major"` | Initial chord-mode name. Must match a key defined in `chordModes`. |
+
+**Example:**
+
+```json
+{
+  "strummer": {
+    "pitch": {
+      "startingOffset": 0,
+      "startingOctave": 4
+    },
+    "harmonicContext": {
+      "startingRoot": "C",
+      "startingMode": "major"
+    }
+  }
+}
+```
 
 ---
 
@@ -468,8 +531,7 @@ Here's a complete action rules configuration:
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "c-major-pop",
-          "octave": 4
+          "progression": "c-major-pop"
         }
       }
     ],
@@ -488,5 +550,6 @@ This configuration:
 ## See Also
 
 - **[Configuration Settings](/about/configuration-settings/#action_rules)** - Complete config reference
+- **[Chord Modes](/about/chord-modes/)** - Positional chord layouts
 - **[Chords & Progressions](/about/chords-and-progressions/)** - Chord notation reference
 - **[Strumming](/about/strumming/)** - Strummer configuration

@@ -215,6 +215,7 @@ export class SketchatoneDashboard extends LitElement {
   // Index of the last-pressed chord mode button (for performance panel highlight)
   @state()
   private chordModeActiveIndex: number | null = null;
+  private chordModeClearTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Form state for the Actions/Groups panels (drives the panel header swap)
   @state()
@@ -324,9 +325,21 @@ export class SketchatoneDashboard extends LitElement {
 
     // Listen for action events (button presses and their actions)
     this.client.onActionEvent((event: ServerActionEvent) => {
-      // Track active chord mode button index for performance panel
-      if (event.action === 'set-chord-from-mode' && typeof event.params[1] === 'number') {
-        this.chordModeActiveIndex = event.params[1] as number;
+      // Track active chord mode button index for performance panel.
+      // Clear on release if the event arrives; otherwise fall back to a 750ms fade.
+      if (event.action === 'set-chord-from-mode') {
+        if (event.trigger === 'release') {
+          if (this.chordModeClearTimer) clearTimeout(this.chordModeClearTimer);
+          this.chordModeClearTimer = null;
+          this.chordModeActiveIndex = null;
+        } else if (typeof event.params[0] === 'number') {
+          if (this.chordModeClearTimer) clearTimeout(this.chordModeClearTimer);
+          this.chordModeActiveIndex = event.params[0] as number;
+          this.chordModeClearTimer = setTimeout(() => {
+            this.chordModeActiveIndex = null;
+            this.chordModeClearTimer = null;
+          }, 750);
+        }
       }
 
       // Track triggered action by rule ID for status dot display
@@ -942,17 +955,25 @@ export class SketchatoneDashboard extends LitElement {
       push(rule.button, this.formatActionDef(rule.action));
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chordModes: Record<string, Array<{ degree: string; quality: string }>> = (this.fullConfig as any)?.strummer?.chordModes ?? {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const harmonic: { startingMode?: string } = (this.fullConfig as any)?.strummer?.harmonicContext ?? {};
+    const activeMode = harmonic.startingMode ?? 'major';
+
     for (const groupRule of cfg.groupRules) {
       const group = cfg.groups.find((g) => g.id === groupRule.groupId);
       if (!group) continue;
       if (groupRule.action.type === 'chord-progression') {
-        const chords = progressions[groupRule.action.progression] ?? [];
+        const chords = progressions[groupRule.action.progression ?? ''] ?? [];
         for (let i = 0; i < group.buttons.length; i++) {
           push(group.buttons[i], chords[i] ?? '–');
         }
-      } else {
-        for (const btn of group.buttons) {
-          push(btn, groupRule.action.progression);
+      } else if (groupRule.action.type === 'chord-mode') {
+        const entries = chordModes[activeMode] ?? [];
+        for (let i = 0; i < group.buttons.length; i++) {
+          const entry = entries[i];
+          push(group.buttons[i], entry ? `${entry.degree}${entry.quality}` : '–');
         }
       }
     }
@@ -1451,7 +1472,7 @@ export class SketchatoneDashboard extends LitElement {
                 <div class="setting-row">
                   <label>Pressure Threshold</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.pressureThreshold ?? 0.1} step="0.01" min="0" max="1"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.pressureThreshold', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Pressure Buffer Size</label>
@@ -1466,12 +1487,12 @@ export class SketchatoneDashboard extends LitElement {
                 <div class="setting-row">
                   <label>Upper Note Spread</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.upperNoteSpread ?? 3} step="1" min="0" max="12"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.upperNoteSpread', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Lower Note Spread</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumming?.lowerNoteSpread ?? 3} step="1" min="0" max="12"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumming.lowerNoteSpread', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Reverse Direction</label>
@@ -1496,7 +1517,7 @@ export class SketchatoneDashboard extends LitElement {
                 <div class="setting-row">
                   <label>MIDI Note</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.midiNote ?? 38} step="1" min="0" max="127"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.midiNote', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>MIDI Channel</label>
@@ -1506,12 +1527,12 @@ export class SketchatoneDashboard extends LitElement {
                 <div class="setting-row">
                   <label>Max Duration</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.maxDuration ?? 0.25} step="0.05" min="0.05" max="2"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.maxDuration', Number((e.target as HTMLInputElement).value))}>
                 </div>
                 <div class="setting-row">
                   <label>Velocity Multiplier</label>
                   <input type="number" class="sketch-input" .value=${this.fullConfig?.strummer?.strumRelease?.velocityMultiplier ?? 1.0} step="0.1" min="0.1" max="2"
-                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', (e.target as HTMLInputElement).value)}>
+                    @change=${(e: Event) => this.updateConfig('strummer.strumRelease.velocityMultiplier', Number((e.target as HTMLInputElement).value))}>
                 </div>
               </div>
             </dashboard-panel>
@@ -1730,17 +1751,37 @@ export class SketchatoneDashboard extends LitElement {
           <!-- Chord Mode Performance Panel -->
           ${vis.chordModePerformance ? html`
             ${(() => {
-              const groupRules: any[] = (this.strummerConfig?.config as any)?.strummer?.actionRules?.groupRules ?? [];
-              const modeRule = groupRules.find((r: any) => r.action?.type === 'chord-mode');
+              const strummer: any = (this.strummerConfig?.config as any)?.strummer ?? {};
+              const hc = strummer.harmonicContext ?? {};
+              const pitch = strummer.pitch ?? {};
+              const startingRoot: string = hc.startingRoot ?? 'C';
+              const pitchOffset: number = this.strummerConfig?.pitchOffset ?? 0;
+              const effectiveRoot = (() => {
+                if (pitchOffset === 0) return startingRoot;
+                const rootIndex = Note.indexOfNotation(startingRoot);
+                if (rootIndex === -1) return startingRoot;
+                const shifted = ((rootIndex + pitchOffset) % 12 + 12) % 12;
+                return Note.notationAtIndex(shifted, startingRoot.includes('b'));
+              })();
+              const actionRules = strummer.actionRules ?? {};
+              const chordModeGroupRule = (actionRules.groupRules ?? []).find((r: any) => r.action?.type === 'chord-mode');
+              const chordModeGroup = chordModeGroupRule
+                ? (actionRules.groups ?? []).find((g: any) => g.id === chordModeGroupRule.groupId)
+                : null;
+              const chordModeButtons: string[] = chordModeGroup?.buttons ?? [];
+              const currentModeName: string = this.strummerConfig?.harmonicContextMode ?? hc.startingMode ?? 'major';
+              const allModeNames: string[] = Object.keys(strummer.chordModes ?? {});
               return html`
                 <dashboard-panel title="Chord Mode" panelId="chordModePerformance" .closable=${true} .draggable=${false} .minimizable=${false}
                   @panel-close=${() => this.handlePanelClose('chordModePerformance')}>
                   <div style="display:flex;flex-direction:column;height:100%">
                     <chord-mode-performance
-                      .chordModes=${(this.strummerConfig?.config as any)?.strummer?.chordModes ?? {}}
-                      .modeName=${modeRule?.action?.mode ?? ''}
-                      .root=${modeRule?.action?.root ?? 'C'}
-                      .octave=${modeRule?.action?.octave ?? 4}
+                      .chordModes=${strummer.chordModes ?? {}}
+                      .modeName=${currentModeName}
+                      .allModeNames=${allModeNames}
+                      .root=${effectiveRoot}
+                      .octave=${pitch.startingOctave ?? 4}
+                      .buttons=${chordModeButtons}
                       .activeIndex=${this.chordModeActiveIndex}>
                     </chord-mode-performance>
                     <div style="flex:1"></div>

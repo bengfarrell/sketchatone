@@ -34,19 +34,20 @@ export type ActionCategory = 'button' | 'group' | 'startup';
 export type GroupActionType = 'chord-progression' | 'chord-mode';
 
 /**
- * Group action definition - action with parameters for button groups
+ * Group action definition - action with parameters for button groups.
+ *
+ * Chord-mode actions no longer carry `mode`, `root`, or `octave` — those are
+ * resolved from centralized `harmonicContext` and `pitch` state at press time.
+ * Chord-progression actions carry the progression name; `octave` is optional
+ * and defaults to the shared pitch state octave.
  */
 export interface GroupAction {
   /** Type of group action */
   type: GroupActionType;
   /** Chord progression preset name (for chord-progression type) */
   progression?: string;
-  /** Chord mode name (for chord-mode type) */
-  mode?: string;
-  /** Root note for chord-mode (e.g., "C", "F#", "Bb") */
-  root?: string;
-  /** Octave for chord playback */
-  octave: number;
+  /** Optional octave override for chord-progression (defaults to pitch state) */
+  octave?: number;
 }
 
 /**
@@ -430,14 +431,17 @@ export class ActionRulesConfig implements ActionRulesConfigData {
           if (ruleTrigger === trigger) {
             // Handle group action based on type
             if (groupRule.action.type === 'chord-progression') {
+              const action: ActionDefinition = typeof groupRule.action.octave === 'number'
+                ? ['set-chord-in-progression', groupRule.action.progression ?? '', buttonIndex, groupRule.action.octave]
+                : ['set-chord-in-progression', groupRule.action.progression ?? '', buttonIndex];
               return {
-                action: ['set-chord-in-progression', groupRule.action.progression, buttonIndex, groupRule.action.octave],
+                action,
                 ruleId: groupRule.id
               };
             }
             if (groupRule.action.type === 'chord-mode') {
               return {
-                action: ['set-chord-from-mode', groupRule.action.mode, buttonIndex, groupRule.action.octave, groupRule.action.root ?? 'C'],
+                action: ['set-chord-from-mode', buttonIndex],
                 ruleId: groupRule.id
               };
             }
