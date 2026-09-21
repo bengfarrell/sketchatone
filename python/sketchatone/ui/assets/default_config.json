@@ -1,0 +1,363 @@
+{
+  "strummer": {
+    "mode": "strum",
+    "noteDuration": {
+      "min": 0.15,
+      "max": 1.5,
+      "multiplier": 1.0,
+      "curve": 1.0,
+      "spread": "inverse",
+      "control": "tiltXY",
+      "default": 1.0
+    },
+    "pitchBend": {
+      "min": -1.0,
+      "max": 1.0,
+      "multiplier": 1.0,
+      "curve": 4.0,
+      "spread": "central",
+      "control": "yaxis",
+      "default": 0.0
+    },
+    "noteVelocity": {
+      "min": 0,
+      "max": 127,
+      "multiplier": 1.0,
+      "curve": 4.0,
+      "spread": "direct",
+      "control": "pressure",
+      "default": 64
+    },
+    "strumming": {
+      "pressureThreshold": 0.1,
+      "pressureBufferSize": 10,
+      "midiChannel": null,
+      "initialNotes": [
+        "C4",
+        "E4",
+        "G4"
+      ],
+      "chord": "Am",
+      "upperNoteSpread": 3,
+      "lowerNoteSpread": 3,
+      "invertX": false
+    },
+    "slide": {
+      "pressureThreshold": 0.1,
+      "maxBendSemitones": 24.0,
+      "pressureModulation": {
+        "type": "none",
+        "ccNumber": 11,
+        "minValue": 0,
+        "maxValue": 127
+      }
+    },
+    "strumRelease": {
+      "active": false,
+      "midiNote": 38,
+      "midiChannel": null,
+      "maxDuration": 0.25,
+      "velocityMultiplier": 1.0
+    },
+    "actionRules": {
+      "rules": [
+        {
+          "id": "stylus-primary-transpose",
+          "button": "button:primary",
+          "action": "toggle-transpose",
+          "trigger": "press",
+          "name": "Toggle Transpose"
+        },
+        {
+          "id": "stylus-secondary-repeater",
+          "button": "button:secondary",
+          "action": "toggle-repeater",
+          "trigger": "press",
+          "name": "Toggle Repeater"
+        }
+      ],
+      "groups": [
+        {
+          "id": "chord-buttons",
+          "name": "Chord Buttons",
+          "buttons": [
+            "key:1",
+            "key:2",
+            "key:3",
+            "key:4",
+            "key:5"
+          ]
+        }
+      ],
+      "groupRules": [
+        {
+          "id": "chord-progression-rule",
+          "groupId": "",
+          "action": {
+            "type": "chord-progression",
+            "progression": "a-minor-pop",
+            "octave": 4
+          },
+          "trigger": "press",
+          "name": "A Minor Pop Progression"
+        },
+        {
+          "id": "chord-mode-rule",
+          "groupId": "chord-buttons",
+          "action": {
+            "type": "chord-mode",
+            "mode": "major",
+            "root": "C",
+            "octave": 4
+          },
+          "trigger": "press",
+          "name": "C Major Chord Mode"
+        }
+      ],
+      "startupRules": []
+    },
+    "chordModes": {
+      "major": [
+        { "degree": "iii",  "quality": "m"   },
+        { "degree": "V",    "quality": ""    },
+        { "degree": "vii",  "quality": "dim" },
+        { "degree": "IV",   "quality": ""    },
+        { "degree": "I",    "quality": ""    },
+        { "degree": "bVII", "quality": ""    },
+        { "degree": "vi",   "quality": "m"   },
+        { "degree": "ii",   "quality": "m"   },
+        { "degree": "V/V",  "quality": "7"   }
+      ],
+      "minor": [
+        { "degree": "III",  "quality": ""    },
+        { "degree": "v",    "quality": "m"   },
+        { "degree": "VII",  "quality": ""    },
+        { "degree": "iv",   "quality": "m"   },
+        { "degree": "i",    "quality": "m"   },
+        { "degree": "V",    "quality": ""    },
+        { "degree": "VI",   "quality": ""    },
+        { "degree": "ii",   "quality": "dim" },
+        { "degree": "IV",   "quality": ""    }
+      ],
+      "jazz": [
+        { "degree": "iii",  "quality": "m7"   },
+        { "degree": "V",    "quality": "7"    },
+        { "degree": "vii",  "quality": "m7"   },
+        { "degree": "IV",   "quality": "maj7" },
+        { "degree": "I",    "quality": "maj7" },
+        { "degree": "bVII", "quality": "maj7" },
+        { "degree": "vi",   "quality": "m7"   },
+        { "degree": "ii",   "quality": "m7"   },
+        { "degree": "V/V",  "quality": "7"    }
+      ],
+      "blues": [
+        { "degree": "V",    "quality": "9"  },
+        { "degree": "V",    "quality": "7"  },
+        { "degree": "bVII", "quality": ""   },
+        { "degree": "IV",   "quality": "7"  },
+        { "degree": "I",    "quality": "7"  },
+        { "degree": "I",    "quality": "9"  },
+        { "degree": "i",    "quality": "m"  },
+        { "degree": "IV",   "quality": "9"  },
+        { "degree": "iv",   "quality": "m"  }
+      ],
+      "power": [
+        { "degree": "bVI",  "quality": "5" },
+        { "degree": "bVII", "quality": "5" },
+        { "degree": "VII",  "quality": "5" },
+        { "degree": "bIII", "quality": "5" },
+        { "degree": "IV",   "quality": "5" },
+        { "degree": "V",    "quality": "5" },
+        { "degree": "I",    "quality": "5" },
+        { "degree": "bII",  "quality": "5" },
+        { "degree": "II",   "quality": "5" }
+      ]
+    },
+    "chordProgressions": {
+      "c-major-pop": [
+        "C",
+        "G",
+        "Am",
+        "F"
+      ],
+      "c-major-jazz": [
+        "Cmaj7",
+        "Dm7",
+        "Em7",
+        "Fmaj7",
+        "G7",
+        "Am7",
+        "Bm7"
+      ],
+      "a-minor-basic": [
+        "Am",
+        "Dm",
+        "Em",
+        "F",
+        "E"
+      ],
+      "a-minor-pop": [
+        "Am",
+        "F",
+        "C",
+        "G",
+        "E"
+      ],
+      "a-minor-sad": [
+        "Am",
+        "Em",
+        "F",
+        "C",
+        "G",
+        "Dm",
+        "E"
+      ],
+      "e-minor-basic": [
+        "Em",
+        "Am",
+        "Bm",
+        "C",
+        "B"
+      ],
+      "e-minor-pop": [
+        "Em",
+        "C",
+        "G",
+        "D",
+        "B"
+      ],
+      "d-minor-basic": [
+        "Dm",
+        "Gm",
+        "Am",
+        "Bb",
+        "A"
+      ],
+      "d-minor-pop": [
+        "Dm",
+        "Bb",
+        "F",
+        "C",
+        "A"
+      ],
+      "blues-e": [
+        "E7",
+        "A7",
+        "B7"
+      ],
+      "blues-a": [
+        "A7",
+        "D7",
+        "E7"
+      ],
+      "blues-g": [
+        "G7",
+        "C7",
+        "D7"
+      ],
+      "rock-classic": [
+        "E",
+        "A",
+        "D",
+        "B"
+      ],
+      "rock-power": [
+        "E5",
+        "G5",
+        "A5",
+        "C5",
+        "D5"
+      ],
+      "jazz-251-c": [
+        "Dm7",
+        "G7",
+        "Cmaj7",
+        "Em7",
+        "A7"
+      ],
+      "gospel-c": [
+        "C",
+        "Am7",
+        "Dm7",
+        "G7",
+        "F"
+      ]
+    }
+  },
+  "midi": {
+    "midiOutputBackend": "rtmidi",
+    "midiOutputId": "IAC Driver Bus 1",
+    "midiInputId": [],
+    "inputMode": "direct",
+    "midiInputExclude": [
+      "sketchatone",
+      "ZynMidiRouter",
+      "zynseq",
+      "zynsmf",
+      "ttymidi",
+      "Midi Through"
+    ],
+    "midiOutputExclude": [
+      "sketchatone"
+    ],
+    "midiPassthrough": [],
+    "jackClientName": "sketchatone",
+    "jackAutoConnect": "chain0",
+    "defaultNoteDuration": 1.5,
+    "midiInterMessageDelay": 0.0
+  },
+  "server": {
+    "device": "devices",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "wsPort": 8081,
+    "wssPort": 8082,
+    "wsMessageThrottle": 150,
+    "deviceFindingPollInterval": null
+  },
+  "deviceButtons": {
+    "buttons": [
+      {
+        "code": 50790405,
+        "name": "Button 1"
+      },
+      {
+        "code": 50792209,
+        "name": "Button 2"
+      },
+      {
+        "code": 50790408,
+        "name": "Button 3"
+      },
+      {
+        "code": 50790412,
+        "name": "Button 4"
+      }
+    ],
+    "keys": [
+      {
+        "key": "1",
+        "name": "Key 1"
+      },
+      {
+        "key": "2",
+        "name": "Key 2"
+      },
+      {
+        "key": "3",
+        "name": "Key 3"
+      },
+      {
+        "key": "4",
+        "name": "Key 4"
+      },
+      {
+        "key": "5",
+        "name": "Key 5"
+      }
+    ]
+  },
+  "keyboard": {
+    "enabled": true
+  }
+}
