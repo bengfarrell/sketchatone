@@ -319,6 +319,7 @@ describe('StrummerWebSocketClient', () => {
         tiltXY: 11.18,
         primaryButtonPressed: true,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: 1234567890,
       };
@@ -349,6 +350,7 @@ describe('StrummerWebSocketClient', () => {
         tiltXY: 11.18,
         primaryButtonPressed: true,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: 1234567890,
       };
@@ -367,6 +369,7 @@ describe('StrummerWebSocketClient', () => {
         tiltXY: 11.18,
         primaryButtonPressed: true,
         secondaryButtonPressed: false,
+        auxCodes: [],
         state: 'contact',
         timestamp: 1234567890,
       });
@@ -384,7 +387,7 @@ describe('StrummerWebSocketClient', () => {
 
       mockWebSocketInstances[0].simulateMessage({
         type: 'tablet',
-        data: { x: 0.5, y: 0.5, pressure: 0.5, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, state: 'contact', timestamp: 0 },
+        data: { x: 0.5, y: 0.5, pressure: 0.5, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, auxCodes: [], state: 'contact', timestamp: 0 },
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -393,7 +396,7 @@ describe('StrummerWebSocketClient', () => {
 
       mockWebSocketInstances[0].simulateMessage({
         type: 'tablet',
-        data: { x: 0.6, y: 0.6, pressure: 0.6, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, state: 'contact', timestamp: 0 },
+        data: { x: 0.6, y: 0.6, pressure: 0.6, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, auxCodes: [], state: 'contact', timestamp: 0 },
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -559,6 +562,97 @@ describe('StrummerWebSocketClient', () => {
 
       client.cleanup();
     });
+
+    it('should send set-button-detection message with enabled=true', () => {
+      const client = new StrummerWebSocketClient();
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      client.setButtonDetection(true);
+
+      const sentMessages = mockWebSocketInstances[0].getSentMessages();
+      expect(sentMessages.length).toBe(1);
+      expect(JSON.parse(sentMessages[0])).toEqual({
+        type: 'set-button-detection',
+        enabled: true,
+      });
+
+      client.cleanup();
+    });
+
+    it('should send set-button-detection message with enabled=false', () => {
+      const client = new StrummerWebSocketClient();
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      client.setButtonDetection(false);
+
+      const sentMessages = mockWebSocketInstances[0].getSentMessages();
+      expect(sentMessages.length).toBe(1);
+      expect(JSON.parse(sentMessages[0])).toEqual({
+        type: 'set-button-detection',
+        enabled: false,
+      });
+
+      client.cleanup();
+    });
+  });
+
+  describe('button-detection-state events', () => {
+    it('should emit button-detection-state when server broadcasts enabled=true', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      client.on('button-detection-state', callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'button-detection-state',
+        enabled: true,
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith({ enabled: true });
+
+      client.cleanup();
+    });
+
+    it('should emit button-detection-state when server broadcasts enabled=false', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      client.on('button-detection-state', callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'button-detection-state',
+        enabled: false,
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith({ enabled: false });
+
+      client.cleanup();
+    });
+
+    it('should coerce missing enabled field to false', () => {
+      const client = new StrummerWebSocketClient();
+      const callback = vi.fn();
+      client.on('button-detection-state', callback);
+
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+
+      mockWebSocketInstances[0].simulateMessage({ type: 'button-detection-state' });
+
+      expect(callback).toHaveBeenCalledWith({ enabled: false });
+
+      client.cleanup();
+    });
   });
 
   describe('error handling', () => {
@@ -645,7 +739,7 @@ describe('StrummerWebSocketClient', () => {
       // Listeners should be cleared (emit won't call callback)
       mockWebSocketInstances[0].simulateMessage({
         type: 'tablet',
-        data: { x: 0.5, y: 0.5, pressure: 0.5, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, state: 'contact', timestamp: 0 },
+        data: { x: 0.5, y: 0.5, pressure: 0.5, tiltX: 0, tiltY: 0, tiltXY: 0, primaryButtonPressed: false, secondaryButtonPressed: false, auxCodes: [], state: 'contact', timestamp: 0 },
       });
 
       // Callback should not be called after cleanup

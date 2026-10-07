@@ -31,23 +31,17 @@ sketchatone
 
 #### Optional Raspberry Pi Setup
 
-After installation, you can optionally configure:
+After installation, run the interactive configuration menu to enable optional features (USB MIDI gadget mode, autostart behavior, boot-time trimming):
 
-**USB MIDI Gadget Mode** - Connect Pi directly to MIDI hardware via USB-C:
 ```bash
-sudo sketchatone-setup-usb-gadget
+sudo sketchatone-configure
 ```
-Perfect for connecting to devices like Akai MPC that can power the Pi over USB.
 
-**Kiosk Mode** - Auto-start web dashboard in fullscreen on boot:
+The **UI variant** ships an equivalent menu:
+
 ```bash
-sudo sketchatone-setup-kiosk
+sudo sketchatone-ui-configure
 ```
-Ideal for dedicated installations or live performance setups.
-
-> Requires Raspberry Pi OS Bookworm or newer (Pi 4 or Pi 5) running the
-> default labwc Wayland session. Older LXDE/X11 sessions and the brief
-> wayfire-default era are not supported.
 
 ### From Source
 ```bash

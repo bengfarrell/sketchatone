@@ -21,33 +21,7 @@ export default defineConfig({
       'lit-element',
       'lit-html',
       '@lit/reactive-element',
-      // Dedupe Spectrum Web Components
-      '@spectrum-web-components/base',
-      '@spectrum-web-components/theme',
-      '@spectrum-web-components/button',
-      '@spectrum-web-components/action-button',
-      '@spectrum-web-components/icon',
-      '@spectrum-web-components/icons',
-      '@spectrum-web-components/icons-workflow',
-      '@spectrum-web-components/progress-circle',
-      '@spectrum-web-components/tooltip',
-      '@spectrum-web-components/overlay',
-      '@spectrum-web-components/reactive-controllers',
-      '@spectrum-web-components/shared',
-      // New components for strum visualizers
-      '@spectrum-web-components/checkbox',
-      '@spectrum-web-components/picker',
-      '@spectrum-web-components/menu',
-      '@spectrum-web-components/number-field',
-      '@spectrum-web-components/field-label',
-      '@spectrum-web-components/textfield',
-      '@spectrum-web-components/popover',
-      '@spectrum-web-components/tray',
     ],
-  },
-  optimizeDeps: {
-    // Include blankslate for pre-bundling from node_modules
-    include: ['blankslate'],
   },
   build: {
     outDir: 'dist/public',
@@ -55,14 +29,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         tablet: resolve(__dirname, 'index.html'),
-        web: resolve(__dirname, 'web.html'),
       },
-      // Externalize Node.js-only modules that shouldn't be bundled for browser
-      // This is needed because blankslate's main export includes mockbytes which uses 'fs'
-      external: [
-        'fs',
-        'path',
-      ],
     },
   },
   server: {

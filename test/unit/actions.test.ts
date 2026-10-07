@@ -78,6 +78,36 @@ describe('ChordProgressionState', () => {
   });
 });
 
+describe('Chord-mode entry resolution', () => {
+  it('builds a dominant seventh from numeric degree fields', () => {
+    const strummer = new Strummer();
+    const actions = new Actions(
+      { lowerSpread: 0, upperSpread: 0 },
+      strummer,
+      undefined,
+      { major: [{ degree: 2, alteration: 0, quality: 'major', extension: '7', display: 'V/V7' }] },
+    );
+
+    actions.setChordFromMode([0], { button: 'Test' });
+
+    expect(strummer.notes.map((note) => note.notation)).toEqual(['D', 'F#', 'A', 'C']);
+  });
+
+  it('uses flat spelling for a lowered scale degree', () => {
+    const strummer = new Strummer();
+    const actions = new Actions(
+      { lowerSpread: 0, upperSpread: 0 },
+      strummer,
+      undefined,
+      { major: [{ degree: 7, alteration: -1, quality: 'major', extension: 'none', display: 'bVII' }] },
+    );
+
+    actions.setChordFromMode([0], { button: 'Test' });
+
+    expect(strummer.notes.map((note) => note.notation)).toEqual(['A#', 'D', 'F']);
+  });
+});
+
 describe('Actions with plain object config', () => {
   /**
    * Note: lowerSpread and upperSpread are primitives (passed by value)
@@ -267,10 +297,10 @@ describe('Actions toggle-transpose', () => {
     const config = new MidiStrummerConfig();
     const actions = new Actions(config);
 
-    // Transpose state is now managed internally by Actions
-    expect(actions.getTransposeConfig().active).toBe(false);
+    // Transpose is now expressed as a non-zero pitch offset.
+    expect(actions.getPitchOffset()).toBe(0);
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(true);
+    expect(actions.getPitchOffset()).not.toBe(0);
   });
 
   it('should toggle transpose off', () => {
@@ -279,11 +309,11 @@ describe('Actions toggle-transpose', () => {
 
     // First toggle on
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(true);
+    expect(actions.getPitchOffset()).not.toBe(0);
 
     // Then toggle off
     actions.execute('toggle-transpose', { button: 'Test' });
-    expect(actions.getTransposeConfig().active).toBe(false);
+    expect(actions.getPitchOffset()).toBe(0);
   });
 });
 

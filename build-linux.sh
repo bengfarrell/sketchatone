@@ -16,13 +16,6 @@ if [ ! -f "python/sketchatone-linux.spec" ]; then
     exit 1
 fi
 
-# Check if blankslate source is available
-if [ ! -d "blankslate" ]; then
-    echo "❌ Error: blankslate source not found"
-    echo "   Expected to find: blankslate/"
-    exit 1
-fi
-
 # Create virtual environment if it doesn't exist
 if [ ! -d "python/venv" ]; then
     echo "🔧 Creating virtual environment..."
@@ -42,10 +35,6 @@ echo "📦 Installing packages for PyInstaller..."
 # Install sketchatone as a regular package
 echo "  → Installing sketchatone..."
 pip install ./python --quiet
-
-# Install blankslate as a regular package
-echo "  → Installing blankslate..."
-pip install ./blankslate --quiet
 
 # Install PyInstaller
 echo "  → Installing PyInstaller..."

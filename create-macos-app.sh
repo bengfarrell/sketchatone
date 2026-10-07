@@ -38,12 +38,6 @@ if [ ! -d "python/sketchatone" ]; then
 fi
 echo "  ✓ sketchatone package found"
 
-if [ ! -d "../blankslate/python/blankslate" ]; then
-    echo "❌ Error: ../blankslate/python/blankslate not found"
-    exit 1
-fi
-echo "  ✓ blankslate package found"
-
 # Clean previous build
 echo ""
 echo "🗑️  Cleaning previous build..."
@@ -69,7 +63,6 @@ pip install hidapi websockets inquirer colorama python-rtmidi --quiet
 
 # Install our packages in editable-like mode (copy them to site-packages)
 cp -R python/sketchatone "$RESOURCES_DIR/venv/lib/python"*/site-packages/
-cp -R ../blankslate/python/blankslate "$RESOURCES_DIR/venv/lib/python"*/site-packages/
 
 deactivate
 
@@ -108,7 +101,6 @@ CONFIG_FILE="$RESOURCES_DIR/configs/config.json"
 
 # Set environment variables for the server
 export SKETCHATONE_PUBLIC_DIR="$RESOURCES_DIR/public"
-export SKETCHATONE_CONFIG_DIR="$RESOURCES_DIR/configs/devices"
 
 # Create default config if it doesn't exist
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -260,7 +252,6 @@ CONFIG_FILE="$RESOURCES_DIR/configs/config.json"
 
 # Set environment variables
 export SKETCHATONE_PUBLIC_DIR="$RESOURCES_DIR/public"
-export SKETCHATONE_CONFIG_DIR="$RESOURCES_DIR/configs/devices"
 
 # Create default config if it doesn't exist (as current user, not root)
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -278,7 +269,6 @@ echo ""
 # PYTHONDONTWRITEBYTECODE=1 prevents creating root-owned __pycache__ files
 sudo PYTHONDONTWRITEBYTECODE=1 \
     SKETCHATONE_PUBLIC_DIR="$SKETCHATONE_PUBLIC_DIR" \
-    SKETCHATONE_CONFIG_DIR="$SKETCHATONE_CONFIG_DIR" \
     "$PYTHON" -m sketchatone.cli.server \
     -c "$CONFIG_FILE" \
     --poll 2000 \

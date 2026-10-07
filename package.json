@@ -1,6 +1,6 @@
 {
   "name": "sketchatone",
-  "version": "0.3.0.dev7",
+  "version": "0.3.0.dev68",
   "description": "Sketchatone - Node.js, Python, and Web implementation",
   "main": "dist/cli/index.js",
   "type": "module",
@@ -73,19 +73,19 @@
     "docs:watch": "npx @11ty/eleventy --watch",
     "docs:deploy": "npm run docs && gh-pages -d docs",
     "package:pi": "npm run build && ./package-for-pi.sh",
-    "package:macos": "npm run build && ./create-macos-app.sh"
+    "package:macos": "npm run build && ./create-macos-app.sh",
+    "package:pi-ui": "./package-for-pi.sh --variant ui"
   },
   "dependencies": {
     "@futpib/node-global-key-listener": "^1.0.3",
     "@julusian/midi": "^3.6.1",
-    "@spectrum-web-components/bundle": "^1.11.2",
-    "blankslate": "git+https://github.com/bengfarrell/blankslate.git#v1.0.0",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "inquirer": "^9.2.23",
     "lit": "^3.3.1",
+    "node-hid": "^3.3.0",
     "ora": "^8.0.1",
-    "usb": "^2.17.0",
+    "usb": "^3.0.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

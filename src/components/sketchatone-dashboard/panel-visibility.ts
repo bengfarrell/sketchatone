@@ -3,6 +3,7 @@
  */
 
 export type PanelId =
+  | 'performance'
   | 'tabletVisualizer'
   | 'stylusVisualizer'
   | 'midiInput'
@@ -13,9 +14,12 @@ export type PanelId =
   | 'pitchBend'
   | 'strummingSettings'
   | 'strumRelease'
+  | 'slide'
   | 'actions'
   | 'groups'
+  | 'deviceButtons'
   | 'chordProgressions'
+  | 'chordModePerformance'
   | 'serverSettings';
 
 export interface PanelInfo {
@@ -25,6 +29,7 @@ export interface PanelInfo {
 }
 
 export const PANELS: PanelInfo[] = [
+  { id: 'performance', label: 'Performance', icon: '🎤' },
   { id: 'tabletVisualizer', label: 'Tablet', icon: '📱' },
   { id: 'stylusVisualizer', label: 'Stylus', icon: '✏️' },
   { id: 'midiInput', label: 'MIDI In', icon: '🎹' },
@@ -35,9 +40,12 @@ export const PANELS: PanelInfo[] = [
   { id: 'pitchBend', label: 'Pitch', icon: '🎵' },
   { id: 'strummingSettings', label: 'Strumming', icon: '🎸' },
   { id: 'strumRelease', label: 'Release', icon: '🔔' },
+  { id: 'slide', label: 'Slide', icon: '🎚️' },
   { id: 'actions', label: 'Actions', icon: '⚡' },
   { id: 'groups', label: 'Groups', icon: '📦' },
+  { id: 'deviceButtons', label: 'Device Buttons', icon: '🔘' },
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
+  { id: 'chordModePerformance', label: 'Chord Mode', icon: '🎹' },
   { id: 'serverSettings', label: 'Server', icon: '⚙️' },
 ];
 
@@ -46,6 +54,7 @@ export type PanelVisibility = Record<PanelId, boolean>;
 const STORAGE_KEY = 'sketchatone-panel-visibility';
 
 const DEFAULT_VISIBILITY: PanelVisibility = {
+  performance: true,
   tabletVisualizer: true,
   stylusVisualizer: true,
   midiInput: true,
@@ -56,9 +65,12 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   pitchBend: true,
   strummingSettings: true,
   strumRelease: true,
+  slide: true,
   actions: true,
   groups: true,
+  deviceButtons: true,
   chordProgressions: true,
+  chordModePerformance: true,
   serverSettings: true,
 };
 

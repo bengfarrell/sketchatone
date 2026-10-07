@@ -45,6 +45,8 @@ export interface ParameterMappingData {
   control: ControlSource;
   /** Default value when control is "none" or input is unavailable */
   default: number;
+  /** Humanization noise: fraction of the output range, scaled by distance from the neutral centre (0=none). The flat part of the curve is never randomized; the effect grows toward the edges */
+  randomization: number;
 }
 
 /**
@@ -58,6 +60,7 @@ export const DEFAULT_PARAMETER_MAPPING: ParameterMappingData = {
   spread: 'direct',
   control: 'none',
   default: 0.5,
+  randomization: 0.0,
 };
 
 /**
@@ -77,6 +80,7 @@ export class ParameterMapping implements ParameterMappingData {
   spread: SpreadType;
   control: ControlSource;
   default: number;
+  randomization: number;
 
   constructor(data: Partial<ParameterMappingData> = {}) {
     this.min = data.min ?? DEFAULT_PARAMETER_MAPPING.min;
@@ -86,6 +90,7 @@ export class ParameterMapping implements ParameterMappingData {
     this.spread = data.spread ?? DEFAULT_PARAMETER_MAPPING.spread;
     this.control = data.control ?? DEFAULT_PARAMETER_MAPPING.control;
     this.default = data.default ?? DEFAULT_PARAMETER_MAPPING.default;
+    this.randomization = data.randomization ?? DEFAULT_PARAMETER_MAPPING.randomization;
   }
 
   /**
@@ -133,6 +138,22 @@ export class ParameterMapping implements ParameterMappingData {
       output = this.min + value * (this.max - this.min);
     }
 
+    // Apply humanization noise, scaled by distance from the neutral centre.
+    // The flat part of the curve (output at the centre) is never randomized;
+    // the amplitude grows as the value moves toward the edges, reaching the
+    // full randomization * range width at either edge. Clamped to [min, max].
+    if (this.randomization > 0.0) {
+      const rangeWidth = Math.abs(this.max - this.min);
+      const halfRange = rangeWidth / 2.0;
+      const centre = (this.min + this.max) / 2.0;
+      // 0 at the neutral centre, 1 at either edge
+      const scale = halfRange > 0.0 ? Math.min(1.0, Math.abs(output - centre) / halfRange) : 0.0;
+      const noise = (Math.random() * 2.0 - 1.0) * this.randomization * rangeWidth * scale;
+      const lo = Math.min(this.min, this.max);
+      const hi = Math.max(this.min, this.max);
+      output = Math.max(lo, Math.min(hi, output + noise));
+    }
+
     // Apply multiplier
     return output * this.multiplier;
   }
@@ -149,6 +170,7 @@ export class ParameterMapping implements ParameterMappingData {
       spread: data.spread as SpreadType | undefined,
       control: data.control as ControlSource | undefined,
       default: data.default as number | undefined,
+      randomization: data.randomization as number | undefined,
     });
   }
 
@@ -164,6 +186,7 @@ export class ParameterMapping implements ParameterMappingData {
       spread: this.spread,
       control: this.control,
       default: this.default,
+      randomization: this.randomization,
     };
   }
 }

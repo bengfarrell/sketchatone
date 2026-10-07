@@ -25,6 +25,7 @@ from sketchatone.cli.strum_event_viewer import (
 from sketchatone.models.note import Note, NoteObject
 from sketchatone.models.strummer_config import StrummerConfig
 from sketchatone.strummer.strummer import Strummer
+from sketchatone.tablet.server.event_adapter import TabletEvent
 
 
 class TestCreateBar:
@@ -161,38 +162,7 @@ class TestPrintStrumEvent:
 
 class TestStrumEventViewerInit:
     """Tests for StrumEventViewer initialization"""
-    
-    @pytest.fixture
-    def tablet_config_file(self, tmp_path):
-        """Create a temporary tablet config file"""
-        config = {
-            "name": "Test Tablet",
-            "vendorId": "0x1234",
-            "productId": "0x5678",
-            "deviceInfo": {
-                "vendor_id": 4660,
-                "product_id": 22136,
-                "usage_page": 13
-            },
-            "byteCodeMappings": {
-                "x": {"byteIndex": [2, 3], "max": 32000, "type": "multi-byte-range"},
-                "y": {"byteIndex": [4, 5], "max": 18000, "type": "multi-byte-range"},
-                "pressure": {"byteIndex": [6, 7], "max": 8192, "type": "multi-byte-range"},
-                "status": {
-                    "byteIndex": [1],
-                    "type": "code",
-                    "values": {
-                        "160": {"state": "hover"},
-                        "161": {"state": "contact"}
-                    }
-                }
-            }
-        }
-        config_path = tmp_path / "tablet_config.json"
-        with open(config_path, 'w') as f:
-            json.dump(config, f)
-        return str(config_path)
-    
+
     @pytest.fixture
     def strummer_config_file(self, tmp_path):
         """Create a temporary strummer config file"""
@@ -207,28 +177,19 @@ class TestStrumEventViewerInit:
         with open(config_path, 'w') as f:
             json.dump(config, f)
         return str(config_path)
-    
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_init_with_default_strummer_config(self, mock_base_init, tablet_config_file):
-        """Test initialization with default strummer config"""
-        mock_base_init.return_value = None
 
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_init_with_default_strummer_config(self):
+        """Test initialization with default strummer config"""
+        viewer = StrumEventViewer()
 
         # Should use default strummer config
         assert viewer.strummer_config.pressure_threshold == 0.1
         assert viewer.strummer_config.notes == ["C4", "E4", "G4"]  # New default
         assert viewer.live_mode is False
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_init_with_custom_strummer_config(self, mock_base_init, tablet_config_file, strummer_config_file):
+    def test_init_with_custom_strummer_config(self, strummer_config_file):
         """Test initialization with custom strummer config"""
-        mock_base_init.return_value = None
-
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
             strummer_config_path=strummer_config_file
         )
 
@@ -236,25 +197,15 @@ class TestStrumEventViewerInit:
         assert viewer.strummer_config.pressure_threshold == 0.2
         assert viewer.strummer_config.notes == ["D4", "F#4", "A4", "D5"]
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_init_live_mode(self, mock_base_init, tablet_config_file):
+    def test_init_live_mode(self):
         """Test initialization with live mode enabled"""
-        mock_base_init.return_value = None
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            live_mode=True
-        )
+        viewer = StrumEventViewer(live_mode=True)
 
         assert viewer.live_mode is True
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_strummer_configured_correctly(self, mock_base_init, tablet_config_file, strummer_config_file):
+    def test_strummer_configured_correctly(self, strummer_config_file):
         """Test that strummer is configured with correct parameters"""
-        mock_base_init.return_value = None
-
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
             strummer_config_path=strummer_config_file
         )
 
@@ -264,35 +215,10 @@ class TestStrumEventViewerInit:
 
 class TestStrumEventViewerSetupNotes:
     """Tests for StrumEventViewer._setup_notes method"""
-    
-    @pytest.fixture
-    def tablet_config_file(self, tmp_path):
-        """Create a temporary tablet config file"""
-        config = {
-            "name": "Test Tablet",
-            "vendorId": "0x1234",
-            "productId": "0x5678",
-            "deviceInfo": {"vendor_id": 4660, "product_id": 22136, "usage_page": 13},
-            "byteCodeMappings": {
-                "x": {"byteIndex": [2, 3], "max": 32000, "type": "multi-byte-range"},
-                "y": {"byteIndex": [4, 5], "max": 18000, "type": "multi-byte-range"},
-                "pressure": {"byteIndex": [6, 7], "max": 8192, "type": "multi-byte-range"},
-                "status": {"byteIndex": [1], "type": "code", "values": {"160": {"state": "hover"}}}
-            }
-        }
-        config_path = tmp_path / "tablet_config.json"
-        with open(config_path, 'w') as f:
-            json.dump(config, f)
-        return str(config_path)
-    
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_setup_notes_from_explicit_list(self, mock_base_init, tablet_config_file):
-        """Test setting up notes from explicit note list"""
-        mock_base_init.return_value = None
 
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_setup_notes_from_explicit_list(self):
+        """Test setting up notes from explicit note list"""
+        viewer = StrumEventViewer()
 
         # Default config has ["C4", "E4", "G4"] (new default)
         assert len(viewer.strummer.notes) == 3
@@ -301,11 +227,8 @@ class TestStrumEventViewerSetupNotes:
         assert viewer.strummer.notes[1].notation == 'E'
         assert viewer.strummer.notes[2].notation == 'G'
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_setup_notes_from_chord(self, mock_base_init, tablet_config_file, tmp_path):
+    def test_setup_notes_from_chord(self, tmp_path):
         """Test setting up notes from chord notation"""
-        mock_base_init.return_value = None
-
         # Create config with chord
         strummer_config = {
             "strumming": {
@@ -321,7 +244,6 @@ class TestStrumEventViewerSetupNotes:
             json.dump(strummer_config, f)
 
         viewer = StrumEventViewer(
-            config_path=tablet_config_file,
             strummer_config_path=str(strummer_config_path)
         )
 
@@ -333,198 +255,92 @@ class TestStrumEventViewerSetupNotes:
         assert 'E' in note_names
 
 
-class TestStrumEventViewerHandlePacket:
-    """Tests for StrumEventViewer.handle_packet method"""
-    
-    @pytest.fixture
-    def tablet_config_file(self, tmp_path):
-        """Create a temporary tablet config file"""
-        config = {
-            "name": "Test Tablet",
-            "vendorId": "0x1234",
-            "productId": "0x5678",
-            "deviceInfo": {"vendor_id": 4660, "product_id": 22136, "usage_page": 13},
-            "byteCodeMappings": {
-                "x": {"byteIndex": [2, 3], "max": 32000, "type": "multi-byte-range"},
-                "y": {"byteIndex": [4, 5], "max": 18000, "type": "multi-byte-range"},
-                "pressure": {"byteIndex": [6, 7], "max": 8192, "type": "multi-byte-range"},
-                "status": {"byteIndex": [1], "type": "code", "values": {"160": {"state": "hover"}, "161": {"state": "contact"}}}
-            }
-        }
-        config_path = tmp_path / "tablet_config.json"
-        with open(config_path, 'w') as f:
-            json.dump(config, f)
-        return str(config_path)
-    
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
-    def test_handle_packet_increments_count(self, mock_process, mock_base_init, tablet_config_file):
-        """Test that handle_packet increments packet count"""
-        mock_base_init.return_value = None
-        mock_process.return_value = {'x': 0.5, 'y': 0.5, 'pressure': 0.0, 'state': 'hover'}
+def _make_event(*, x: float = 0.5, y: float = 0.5, pressure: float = 0.0,
+                state: str = 'hover') -> TabletEvent:
+    """Build a normalized ``TabletEvent`` for feeding ``_on_tablet_event``."""
+    return TabletEvent(x=x, y=y, pressure=pressure, state=state)
 
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+
+class TestStrumEventViewerHandleEvent:
+    """Tests for StrumEventViewer._on_tablet_event method"""
+
+    def test_handle_event_increments_count(self):
+        """Test that _on_tablet_event increments packet count"""
+        viewer = StrumEventViewer()
         viewer.packet_count = 0
 
-        viewer.handle_packet(b'\x00' * 10)
+        viewer._on_tablet_event(_make_event())
         assert viewer.packet_count == 1
 
-        viewer.handle_packet(b'\x00' * 10)
+        viewer._on_tablet_event(_make_event())
         assert viewer.packet_count == 2
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
-    def test_handle_packet_updates_strummer_bounds(self, mock_process, mock_base_init, tablet_config_file):
-        """Test that handle_packet updates strummer bounds"""
-        mock_base_init.return_value = None
-        mock_process.return_value = {'x': 0.5, 'y': 0.5, 'pressure': 0.0, 'state': 'hover'}
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_handle_event_updates_strummer_bounds(self):
+        """Test that _on_tablet_event updates strummer bounds"""
+        viewer = StrumEventViewer()
         viewer.packet_count = 0
 
-        viewer.handle_packet(b'\x00' * 10)
+        viewer._on_tablet_event(_make_event())
 
         # Strummer should have bounds set to 1.0 (normalized)
         assert viewer.strummer._width == 1.0
         assert viewer.strummer._height == 1.0
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
     @patch('sketchatone.cli.strum_event_viewer.print_strum_event')
-    def test_handle_packet_triggers_strum_event(self, mock_print, mock_process, mock_base_init, tablet_config_file):
-        """Test that handle_packet triggers strum events correctly"""
-        mock_base_init.return_value = None
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file,
-            live_mode=False
-        )
+    def test_handle_event_triggers_strum_event(self, mock_print):
+        """Test that _on_tablet_event triggers strum events correctly"""
+        viewer = StrumEventViewer(live_mode=False)
         viewer.packet_count = 0
 
-        # Simulate a sequence that triggers a strum:
-        # 1. First touch with pressure (tap detection starts)
-        mock_process.return_value = {'x': 0.1, 'y': 0.5, 'pressure': 0.5, 'state': 'contact'}
-        for _ in range(5):  # Fill pressure buffer
-            viewer.handle_packet(b'\x00' * 10)
+        # Simulate a sequence that triggers a strum: sustained pressure
+        for _ in range(5):
+            viewer._on_tablet_event(
+                _make_event(x=0.1, pressure=0.5, state='contact')
+            )
 
-        # Check if strum event was triggered and printed
         if viewer.last_event:
             assert viewer.last_event['type'] == 'strum'
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
-    def test_handle_packet_stores_last_event(self, mock_process, mock_base_init, tablet_config_file):
-        """Test that handle_packet stores the last event"""
-        mock_base_init.return_value = None
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_handle_event_stores_last_event(self):
+        """Test that _on_tablet_event stores the last event"""
+        viewer = StrumEventViewer()
         viewer.packet_count = 0
 
-        # Initially no last event
         assert viewer.last_event is None
 
-        # Simulate packets that trigger a strum
-        mock_process.return_value = {'x': 0.1, 'y': 0.5, 'pressure': 0.5, 'state': 'contact'}
         for _ in range(5):
-            viewer.handle_packet(b'\x00' * 10)
+            viewer._on_tablet_event(
+                _make_event(x=0.1, pressure=0.5, state='contact')
+            )
 
-        # After strum, last_event should be set
         if viewer.last_event:
             assert 'type' in viewer.last_event
-
-
-class TestStrumEventViewerIntegration:
-    """Integration tests for StrumEventViewer with real config files"""
-    
-    @pytest.fixture
-    def real_tablet_config(self):
-        """Path to real tablet config if available"""
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            '..', '..', '..', 'public', 'configs', 'xp-pen-deco640.json'
-        )
-        if os.path.exists(config_path):
-            return config_path
-        pytest.skip("Real tablet config not found")
-    
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    def test_init_with_real_config(self, mock_base_init, real_tablet_config):
-        """Test initialization with real tablet config"""
-        mock_base_init.return_value = None
-
-        viewer = StrumEventViewer(
-            config_path=real_tablet_config
-        )
-
-        # Should initialize without errors
-        assert viewer.strummer is not None
-        assert len(viewer.strummer.notes) > 0
 
 
 class TestEdgeCases:
     """Tests for edge cases and error handling"""
 
-    @pytest.fixture
-    def tablet_config_file(self, tmp_path):
-        """Create a temporary tablet config file"""
-        config = {
-            "name": "Test Tablet",
-            "vendorId": "0x1234",
-            "productId": "0x5678",
-            "deviceInfo": {"vendor_id": 4660, "product_id": 22136, "usage_page": 13},
-            "byteCodeMappings": {
-                "x": {"byteIndex": [2, 3], "max": 32000, "type": "multi-byte-range"},
-                "y": {"byteIndex": [4, 5], "max": 18000, "type": "multi-byte-range"},
-                "pressure": {"byteIndex": [6, 7], "max": 8192, "type": "multi-byte-range"},
-                "status": {"byteIndex": [1], "type": "code", "values": {"160": {"state": "hover"}}}
-            }
-        }
-        config_path = tmp_path / "tablet_config.json"
-        with open(config_path, 'w') as f:
-            json.dump(config, f)
-        return str(config_path)
-
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
-    def test_handle_packet_with_missing_values(self, mock_process, mock_base_init, tablet_config_file):
-        """Test handle_packet with missing values in processed data"""
-        mock_base_init.return_value = None
-        mock_process.return_value = {}  # Empty dict
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_handle_event_with_zero_values(self):
+        """_on_tablet_event should not crash with all-zero event fields"""
+        viewer = StrumEventViewer()
         viewer.packet_count = 0
 
-        # Should not crash with missing values
-        viewer.handle_packet(b'\x00' * 10)
+        viewer._on_tablet_event(TabletEvent())
         assert viewer.packet_count == 1
 
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.__init__')
-    @patch('sketchatone.cli.strum_event_viewer.TabletReaderBase.process_packet')
-    def test_handle_packet_with_exception(self, mock_process, mock_base_init, tablet_config_file, capsys):
-        """Test handle_packet handles exceptions gracefully"""
-        mock_base_init.return_value = None
-        mock_process.side_effect = Exception("Test error")
-
-        viewer = StrumEventViewer(
-            config_path=tablet_config_file
-        )
+    def test_handle_event_with_exception(self, capsys):
+        """_on_tablet_event should log and swallow strummer exceptions"""
+        viewer = StrumEventViewer()
         viewer.packet_count = 0
 
-        # Should not crash, should log error
-        viewer.handle_packet(b'\x00' * 10)
+        with patch.object(viewer.strummer, 'update_bounds',
+                          side_effect=Exception("Test error")):
+            viewer._on_tablet_event(_make_event())
 
-        # Check that error was logged to stderr
+        # Should have logged the error to stderr, not crashed
         captured = capsys.readouterr()
         assert 'ERROR' in captured.err or 'Test error' in captured.err
-    
+
     def test_create_bar_negative_value(self):
         """Test create_bar with negative value"""
         bar = create_bar(-10, 100, 10)

@@ -170,8 +170,7 @@ Map button groups to progressions:
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "c-major-pop",
-          "octave": 4
+          "progression": "c-major-pop"
         }
       }
     ]
@@ -222,14 +221,15 @@ Reference your progressions by name in action rules:
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "my-custom-song",
-          "octave": 4
+          "progression": "my-custom-song"
         }
       }
     ]
   }
 }
 ```
+
+If you want a specific octave for this rule regardless of the shared pitch state, add an `"octave": <n>` field to the action. Otherwise, the base octave comes from `strummer.pitch.startingOctave`. See **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)**.
 
 ### Notes
 

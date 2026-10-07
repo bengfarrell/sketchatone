@@ -1,9 +1,9 @@
 ---
-title: Configuration
+title: How to Configure
 description: Understanding Sketchatone's configuration files and settings
 ---
 
-# Configuration
+# How to Configure
 
 This document describes Sketchatone's configuration system and all available settings.
 
@@ -138,7 +138,10 @@ sudo systemctl restart sketchatone
 | `pitch_bend` | Pitch bend parameter mapping |
 | `strum_release` | Release trigger settings (drum sounds on pen lift) |
 | `action_rules` | Button-to-action mappings (stylus & tablet buttons) |
+| `pitch` | Shared starting offset and default octave |
+| `harmonicContext` | Chord-mode starting root and mode |
 | `chordProgressions` | Chord progressions (required for progression actions) |
+| `chordModes` | Positional chord-mode layouts (required for chord-mode actions) |
 | `keyboard` | Keyboard input mappings (optional) |
 | `midi` | MIDI backend settings (ports, backend selection, JACK config) |
 | `server` | Server settings (HTTP/HTTPS/WS/WSS ports) |
@@ -274,18 +277,17 @@ Button-to-action mapping configuration. Maps tablet buttons and stylus buttons t
 
 | Action | Description | Parameters |
 |--------|-------------|------------|
-| `toggle-transpose` | Toggle transpose on/off | `semitones` (number, default: 12) |
+| `toggle-transpose` | Toggle shared pitch offset between 0 and semitones | `semitones` (number, default: 12) |
 | `toggle-repeater` | Toggle note repeater on/off | `pressureMultiplier` (number), `frequencyMultiplier` (number) |
-| `transpose` | Transpose notes | `semitones` (number) |
+| `transpose` | Add semitones to shared pitch offset (cumulative) | `semitones` (number) |
 | `set-chord` | Set chord | Chord notation string |
 | `set-strum-notes` | Set specific notes | Array of note strings |
-| `chord-progression` | Cycle through chord progression | Progression name, octave |
 
-**Note:** Transpose and repeater state is managed entirely by the Actions system. The `note_repeater` and `transpose` config sections that may appear in older config files are **ignored** by the CLI/server. Use `action_rules` to configure these features instead.
+**Note:** Transpose and repeater state is managed entirely by the Actions system. The `note_repeater` and `transpose` config sections that may appear in older config files are **ignored** by the CLI/server. Use `action_rules` to configure these features instead. Transpose is now a shared pitch offset — see `pitch` and `harmonicContext` below.
 
 ### Group Rule Format
 
-Used for chord progressions mapped to multiple buttons:
+Used for chord progressions and chord modes bound to a group of buttons:
 
 ```json
 {
@@ -295,11 +297,15 @@ Used for chord progressions mapped to multiple buttons:
   "trigger": "press",
   "action": {
     "type": "chord-progression",
-    "progression": "c-major-pop",
-    "octave": 4
+    "progression": "c-major-pop"
   }
 }
 ```
+
+| Group Action Type | Properties |
+|-------------------|------------|
+| `chord-progression` | `progression` (string, required), `octave` (number, optional — defaults to `pitch.startingOctave`) |
+| `chord-mode` | None — root, mode, and octave are resolved from `harmonicContext` and `pitch` at press time |
 
 See **[Action Rules](/about/action-rules/)** for complete action documentation.
 
@@ -351,8 +357,7 @@ Reference custom progressions by name in action rules:
         "trigger": "press",
         "action": {
           "type": "chord-progression",
-          "progression": "my-song-verse",
-          "octave": 4
+          "progression": "my-song-verse"
         }
       }
     ]
@@ -369,6 +374,76 @@ Reference custom progressions by name in action rules:
 
 ---
 
+## pitch
+
+Shared starting values for the runtime pitch state. Every chord-setting action applies the current offset at MIDI output and uses the default octave when it doesn't supply its own.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingOffset` | number | `0` | Initial transpose offset (semitones). Mutated by `transpose` and `toggle-transpose`. |
+| `startingOctave` | number | `4` | Default octave for chord-setting actions (`chord-progression`, `chord-mode`, `set-chord`). |
+
+```json
+{
+  "strummer": {
+    "pitch": {
+      "startingOffset": 0,
+      "startingOctave": 4
+    }
+  }
+}
+```
+
+---
+
+## harmonicContext
+
+Starting values for the chord-mode harmonic context. Consumed by `chord-mode` group actions; other action types ignore it.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `startingRoot` | string | `"C"` | Tonal root. Use `#` for sharps (`"F#"`) and `b` for flats (`"Bb"`) — a flat root selects flat-preferred spelling for the resulting chord names. |
+| `startingMode` | string | `"major"` | Name of a mode defined in `chordModes`. |
+
+```json
+{
+  "strummer": {
+    "harmonicContext": {
+      "startingRoot": "C",
+      "startingMode": "major"
+    }
+  }
+}
+```
+
+---
+
+## chordModes
+
+Positional chord-mode layouts. Each mode is an array of 9 entries, one per button, with numeric `degree`, semitone `alteration`, named `quality`, `extension`, and optional `display` label. Required if any group rule uses `type: "chord-mode"`. See **[Chord Modes](/about/chord-modes/)** for the full schema and layout conventions.
+
+```json
+{
+  "strummer": {
+    "chordModes": {
+      "major": [
+        { "degree": "vi",   "quality": "m"   },
+        { "degree": "ii",   "quality": "m"   },
+        { "degree": "V/V",  "quality": "7"   },
+        { "degree": "IV",   "quality": ""    },
+        { "degree": "I",    "quality": ""    },
+        { "degree": "bVII", "quality": ""    },
+        { "degree": "iii",  "quality": "m"   },
+        { "degree": "V",    "quality": ""    },
+        { "degree": "vii",  "quality": "dim" }
+      ]
+    }
+  }
+}
+```
+
+---
+
 ## keyboard
 
 Keyboard input configuration for testing without physical tablet hardware. Maps computer keyboard keys to tablet button actions.
@@ -376,39 +451,8 @@ Keyboard input configuration for testing without physical tablet hardware. Maps 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `enabled` | boolean | false | Whether keyboard input is enabled |
-| `mappings` | object | {} | Key-to-button mappings |
 
-### Keyboard Mappings Format
-
-The `mappings` object maps keyboard keys to button IDs:
-
-```json
-{
-  "keyboard": {
-    "enabled": true,
-    "mappings": {
-      "1": "button:1",
-      "2": "button:2",
-      "3": "button:3",
-      "4": "button:4",
-      "q": "button:primary",
-      "w": "button:secondary"
-    }
-  }
-}
-```
-
-### Key Names
-
-- **Alphanumeric**: `"a"` through `"z"`, `"0"` through `"9"`
-- **Function Keys**: `"f1"` through `"f12"` (lowercase)
-- **Special Keys**: `"space"`, `"enter"`, `"tab"`, `"escape"`, etc.
-
-### Button IDs
-
-- `"button:primary"` - Primary stylus button
-- `"button:secondary"` - Secondary stylus button
-- `"button:1"` through `"button:N"` - Tablet hardware buttons
+When enabled, computer keyboard keys emit `key:<char>` events (e.g. `key:1`, `key:q`) that can be used as triggers in `action_rules`. This lets you map keyboard keys to chord changes or other actions without physical tablet hardware.
 
 ### Platform Notes
 
@@ -426,37 +470,20 @@ The `mappings` object maps keyboard keys to button IDs:
 ```json
 {
   "keyboard": {
-    "enabled": true,
-    "mappings": {
-      "1": "button:1",
-      "2": "button:2",
-      "3": "button:3",
-      "4": "button:4"
-    }
+    "enabled": true
   },
   "action_rules": {
-    "groups": [
-      {
-        "id": "chord-buttons",
-        "buttons": ["button:1", "button:2", "button:3", "button:4"]
-      }
-    ],
-    "group_rules": [
-      {
-        "id": "chord-progression",
-        "group_id": "chord-buttons",
-        "action": {
-          "type": "chord-progression",
-          "progression": "a-minor-pop",
-          "octave": 4
-        }
-      }
+    "rules": [
+      { "trigger": "key:1", "on": "press", "action": { "type": "chord", "chord": "Am" } },
+      { "trigger": "key:2", "on": "press", "action": { "type": "chord", "chord": "C" } },
+      { "trigger": "key:3", "on": "press", "action": { "type": "chord", "chord": "G" } },
+      { "trigger": "key:4", "on": "press", "action": { "type": "chord", "chord": "F" } }
     ]
   }
 }
 ```
 
-With this configuration, pressing keys `1`, `2`, `3`, or `4` on your computer keyboard will trigger the chord progression action as if you pressed the physical tablet buttons.
+With this configuration, pressing keys `1`–`4` on your computer keyboard switches chords directly via `action_rules`.
 
 ---
 

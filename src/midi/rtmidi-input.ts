@@ -319,12 +319,17 @@ export class RtMidiInput extends EventEmitter {
    * Connect to multiple specific MIDI input ports by ID
    *
    * @param portIds - Array of port indices to connect to
+   * @param excludePorts - Case-insensitive substring patterns; any port whose
+   *   name matches is silently skipped. Guards against a stale saved config
+   *   that still references our own MidiOut client or another known-bad
+   *   port even after the picker has hidden it.
    */
-  async connectMultiple(portIds: number[]): Promise<boolean> {
+  async connectMultiple(portIds: number[], excludePorts: string[] = []): Promise<boolean> {
     try {
       // Store parameters for reconnection
       this._connectAllMode = false;
       this._lastRequestedPortIds = portIds;
+      this._lastExcludePorts = excludePorts;
 
       const midiModule = await loadMidi();
 
@@ -368,6 +373,16 @@ export class RtMidiInput extends EventEmitter {
 
         const input = new midiModule.Input();
         const portName = input.getPortName(portId);
+
+        // Same substring rule as connectAll so behaviour is symmetric.
+        const shouldExclude = excludePorts.some(
+          (pattern) => pattern && portName.toLowerCase().includes(pattern.toLowerCase())
+        );
+        if (shouldExclude) {
+          console.log(`[RtMidiInput] Skipping port ${portId}: ${portName} (matches exclude pattern)`);
+          input.closePort();
+          continue;
+        }
 
         // Set up message callback with port info
         input.on('message', (_deltaTime: number, message: number[]) => {

@@ -19,6 +19,34 @@ from .protocol import MidiBackendProtocol
 from ..models.note import Note, NoteObject
 from .note_scheduler import get_scheduler
 
+# ALSA/CoreMIDI client name for every MidiOut instance we create. Set
+# explicitly so the port appears as "Sketchatone" in other apps' MIDI
+# pickers (default is "RtMidiOut Client") and so the "sketchatone" entry
+# in midi_input_exclude actually matches when ALSA echoes our output
+# back as an input alias — the loopback vector that fed our own strums
+# back into _update_notes_from_midi_input.
+CLIENT_NAME = 'Sketchatone'
+
+
+def _release_rtmidi(instance) -> None:
+    """
+    Close and destroy an rtmidi MidiIn/MidiOut so its ALSA sequencer client
+    is released immediately. close_port() alone leaves the client alive
+    until GC runs, which causes leaked "Sketchatone" clients to accumulate
+    in every other app's MIDI list on each toggle.
+    """
+    if instance is None:
+        return
+    try:
+        instance.close_port()
+    except Exception:
+        pass
+    try:
+        if hasattr(instance, 'delete'):
+            instance.delete()
+    except Exception:
+        pass
+
 
 class RtMidiBackend(MidiBackendProtocol):
     """
@@ -61,6 +89,7 @@ class RtMidiBackend(MidiBackendProtocol):
         self._midi_out: Optional[rtmidi.MidiOut] = None
         self._connected = False
         self._current_output_name: Optional[str] = None
+        self._is_virtual = False
         self._inter_message_delay = max(0.0, float(inter_message_delay))
 
         # Serialize all MIDI output to avoid RtMIDI/ALSA contention (fixes stuck notes on RPi when strumming fast)
@@ -104,6 +133,10 @@ class RtMidiBackend(MidiBackendProtocol):
         return self._connected and self._midi_out is not None
 
     @property
+    def is_virtual_port(self) -> bool:
+        return self._is_virtual
+
+    @property
     def current_output_name(self) -> Optional[str]:
         """Get the name of the currently connected output port."""
         return self._current_output_name
@@ -115,7 +148,7 @@ class RtMidiBackend(MidiBackendProtocol):
             # Create a fresh MidiOut instance to force port list refresh
             # On macOS, rtmidi sometimes caches the port list, so we need to
             # create a new instance each time to see newly connected devices
-            temp_out = rtmidi.MidiOut()
+            temp_out = rtmidi.MidiOut(name=CLIENT_NAME)
 
             # Small delay to allow the system to enumerate devices
             # This helps on macOS where device detection can be delayed
@@ -127,17 +160,7 @@ class RtMidiBackend(MidiBackendProtocol):
             print(f"[RtMidi] Error getting available ports: {e}")
             return []
         finally:
-            # Explicitly delete C++ instance to prevent ALSA client leak
-            if temp_out is not None:
-                try:
-                    # Call delete() to immediately release the ALSA sequencer client
-                    # Without this, ALSA clients accumulate until hitting the 192 limit
-                    # (seen as "Cannot allocate memory" errors)
-                    if hasattr(temp_out, 'delete'):
-                        temp_out.delete()
-                    del temp_out
-                except Exception:
-                    pass
+            _release_rtmidi(temp_out)
     
     def connect(self, output_port: Optional[str] = None) -> bool:
         """
@@ -150,7 +173,7 @@ class RtMidiBackend(MidiBackendProtocol):
             True if connection successful
         """
         try:
-            self._midi_out = rtmidi.MidiOut()
+            self._midi_out = rtmidi.MidiOut(name=CLIENT_NAME)
             available_ports = self._midi_out.get_ports()
 
             if not available_ports:
@@ -160,6 +183,7 @@ class RtMidiBackend(MidiBackendProtocol):
                 print("[RtMidi] Created virtual port: Sketchatone")
                 print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
                 self._current_output_name = "Sketchatone"
+                self._is_virtual = True
                 self._connected = True
                 self._last_requested_port = output_port
                 self._start_hot_swap_monitoring()
@@ -177,6 +201,7 @@ class RtMidiBackend(MidiBackendProtocol):
 
             self._midi_out.open_port(port_index)
             self._current_output_name = available_ports[port_index]
+            self._is_virtual = False
             print(f"[RtMidi] Connected to: {self._current_output_name}")
             print("[RtMidi] Debug: note-off via NoteScheduler (single thread)")
             self._connected = True
@@ -253,10 +278,11 @@ class RtMidiBackend(MidiBackendProtocol):
             except Exception as e:
                 print(f"[RtMidi] Error sending cleanup messages: {e}")
 
-            self._midi_out.close_port()
+            _release_rtmidi(self._midi_out)
             self._midi_out = None
 
         self._connected = False
+        self._is_virtual = False
         print("[RtMidi] Disconnected")
     
     def set_channel(self, channel: Optional[int]) -> None:
@@ -526,10 +552,7 @@ class RtMidiBackend(MidiBackendProtocol):
                     print(f"[RtMidi] Device disconnected: {self._current_output_name}")
                     self._connected = False
                     if self._midi_out:
-                        try:
-                            self._midi_out.close_port()
-                        except Exception:
-                            pass
+                        _release_rtmidi(self._midi_out)
                         self._midi_out = None
                     devices_changed = True
 

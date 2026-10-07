@@ -9,6 +9,7 @@ from .strummer_config import StrummerConfig, StrummingConfig
 from .midi_config import MidiConfig
 from .keyboard_config import KeyboardConfig
 from .server_config import ServerConfig
+from .device_buttons_config import DeviceButtonsConfig, DeviceButton, DeviceKey
 from .midi_strummer_config import MidiStrummerConfig
 
 __all__ = [
@@ -23,5 +24,8 @@ __all__ = [
     'MidiConfig',
     'KeyboardConfig',
     'ServerConfig',
+    'DeviceButtonsConfig',
+    'DeviceButton',
+    'DeviceKey',
     'MidiStrummerConfig'
 ]

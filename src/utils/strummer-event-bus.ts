@@ -6,18 +6,13 @@
  */
 
 import { EventEmitter } from './event-emitter.js';
-import type { TabletEventData as BlankslateTabletEventData } from 'blankslate/cli/tablet-reader-base.js';
 
 /**
- * HID tablet event data - extends blankslate's TabletEventData with timestamp
- * and a more specific state type for the UI.
+ * HID tablet event data broadcast by the server.
  *
- * Button fields are made optional here because not all code paths provide them
- * (e.g., mock mode, websocket client). The normalizeTabletEvent function in
- * blankslate always provides them, so they'll be present for real device data.
- *
- * Note: Supports dynamic button counts beyond button1-8. Access additional buttons
- * by casting to Record<string, unknown> or using type assertion.
+ * Auxiliary (express-key) button state is reported as raw HID scan codes
+ * in `auxCodes` so tablets with any number of buttons report in a single
+ * uniform shape.
  */
 export interface TabletEventData {
   state: 'hover' | 'contact' | 'out-of-range';
@@ -30,19 +25,10 @@ export interface TabletEventData {
   tiltXY: number;
   primaryButtonPressed: boolean;
   secondaryButtonPressed: boolean;
-  // Tablet hardware buttons - optional because not all sources provide them
-  tabletButtons?: number;
-  // Explicit button properties for backward compatibility (optional)
-  button1?: boolean;
-  button2?: boolean;
-  button3?: boolean;
-  button4?: boolean;
-  button5?: boolean;
-  button6?: boolean;
-  button7?: boolean;
-  button8?: boolean;
-  // Additional buttons (button9, button10, etc.) are accessed dynamically
-  // Use (data as Record<string, unknown>)[`button${n}`] for buttons > 8
+  /** HID scan codes for currently-held tablet hardware buttons. */
+  auxCodes: number[];
+  /** Normalized keyboard characters currently held (source of `key:<char>` events). */
+  pressedKeys?: string[];
 }
 
 /**
@@ -190,7 +176,7 @@ export class StrummerEventBus extends EventEmitter {
       this.buffer = {
         x: 0, y: 0, pressure: 0, tiltX: 0, tiltY: 0, tiltXY: 0,
         primaryButtonPressed: false, secondaryButtonPressed: false,
-        state: 'out-of-range', timestamp: Date.now(), strum: data,
+        auxCodes: [], state: 'out-of-range', timestamp: Date.now(), strum: data,
       };
     } else {
       this.buffer.strum = data;

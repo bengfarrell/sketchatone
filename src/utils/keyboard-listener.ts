@@ -4,63 +4,47 @@
  * System-level keyboard listener that works with systemd services.
  * Uses node-global-key-listener for global keyboard capture on Linux/macOS/Windows.
  * Requires root/sudo permissions or accessibility permissions on macOS.
+ *
+ * Emits raw normalized key characters; the server maps `key:<char>` to buttons.
  */
-
-import type { ButtonId } from '../models/action-rules.js';
 
 export interface KeyboardListenerOptions {
   enabled: boolean;
-  mappings: Record<string, string>;
-  onButtonPress: (buttonId: ButtonId) => void;
-  onButtonRelease: (buttonId: ButtonId) => void;
+  onKeyPress: (key: string) => void;
+  onKeyRelease: (key: string) => void;
 }
 
-/**
- * System-level keyboard listener that maps keys to button events.
- *
- * - On Linux: Requires root or input group membership
- * - On macOS: Requires accessibility permissions or root
- * - On Windows: Should work without special permissions
- *
- * Works with systemd services and background processes.
- */
 export class KeyboardListener {
   private enabled: boolean;
-  private mappings: Record<string, string>;
-  private onButtonPress: (buttonId: ButtonId) => void;
-  private onButtonRelease: (buttonId: ButtonId) => void;
+  private onKeyPress: (key: string) => void;
+  private onKeyRelease: (key: string) => void;
   private listener: any = null;
 
   constructor(options: KeyboardListenerOptions) {
     this.enabled = options.enabled;
-    this.mappings = options.mappings;
-    this.onButtonPress = options.onButtonPress;
-    this.onButtonRelease = options.onButtonRelease;
+    this.onKeyPress = options.onKeyPress;
+    this.onKeyRelease = options.onKeyRelease;
   }
 
-  /**
-   * Start listening to keyboard input
-   */
   start(): void {
-    if (!this.enabled || Object.keys(this.mappings).length === 0) {
+    if (!this.enabled) {
       return;
     }
 
-    // Use dynamic import with then/catch to keep this method sync
     import('@futpib/node-global-key-listener')
       .then(({ GlobalKeyboardListener }) => {
         this.listener = new GlobalKeyboardListener();
 
         console.log('[Keyboard] Starting global keyboard listener');
-        console.log('[Keyboard] Key mappings:', this.mappings);
         console.log('[Keyboard] Note: May require root/sudo or accessibility permissions');
 
-        // Listen for key down events
-        this.listener.addListener((e: any, down: any) => {
+        this.listener.addListener((e: any) => {
+          const key = this.normalizeKeyName(e.name);
+          if (!key) return;
           if (e.state === 'DOWN') {
-            this.handleKeyDown(e.name);
+            this.onKeyPress(key);
           } else if (e.state === 'UP') {
-            this.handleKeyUp(e.name);
+            this.onKeyRelease(key);
           }
         });
       })
@@ -80,9 +64,6 @@ export class KeyboardListener {
       });
   }
 
-  /**
-   * Stop listening to keyboard input
-   */
   stop(): void {
     if (this.listener) {
       try {
@@ -96,68 +77,26 @@ export class KeyboardListener {
   }
 
   /**
-   * Handle key down event
-   */
-  private handleKeyDown(keyName: string): void {
-    // Normalize key name (e.g., "1" or "NUMPAD_1")
-    const normalizedKey = this.normalizeKeyName(keyName);
-
-    // Check if this key is mapped to a button
-    const buttonId = this.mappings[normalizedKey];
-    if (buttonId) {
-      this.onButtonPress(buttonId as ButtonId);
-    }
-  }
-
-  /**
-   * Handle key up event
-   */
-  private handleKeyUp(keyName: string): void {
-    // Normalize key name
-    const normalizedKey = this.normalizeKeyName(keyName);
-
-    // Check if this key is mapped to a button
-    const buttonId = this.mappings[normalizedKey];
-    if (buttonId) {
-      this.onButtonRelease(buttonId as ButtonId);
-    }
-  }
-
-  /**
-   * Normalize key name to match config mappings
+   * Normalize a raw key name from the global listener into a compact character
+   * or short symbolic name. Returns an empty string if the key should be ignored.
    */
   private normalizeKeyName(keyName: string): string {
-    // Convert to lowercase and remove prefixes
+    if (!keyName) return '';
     const normalized = keyName.toLowerCase();
 
-    // Map common variations
-    if (normalized === 'numpad_1' || normalized === 'kp_1') return '1';
-    if (normalized === 'numpad_2' || normalized === 'kp_2') return '2';
-    if (normalized === 'numpad_3' || normalized === 'kp_3') return '3';
-    if (normalized === 'numpad_4' || normalized === 'kp_4') return '4';
-    if (normalized === 'numpad_5' || normalized === 'kp_5') return '5';
-    if (normalized === 'numpad_6' || normalized === 'kp_6') return '6';
-    if (normalized === 'numpad_7' || normalized === 'kp_7') return '7';
-    if (normalized === 'numpad_8' || normalized === 'kp_8') return '8';
-    if (normalized === 'numpad_9' || normalized === 'kp_9') return '9';
-    if (normalized === 'numpad_0' || normalized === 'kp_0') return '0';
+    if (normalized.startsWith('numpad_')) return normalized.slice(7);
+    if (normalized.startsWith('kp_')) return normalized.slice(3);
 
     return normalized;
   }
 
-  /**
-   * Update configuration
-   */
-  updateConfig(enabled: boolean, mappings: Record<string, string>): void {
+  updateConfig(enabled: boolean): void {
     const wasEnabled = this.enabled;
     this.enabled = enabled;
-    this.mappings = mappings;
 
     if (!wasEnabled && enabled) {
-      // Start if we weren't enabled before
       this.start();
     } else if (wasEnabled && !enabled) {
-      // Stop if we were enabled before
       this.stop();
     }
   }

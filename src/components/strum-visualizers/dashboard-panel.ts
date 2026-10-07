@@ -6,13 +6,13 @@
 
 import { html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { formStyles } from '../../design-system/form-styles.js';
+import '../../design-system/components/sketch-switch.js';
 import { styles } from './dashboard-panel.styles.js';
 
-import '@spectrum-web-components/switch/sp-switch.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
 
 export class DashboardPanel extends LitElement {
-    static styles = styles;
+    static styles = [formStyles, styles];
 
     @property({ type: String })
     title = '';
@@ -131,29 +131,29 @@ export class DashboardPanel extends LitElement {
                                     title="Drag to reorder">⋮⋮</div>
                             ` : ''}
                             ${this.hasActiveControl ? html`
-                                <sp-switch
-                                    data-spectrum-pattern="switch-s"
+                                <sketch-switch
+
                                     ?checked="${this.active}"
                                     @change="${this.handleActiveChange}"
                                     class="header-switch"
                                     size="s"
                                     title="${this.active ? 'Active' : 'Inactive'}">
-                                </sp-switch>
+                                </sketch-switch>
                             ` : ''}
-                            <h3 class="panel-title">${this.title}</h3>
+                            <slot name="title"><h3 class="panel-title">${this.title}</h3></slot>
                         </div>
                         <div class="header-controls">
                             <slot name="header-actions"></slot>
                             ${this.minimizable ? html`
-                                <sp-action-button data-spectrum-pattern="action-button-quiet-xs" size="xs" quiet
+                                <sketch-button variant="quiet" size="xs" quiet
                                     @click="${this.toggleMinimize}"
                                     title="${this.isMinimized ? 'Maximize' : 'Minimize'}">
                                     ${this.isMinimized ? '▼' : '▲'}
-                                </sp-action-button>
+                                </sketch-button>
                             ` : ''}
                             ${this.closable ? html`
-                                <sp-action-button data-spectrum-pattern="action-button-quiet-xs" size="xs" quiet
-                                    @click="${this.handleClose}" title="Close">✕</sp-action-button>
+                                <sketch-button variant="quiet" size="xs" quiet
+                                    @click="${this.handleClose}" title="Close">✕</sketch-button>
                             ` : ''}
                         </div>
                     </div>

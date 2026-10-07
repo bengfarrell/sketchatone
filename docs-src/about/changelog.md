@@ -7,8 +7,48 @@ description: Release notes and version history
 
 ## v0.3.0
 
+### Recent Updates
+
+- **Explicit chord-mode entries**: Chord layouts now use numeric scale degrees, semitone alterations, named qualities and extensions, plus optional display labels and enharmonic spelling. The Node.js and Python runtimes, performance panels, default config, and documentation use the same schema
+- **Parameter-mapping humanization**: Added optional curve-proportional randomization to mapped values. Noise is zero at the neutral centre, increases toward the range edges, and is disabled by default
+- **Hover-to-mute strumming**: Added the opt-in `strumming.hoverMute` setting to send note-off when hovering over a ringing string
+- **Safer configuration updates**: Config files are now written atomically while preserving existing permissions, ownership, and symlinks. Device button and key edits are converted to their typed config models and can be renamed, deleted, or cleared safely
+
 ### Installation
 - **Dropped choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice
+- **Interactive post-install menus**: `sudo sketchatone-configure` and `sudo sketchatone-ui-configure` cover autostart mode, USB MIDI gadget, and boot-time trimming in one place, replacing the need to run individual helper scripts
+- **Removed blankslate dependency**: Python implementation now uses the bundled OpenTabletDriver-based tablet layer directly — no separate package install required
+
+### Raspberry Pi Native UI (Kivy)
+
+- **Native appliance UI**: New fullscreen Kivy dashboard designed for the 800×480 DSI touchscreen on Raspberry Pi 4. Replaces the Chromium kiosk workflow with a purpose-built native app
+- **Subprocess bridge architecture**: The strummer server runs in its own Python process with its own GIL, connected to the UI over a local WebSocket. Kivy's render loop can no longer steal CPU from the HID reader thread
+- **`sketchatone-ui` package**: New `.deb` installer (`create-deb-ui.sh`) for the native UI variant, separate from the headless server `.deb`
+- **Hot reload for development**: Pass `--hot-reload` to rebuild the widget tree in place on save (via Kaki) while keeping the bridge, WebSocket, and HID reader alive across reloads
+- **tty1 direct launch**: Boots straight to the dashboard via SDL2's kmsdrm backend — no Wayland compositor, saving ~6 s of boot time on Pi 4
+- **Removed Chromium kiosk mode**: Superseded by the native UI
+
+### Performance (Raspberry Pi)
+
+- **GC tuning**: Raised cyclic GC thresholds (`10000, 500, 50` vs Python's default `700, 10, 10`) and added a cooperative idle scheduler that runs gen-0/gen-1 sweeps only during silence, preventing 100–300 ms GIL pauses from interrupting the HID reader during play
+- **One-shot startup GC sweep**: Drains allocation from imports and config parsing before the first strum arrives, preventing a ~285 ms hitch on first play
+- **15 fps Kivy render cap**: Default changed from Kivy's 60 fps to 15 fps, freeing significant CPU on the Pi for the audio path. Configurable via `--fps`
+- **Single-panel event dispatch**: Only the currently visible dashboard panel receives high-frequency `tablet` and `strum` callbacks. Previously all panels were subscribed simultaneously, multiplying render work by the number of panels
+- **`--shell` diagnostic mode**: Runs a blank 1 fps Kivy window alongside the server subprocess with no UI panels loaded, for isolating whether stutters come from Kivy rendering or the server/OS layer
+- **Performance logging**: Set `SKETCHATONE_STRUM_PERF=1` to enable a per-30-second `[PERF]` summary covering tablet gap, HID read times, GC pauses, and strum path timings. See **[Performance](/about/performance/)** for details
+- **USB autosuspend prevention**: udev rules now include per-tablet `power/autosuspend_delay_ms=-1` entries to prevent the kernel from suspending the HID device between strums
+
+### OpenTabletDriver Integration
+
+- **Bundled tablet definitions**: ~340 device definitions across 25+ manufacturers (Huion, XP-Pen, Wacom, Gaomon, Parblo, UGEE, and more) sourced from the OpenTabletDriver project, replacing the blankslate dependency
+- **LGPL compliance**: LGPL v3 license text bundled alongside the configs; project `LICENSE` updated with a third-party notices section. See **[OpenTabletDriver](/about/open-tablet-driver/)**
+- **Huion H640P support**: Added device config for the Huion Inspiroy H640P
+
+### Bug Fixes
+
+- **Pitch bend spurious PB=-1.0** (Python and Node.js): Fixed a bug where lifting the pen out of proximity caused the pitch bend to snap to -1.0. Pen `state="none"` (out-of-range) events now skip pitch bend processing in both `server.ts`, `midi-strummer.ts`, and the Python equivalents
+- **Repeated button fire**: Buttons that are held down no longer repeatedly fire on every tablet event — only the initial press triggers the action
+- **Chord change config saving**: Simple chord changes no longer trigger a full config file write, halving allocation cost per strum and reducing GC pressure
 
 ### Custom Chord Progressions
 
@@ -16,6 +56,25 @@ description: Release notes and version history
 - **Config-based progressions**: Both Node.js and Python now use configuration file for chord progressions instead of hardcoded presets
 - **Removed hardcoded presets**: Chord progressions are now defined entirely in the config file (`chordProgressions` section), providing full flexibility for users
 - **Default progressions included**: The default config file includes all standard progressions (pop, jazz, blues, gospel, etc.) previously hardcoded
+
+### Chord Modes (Harmonic Layouts)
+
+- **Positional keypad layouts** (`chordModes` config): New system for assigning each button a fixed **harmonic function** (Roman-numeral scale degree) rather than a specific chord, so the physical gesture for a progression stays the same across keys and songs. A separate transpose control determines the actual root. See **[Chord Modes](/about/chord-modes/)**
+- **3×3 layout convention**: Tonic (I) at button 5, dominant (V) at button 8, so 8→5 is always tension-to-resolution regardless of key; I–V–vi–IV is always the 5→8→1→4 gesture
+- **Bundled modes**: `major`, `minor`, and `jazz` layouts included in the default config, each defined as 9 `{ degree, quality }` entries (one per button)
+- **Chord Mode Performance panel** (Node.js dashboard): New UI panel for playing/practicing with the current chord mode, plus a transpose control
+- **Chord Mode Performance panel** (Python native UI): Mirror of the web panel — shows the active chord grid and highlights the last-pressed cell, fully live with transpose and mode changes
+- **`cycle-chord-mode` action**: Assign any button or key to step forward or backward through all configured chord modes (`major → minor → jazz → …`). Direction is configurable (Next / Previous) in both the web and Python action editors
+- **Mode strip in Chord Mode panels**: Both the web and Python chord mode panels now display a row of pills for every configured mode, with the currently active mode highlighted — so the player always knows what mode they are in and what's available
+- **Shared harmonic context** (`strummer.harmonicContext` + `strummer.pitch`): Root, mode, and default octave are now centralized on the strummer config instead of being duplicated on each chord-mode group action. Multiple chord-mode or chord-progression groups share a single harmonic context, and `transpose` mutates the shared offset so every strummed note — chord mode, progression, or explicit chord — shifts consistently. See **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)**
+- **Full parity**: Identical implementation in Python and Node.js
+
+### Bug Fixes (Chord Mode / Action Rules)
+
+- **Python chord mode panel transpose**: Transposing now correctly updates the chord mode panel — it reads the live `harmonicContextMode` runtime value from the server broadcast rather than the static `startingMode` from config
+- **Python action editor missing keys**: Keyboard key entries (`key:X`) now appear in the button dropdown when adding or editing a single button action, matching the behaviour already present in the group button selector
+- **Python chord mode panel button labels**: Fixed button labels in the chord mode performance grid — previously showed raw numpad indices; now shows the actual mapped button/key identifier (e.g. `7`, `numpad0`, `c`)
+- **Web chord mode panel button labels**: Same fix — labels are now derived from the group's actual `buttons` array instead of a hardcoded numpad sequence
 
 ### Keyboard Input Support
 
@@ -65,6 +124,10 @@ description: Release notes and version history
 - **Explicit input disable**: Empty array explicitly disables all MIDI inputs
 - **Enhanced JACK support** (Python): Improved JACK MIDI input implementation
 - **Better port exclusion**: Improved logic for excluding internal ports to prevent feedback loops
+- **Scale-based MIDI input modes** (`midi.inputMode`): The strummer strings can now be driven from held MIDI notes in three new ways, in addition to the existing `direct` (held notes map 1:1 to strings). Selectable from the dashboard MIDI panel on both the Node.js web UI and the Kivy Pi UI. See **[Scales & MIDI-Driven Mode](/about/scales-and-midi-driven-mode/#midi-input-mode)**
+  - `majorScale` — lowest held note is the root of a major scale
+  - `minorScale` — lowest held note is the root of a natural minor scale
+  - `autoScale` — 1 held note → neutral scale (`[1, 2, 4, 5]`); 2 held notes → major or minor scale inferred from the interval (minor 3rd → minor); 3+ notes → falls back to `direct`
 
 ### Server Management
 
@@ -94,6 +157,7 @@ description: Release notes and version history
 - **Chord progressions required in config**: Old configs without `chordProgressions` section will have no progressions available. Users must add chord progressions to their config files (see `public/configs/default.json` for examples)
 - **Removed sample config files**: Users should use `public/configs/default.json` as a template
 - **Removed choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice and allow it to be configurable in UI (or JSON as always)
+- **Group actions no longer carry `root`, `mode`, or `octave` for chord mode**: Existing `chord-mode` group rules with those fields will have them silently dropped on load. To preserve a non-default starting key, move the values to `strummer.harmonicContext.startingRoot` / `startingMode` and `strummer.pitch.startingOctave`. `chord-progression` group actions still accept an optional `octave` override; when omitted, it defaults to `strummer.pitch.startingOctave` (previously hardcoded `4`)
 
 
 ---

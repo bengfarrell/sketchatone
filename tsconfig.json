@@ -15,7 +15,7 @@
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "resolveJsonModule": true,
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom", "w3c-web-usb"]
   },
   "include": ["src/**/*", "test/**/*", "*.ts"],
   "exclude": ["node_modules", "dist"]

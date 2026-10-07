@@ -1,11 +1,11 @@
 /**
  * Strum Visualizer Component
- * Extends blankslate's tablet-visualizer with string visualization for strumming
+ * Extends the vendored tablet-visualizer with string visualization for strumming
  */
 
 import { html, svg } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import { TabletVisualizer } from 'blankslate/components/tablet-visualizer/tablet-visualizer.js';
+import { TabletVisualizer } from '../tablet-visualizer/tablet-visualizer.js';
 
 /**
  * Note object interface for string labels

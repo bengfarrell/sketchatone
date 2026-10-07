@@ -24,6 +24,36 @@ import {
   ActionRulesConfigData,
   DEFAULT_ACTION_RULES_CONFIG,
 } from './action-rules.js';
+import type { ChordModeMap } from './chord-mode.js';
+
+/**
+ * Authored starting values for the global pitch state. `startingOffset` is the
+ * transpose offset applied at MIDI output; `startingOctave` is the default
+ * octave chord-setting actions use unless they explicitly override it.
+ */
+export interface PitchConfigData {
+  startingOffset: number;
+  startingOctave: number;
+}
+
+export const DEFAULT_PITCH_CONFIG: PitchConfigData = {
+  startingOffset: 0,
+  startingOctave: 4,
+};
+
+/**
+ * Authored starting values for the chord-mode harmonic context. Only meaningful
+ * for chord-mode features (other features don't consume `root`/`mode`).
+ */
+export interface HarmonicContextConfigData {
+  startingRoot: string;
+  startingMode: string;
+}
+
+export const DEFAULT_HARMONIC_CONTEXT_CONFIG: HarmonicContextConfigData = {
+  startingRoot: 'C',
+  startingMode: 'major',
+};
 
 /**
  * Core strumming configuration data
@@ -45,6 +75,8 @@ export interface StrummingConfigData {
   lowerNoteSpread: number;
   /** Invert X axis for left-handed use (flips which notes are on which side) */
   invertX: boolean;
+  /** Hovering over a ringing string sends immediate note-off (like touching a guitar string to mute it) */
+  hoverMute: boolean;
 }
 
 /**
@@ -59,6 +91,7 @@ export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
   upperNoteSpread: 3,
   lowerNoteSpread: 3,
   invertX: false,
+  hoverMute: false,
 };
 
 /**
@@ -73,6 +106,7 @@ export class StrummingConfig implements StrummingConfigData {
   upperNoteSpread: number;
   lowerNoteSpread: number;
   invertX: boolean;
+  hoverMute: boolean;
 
   constructor(data: Partial<StrummingConfigData> = {}) {
     this.pressureThreshold = data.pressureThreshold ?? DEFAULT_STRUMMING_CONFIG.pressureThreshold;
@@ -83,6 +117,7 @@ export class StrummingConfig implements StrummingConfigData {
     this.upperNoteSpread = data.upperNoteSpread ?? DEFAULT_STRUMMING_CONFIG.upperNoteSpread;
     this.lowerNoteSpread = data.lowerNoteSpread ?? DEFAULT_STRUMMING_CONFIG.lowerNoteSpread;
     this.invertX = data.invertX ?? DEFAULT_STRUMMING_CONFIG.invertX;
+    this.hoverMute = data.hoverMute ?? DEFAULT_STRUMMING_CONFIG.hoverMute;
   }
 
   /**
@@ -108,6 +143,7 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: (data.upper_note_spread ?? data.upperNoteSpread) as number | undefined,
       lowerNoteSpread: (data.lower_note_spread ?? data.lowerNoteSpread) as number | undefined,
       invertX: (data.invert_x ?? data.invertX) as boolean | undefined,
+      hoverMute: (data.hover_mute ?? data.hoverMute) as boolean | undefined,
     });
   }
 
@@ -131,6 +167,7 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: this.upperNoteSpread,
       lowerNoteSpread: this.lowerNoteSpread,
       invertX: this.invertX,
+      hoverMute: this.hoverMute,
     };
   }
 }
@@ -157,6 +194,11 @@ export interface StrummerConfigData {
   strumRelease: StrumReleaseConfigData;
   actionRules: ActionRulesConfigData;
   chordProgressions?: Record<string, string[]>;
+  /** Authored starting values for the global pitch state. */
+  pitch?: PitchConfigData;
+  /** Authored starting values for the chord-mode harmonic context. */
+  harmonicContext?: HarmonicContextConfigData;
+  chordModes?: ChordModeMap;
 }
 
 /**
@@ -181,6 +223,9 @@ export class StrummerConfig {
   strumRelease: StrumReleaseConfig;
   actionRules: ActionRulesConfig;
   chordProgressions: Record<string, string[]>;
+  pitch: PitchConfigData;
+  harmonicContext: HarmonicContextConfigData;
+  chordModes: ChordModeMap | undefined;
 
   constructor(data: {
     mode?: StrummerMode;
@@ -192,6 +237,9 @@ export class StrummerConfig {
     strumRelease?: StrumReleaseConfig;
     actionRules?: ActionRulesConfig;
     chordProgressions?: Record<string, string[]>;
+    pitch?: Partial<PitchConfigData>;
+    harmonicContext?: Partial<HarmonicContextConfigData>;
+    chordModes?: ChordModeMap;
   } = {}) {
     this.mode = data.mode ?? DEFAULT_STRUMMER_MODE;
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
@@ -202,6 +250,9 @@ export class StrummerConfig {
     this.strumRelease = data.strumRelease ?? new StrumReleaseConfig();
     this.actionRules = data.actionRules ?? new ActionRulesConfig();
     this.chordProgressions = data.chordProgressions ?? {};
+    this.pitch = { ...DEFAULT_PITCH_CONFIG, ...(data.pitch ?? {}) };
+    this.harmonicContext = { ...DEFAULT_HARMONIC_CONTEXT_CONFIG, ...(data.harmonicContext ?? {}) };
+    this.chordModes = data.chordModes;
   }
 
   // Convenience properties for backward compatibility
@@ -242,6 +293,9 @@ export class StrummerConfig {
     const strumReleaseData = (data.strum_release ?? data.strumRelease ?? {}) as Record<string, unknown>;
     const actionRulesData = (data.action_rules ?? data.actionRules ?? {}) as Record<string, unknown>;
     const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
+    const pitchData = (data.pitch ?? {}) as Partial<PitchConfigData>;
+    const harmonicContextData = (data.harmonicContext ?? data.harmonic_context ?? {}) as Partial<HarmonicContextConfigData>;
+    const chordModesData = (data.chordModes ?? data.chord_modes) as ChordModeMap | undefined;
 
     const rawMode = data.mode as string | undefined;
     const mode: StrummerMode = VALID_STRUMMER_MODES.includes(rawMode as StrummerMode)
@@ -272,6 +326,9 @@ export class StrummerConfig {
         ? ActionRulesConfig.fromDict(actionRulesData)
         : new ActionRulesConfig(),
       chordProgressions: chordProgressionsData,
+      pitch: pitchData,
+      harmonicContext: harmonicContextData,
+      chordModes: chordModesData,
     });
   }
 
@@ -299,9 +356,13 @@ export class StrummerConfig {
       actionRules: this.actionRules.toDict(),
     };
 
-    // Only include chordProgressions if it has entries
     if (Object.keys(this.chordProgressions).length > 0) {
       result.chordProgressions = this.chordProgressions;
+    }
+    result.pitch = { ...this.pitch };
+    result.harmonicContext = { ...this.harmonicContext };
+    if (this.chordModes) {
+      result.chordModes = this.chordModes;
     }
 
     return result;

@@ -74,7 +74,8 @@ class TestParameterMappingBasic:
             'curve': 1.0,
             'spread': 'inverse',
             'control': 'tiltXY',
-            'default': 1.0
+            'default': 1.0,
+            'randomization': 0.0
         }
         pm = ParameterMapping.from_dict(original)
         result = pm.to_dict()
@@ -204,6 +205,56 @@ class TestParameterMappingMapValue:
         assert pm.map_value(0.5) == 0.0
         # At 0.75: value = (0.75 - 0.5) * 2 = 0.5, curved = 0.25
         assert pm.map_value(0.75) == pytest.approx(0.25)
+
+
+class TestParameterMappingRandomization:
+    """Test the curve-proportional humanization noise."""
+
+    def test_randomization_zero_at_neutral(self):
+        """Central spread: the neutral centre (flat part) must never be randomized."""
+        pm = ParameterMapping(
+            min=-1.0,
+            max=1.0,
+            curve=1.0,
+            spread='central',
+            control='yaxis',
+            randomization=0.5,
+        )
+        # The flat part of the curve maps to 0 and must stay exactly 0.
+        for _ in range(2000):
+            assert pm.map_value(0.5) == 0.0
+
+    def test_randomization_bounded_and_proportional(self):
+        """Noise amplitude scales with distance from the neutral centre."""
+        pm = ParameterMapping(
+            min=-1.0,
+            max=1.0,
+            curve=1.0,
+            spread='central',
+            control='yaxis',
+            randomization=0.25,
+        )
+        # range_width = 2.0; noise_amp = randomization * range_width * scale
+        # At input 0.75 -> base 0.5, scale 0.5 -> amp 0.25 -> output within [0.25, 0.75]
+        for _ in range(2000):
+            assert 0.25 <= pm.map_value(0.75) <= 0.75
+        # At input 1.0  -> base 1.0, scale 1.0 -> amp 0.50 -> output within [0.5, 1.0] (clamped high)
+        for _ in range(2000):
+            assert 0.5 <= pm.map_value(1.0) <= 1.0
+
+    def test_randomization_off_is_deterministic(self):
+        """With randomization = 0 the output is exactly the deterministic mapping."""
+        pm = ParameterMapping(
+            min=-1.0,
+            max=1.0,
+            curve=4.0,
+            spread='central',
+            control='yaxis',
+            randomization=0.0,
+        )
+        assert pm.map_value(0.0) == -1.0
+        assert pm.map_value(0.5) == 0.0
+        assert pm.map_value(1.0) == 1.0
 
 
 class TestDefaultMappings:

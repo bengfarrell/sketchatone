@@ -22,7 +22,7 @@ The tablet surface is divided into virtual "strings" based on your chord configu
 {
   "strumming": {
     "chord": "Am",
-    "midi_channel": 0,
+    "midi_channel": 1,
     "pressure_threshold": 0.1,
     "pressure_buffer_size": 10,
     "upper_note_spread": 2,
@@ -37,7 +37,7 @@ The tablet surface is divided into virtual "strings" based on your chord configu
 |----------|------|---------|-------------|
 | `chord` | string | null | Chord name (e.g., "Am", "Gmaj7", "C") |
 | `initial_notes` | string[] | ["C4","E4","G4"] | Explicit note list (used if no chord) |
-| `midi_channel` | number | null | MIDI channel (0-15), null for omni |
+| `midi_channel` | number | null | MIDI channel (1-16), null for channel 1 |
 | `pressure_threshold` | number | 0.1 | Minimum pressure to trigger (0-1) |
 | `pressure_buffer_size` | number | 10 | Pressure samples to buffer before first note triggers |
 | `upper_note_spread` | number | 3 | Octave notes above chord |

@@ -307,10 +307,10 @@ class TestActionsToggleTranspose:
         config = MidiStrummerConfig()
         actions = Actions(config=config)
 
-        # Transpose state is now managed internally by Actions
-        assert actions.get_transpose_config()['active'] is False
+        # Pitch offset is the canonical transpose state
+        assert actions.get_pitch_offset() == 0
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is True
+        assert actions.get_pitch_offset() != 0
 
     def test_toggle_transpose_off(self):
         """Test toggling transpose off."""
@@ -319,11 +319,11 @@ class TestActionsToggleTranspose:
 
         # First toggle on
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is True
+        assert actions.get_pitch_offset() != 0
 
         # Then toggle off
         actions.execute('toggle-transpose', {'button': 'Test'})
-        assert actions.get_transpose_config()['active'] is False
+        assert actions.get_pitch_offset() == 0
 
 
 class TestActionsChordProgression:
@@ -372,3 +372,28 @@ class TestActionsChordProgression:
         
         # Notes should be different (different chord)
         assert first_notes != second_notes
+
+
+class TestActionsChordMode:
+    def test_set_chord_from_explicit_numeric_entry(self):
+        strummer = Strummer()
+        config = MidiStrummerConfig()
+        config.strummer.strumming.lower_note_spread = 0
+        config.strummer.strumming.upper_note_spread = 0
+        actions = Actions(
+            config=config,
+            strummer=strummer,
+            chord_modes={
+                'major': [{
+                    'degree': 2,
+                    'alteration': 0,
+                    'quality': 'major',
+                    'extension': '7',
+                    'display': 'V/V7',
+                }],
+            },
+        )
+
+        actions.set_chord_from_mode([0], {'button': 'Test'})
+
+        assert [note.notation for note in strummer.notes] == ['D', 'F#', 'A', 'C']

@@ -16,6 +16,7 @@ import type {
   DeviceStatus,
   DeviceStatusData,
 } from '../types/tablet-events.js';
+import type { MidiPassthroughConnection } from '../models/midi-strummer-config.js';
 
 /** MIDI input port info from server */
 export interface ServerMidiInputPort {
@@ -41,11 +42,7 @@ export interface ServerMidiInputStatus {
   currentNotes: string[];
 }
 
-/** MIDI passthrough connection */
-export interface MidiPassthroughConnection {
-  inputPort: number | string;
-  outputPort: number | string;
-}
+// MidiPassthroughConnection is defined in `../models/midi-strummer-config.js`.
 
 /** MIDI devices list from server */
 export interface ServerMidiDevices {
@@ -54,6 +51,12 @@ export interface ServerMidiDevices {
   currentInputPorts: number[];
   currentOutputPort: number | null;
   passthroughConnections?: MidiPassthroughConnection[];
+  /**
+   * Connected input port ids whose (normalized) name matches the current
+   * output port name — signals an active MIDI loopback that would feed
+   * our own strums back into the input handler.
+   */
+  loopbackInputPortIds?: number[];
 }
 
 /** Action event from server */
@@ -82,6 +85,7 @@ export interface StrummerWebSocketClientEvents {
   'strum': StrumEventData;
   'combined': CombinedEventData;
   'config': ServerConfigData;
+  'notes-changed': { notes: Array<{ notation: string; octave: number }> };
   'midi-input': ServerMidiInputEvent;
   'midi-input-status': ServerMidiInputStatus;
   'midi-devices': ServerMidiDevices;
@@ -319,6 +323,16 @@ export class StrummerWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Toggle the server's ephemeral button-detection flag. When enabled, aux
+   * codes seen in the tablet stream that aren't already in the device buttons
+   * list are auto-appended and persisted. Server broadcasts the resulting
+   * state via 'button-detection-state'.
+   */
+  setButtonDetection(enabled: boolean): void {
+    this.send({ type: 'set-button-detection', enabled });
+  }
+
+  /**
    * Subscribe to combined events (tablet + optional strum merged)
    */
   onCombinedEvent(callback: (data: CombinedEventData) => void): () => void {
@@ -396,6 +410,14 @@ export class StrummerWebSocketClient extends EventEmitter {
   onMidiDevices(callback: (devices: ServerMidiDevices) => void): () => void {
     this.on<ServerMidiDevices>('midi-devices', callback);
     return () => this.off('midi-devices', callback as any);
+  }
+
+  /**
+   * Subscribe to notes-changed events (lightweight chord updates from MIDI)
+   */
+  onNotesChanged(callback: (data: { notes: Array<{ notation: string; octave: number }> }) => void): () => void {
+    this.on('notes-changed', callback);
+    return () => this.off('notes-changed', callback as any);
   }
 
   /**
@@ -497,6 +519,7 @@ export class StrummerWebSocketClient extends EventEmitter {
               currentInputPorts: message.data.currentInputPorts ?? [],
               currentOutputPort: message.data.currentOutputPort ?? null,
               passthroughConnections: message.data.passthroughConnections ?? [],
+              loopbackInputPortIds: message.data.loopbackInputPortIds ?? [],
             });
           }
           break;
@@ -519,6 +542,22 @@ export class StrummerWebSocketClient extends EventEmitter {
         case 'restart-service-error':
           // Service restart error
           this.emit('restart-service-error', { error: message.error });
+          break;
+        case 'button-detection-state':
+          // Server broadcast of current ephemeral detection flag
+          this.emit<{ enabled: boolean }>('button-detection-state', {
+            enabled: Boolean(message.enabled),
+          });
+          break;
+        case 'notes-changed':
+          // Lightweight chord update — mutate the cached config so callers
+          // reading client.config.notes always see the current notes without
+          // waiting for a full config broadcast.
+          if (this._config) {
+            this._config = { ...this._config, notes: message.notes ?? [] };
+          }
+          this.emit<{ notes: Array<{ notation: string; octave: number }> }>(
+            'notes-changed', { notes: message.notes ?? [] });
           break;
       }
     } catch (error) {

@@ -18,10 +18,10 @@ import string
 
 
 # Type aliases
-ButtonId = str  # Format: "button:primary", "button:secondary", "button:1", etc.
+ButtonId = str  # Format: "button:primary", "button:secondary", or "code:<hidcode>"
 TriggerType = Literal['press', 'release', 'hold']
 ActionCategory = Literal['button', 'group', 'startup']
-GroupActionType = Literal['chord-progression']
+GroupActionType = Literal['chord-progression', 'chord-mode']
 
 # Action definition can be a string or list with params
 ActionDefinition = Union[str, List[Any], None]
@@ -31,28 +31,36 @@ ActionDefinition = Union[str, List[Any], None]
 class GroupAction:
     """
     Group action definition - action with parameters for button groups.
-    Currently only chord-progression is supported.
+
+    Chord-mode actions no longer carry `mode`, `root`, or `octave` — those are
+    resolved from the shared harmonic-context and pitch state at press time.
+    Chord-progression actions carry the progression name; `octave` is optional
+    and defaults to the shared pitch state octave.
     """
     type: GroupActionType
-    progression: str  # Chord progression preset name
-    octave: int = 4   # Octave for chord playback
+    progression: Optional[str] = None  # for chord-progression type
+    octave: Optional[int] = None       # optional override for chord-progression
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'GroupAction':
         """Create from dictionary"""
+        octave = data.get('octave')
         return cls(
             type=data.get('type', 'chord-progression'),
-            progression=data.get('progression', 'c-major-pop'),
-            octave=data.get('octave', 4)
+            progression=data.get('progression'),
+            octave=int(octave) if isinstance(octave, (int, float)) else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
-        return {
+        result: Dict[str, Any] = {
             'type': self.type,
-            'progression': self.progression,
-            'octave': self.octave
         }
+        if self.progression is not None:
+            result['progression'] = self.progression
+        if self.octave is not None:
+            result['octave'] = self.octave
+        return result
 
 
 @dataclass
@@ -191,34 +199,53 @@ def generate_rule_id(prefix: str = 'rule') -> str:
 def parse_button_id(button_id: ButtonId) -> Dict[str, str]:
     """
     Parse a button ID into its components.
-    
+
+    - "button:primary" / "button:secondary" -> stylus
+    - "code:<n>" -> auxiliary tablet button (identifier is the numeric HID scan code as a string)
+
     Returns:
-        Dict with 'type' ('stylus' or 'tablet') and 'identifier'
+        Dict with 'type' ('stylus' or 'aux') and 'identifier'
     """
     parts = button_id.split(':')
-    if len(parts) != 2 or parts[0] != 'button':
+    if len(parts) != 2:
         raise ValueError(f"Invalid button ID: {button_id}")
-    
-    identifier = parts[1]
-    if identifier in ('primary', 'secondary'):
-        return {'type': 'stylus', 'identifier': identifier}
-    
-    # Numeric tablet button
-    try:
-        num = int(identifier)
-        if num < 1:
+
+    scheme, identifier = parts
+
+    if scheme == 'button':
+        if identifier in ('primary', 'secondary'):
+            return {'type': 'stylus', 'identifier': identifier}
+        raise ValueError(f"Invalid button ID: {button_id}")
+
+    if scheme == 'code':
+        try:
+            num = int(identifier)
+        except ValueError:
             raise ValueError(f"Invalid button ID: {button_id}")
-        return {'type': 'tablet', 'identifier': identifier}
-    except ValueError:
-        raise ValueError(f"Invalid button ID: {button_id}")
+        if num < 0 or str(num) != identifier:
+            raise ValueError(f"Invalid button ID: {button_id}")
+        return {'type': 'aux', 'identifier': identifier}
+
+    raise ValueError(f"Invalid button ID: {button_id}")
 
 
 def create_button_id(button_type: str, identifier: Union[str, int]) -> ButtonId:
-    """Create a button ID from components"""
+    """Create a button ID from components."""
     if button_type == 'stylus':
         if identifier not in ('primary', 'secondary'):
             raise ValueError(f"Invalid stylus identifier: {identifier}")
-    return f"button:{identifier}"
+        return f"button:{identifier}"
+
+    if button_type == 'aux':
+        try:
+            num = int(identifier)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid aux identifier: {identifier}")
+        if num < 0:
+            raise ValueError(f"Invalid aux identifier: {identifier}")
+        return f"code:{num}"
+
+    raise ValueError(f"Invalid button type: {button_type}")
 
 
 
@@ -426,9 +453,16 @@ class ActionRulesConfig:
                     if rule_trigger == trigger:
                         # Handle group action based on type
                         if group_rule.action.type == 'chord-progression':
-                            # Return a set-chord-in-progression action
+                            action_params: List[Any] = ['set-chord-in-progression', group_rule.action.progression or '', button_index]
+                            if group_rule.action.octave is not None:
+                                action_params.append(group_rule.action.octave)
                             return {
-                                'action': ['set-chord-in-progression', group_rule.action.progression, button_index, group_rule.action.octave],
+                                'action': action_params,
+                                'rule_id': group_rule.id
+                            }
+                        if group_rule.action.type == 'chord-mode':
+                            return {
+                                'action': ['set-chord-from-mode', button_index],
                                 'rule_id': group_rule.id
                             }
 

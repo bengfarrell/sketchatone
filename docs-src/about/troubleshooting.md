@@ -229,6 +229,46 @@ pip3 install python-rtmidi
 
 ---
 
+## Native UI Issues
+
+### Kivy UI Freezes (Native Pi Dashboard)
+
+**Symptoms:**
+- The touchscreen dashboard becomes completely unresponsive
+- The web dashboard (if running) stays responsive
+- Usually triggered by rapid MIDI input (e.g. a sequencer changing chords at speed)
+
+**Cause:**
+The Kivy UI runs on a single main thread. If a burst of events schedules too much work on that thread faster than it can drain, the render loop starves and the display freezes. The web client stays alive because it runs on a separate asyncio thread.
+
+**Getting a thread dump while frozen:**
+
+The native UI registers a `SIGUSR2` signal handler on startup that dumps all Python thread stacks to `/tmp/sketchatone-threads.log`. To use it while the UI is frozen (SSH in from another machine):
+
+```bash
+# 1. Find the PID
+ps aux | grep python | grep -v grep
+
+# 2. Signal the process — output goes to /tmp/sketchatone-threads.log
+kill -SIGUSR2 <PID>
+
+# 3. Read the dump
+cat /tmp/sketchatone-threads.log
+```
+
+The "Current thread" entry in the dump is the Kivy main thread. The innermost frame shows exactly what the UI was doing when it froze.
+
+**What to look for:**
+
+- `Garbage-collecting` inside a widget `__init__` — a panel is rebuilding its entire widget tree on every config event (the known root cause, fixed since the `notes-changed` event split)
+- A blocking call (file I/O, `time.sleep`, a lock) inside a `Clock` callback
+- A very long chain of `Clock.post_idle` → `tick` → your callback — the clock queue is saturated
+
+**If the dump shows a panel rebuild loop:**
+Check whether `_on_config` in the affected panel calls `_render()` directly without debouncing. All panels that rebuild widgets on config events should use `_schedule_render()` (a cancellable `Clock.schedule_once(..., 0.15)`) to coalesce rapid updates.
+
+---
+
 ## Performance Issues
 
 ### High Latency / Sluggish Response

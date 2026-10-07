@@ -1,0 +1,670 @@
+{
+  "strummer": {
+    "mode": "strum",
+    "noteDuration": {
+      "min": 0.15,
+      "max": 1.5,
+      "multiplier": 1.0,
+      "curve": 1.0,
+      "spread": "inverse",
+      "control": "tiltXY",
+      "default": 1.0,
+      "randomization": 0.0
+    },
+    "pitchBend": {
+      "min": -1.0,
+      "max": 1.0,
+      "multiplier": 1.0,
+      "curve": 4.0,
+      "spread": "central",
+      "control": "yaxis",
+      "default": 0.0,
+      "randomization": 0.0
+    },
+    "noteVelocity": {
+      "min": 0.0,
+      "max": 127.0,
+      "multiplier": 1.0,
+      "curve": 4.0,
+      "spread": "direct",
+      "control": "pressure",
+      "default": 64.0,
+      "randomization": 0.0
+    },
+    "strumming": {
+      "pressureThreshold": 0.1,
+      "pressureBufferSize": 10,
+      "midiChannel": null,
+      "initialNotes": [
+        "C4",
+        "E4",
+        "G4"
+      ],
+      "chord": "Am",
+      "upperNoteSpread": 3,
+      "lowerNoteSpread": 3,
+      "invertX": false,
+      "hoverMute": false
+    },
+    "slide": {
+      "pressureThreshold": 0.1,
+      "maxBendSemitones": 24.0,
+      "pressureModulation": {
+        "type": "none",
+        "ccNumber": 11,
+        "minValue": 0,
+        "maxValue": 127
+      }
+    },
+    "strumRelease": {
+      "active": false,
+      "midiNote": 38,
+      "midiChannel": null,
+      "maxDuration": 0.25,
+      "velocityMultiplier": 1.0
+    },
+    "actionRules": {
+      "rules": [
+        {
+          "id": "stylus-primary-transpose",
+          "button": "button:primary",
+          "action": "toggle-transpose",
+          "trigger": "press",
+          "name": "Toggle Transpose"
+        },
+        {
+          "id": "stylus-secondary-repeater",
+          "button": "button:secondary",
+          "action": "toggle-repeater",
+          "trigger": "press",
+          "name": "Toggle Repeater"
+        }
+      ],
+      "groups": [
+        {
+          "id": "chord-buttons",
+          "name": "Chord Buttons",
+          "buttons": [
+            "key:7",
+            "key:8",
+            "key:9",
+            "key:4",
+            "key:5",
+            "key:6",
+            "key:1",
+            "key:2",
+            "key:3"
+          ]
+        }
+      ],
+      "groupRules": [
+        {
+          "id": "chord-progression-rule",
+          "groupId": "",
+          "action": {
+            "type": "chord-progression",
+            "progression": "a-minor-pop",
+            "octave": 4
+          },
+          "trigger": "press",
+          "name": "A Minor Pop Progression"
+        },
+        {
+          "id": "chord-mode-rule",
+          "groupId": "chord-buttons",
+          "action": {
+            "type": "chord-mode",
+            "octave": 4
+          },
+          "trigger": "press",
+          "name": "C Major Chord Mode"
+        }
+      ],
+      "startupRules": []
+    },
+    "chordProgressions": {
+      "c-major-pop": [
+        "C",
+        "G",
+        "Am",
+        "F"
+      ],
+      "c-major-jazz": [
+        "Cmaj7",
+        "Dm7",
+        "Em7",
+        "Fmaj7",
+        "G7",
+        "Am7",
+        "Bm7"
+      ],
+      "a-minor-basic": [
+        "Am",
+        "Dm",
+        "Em",
+        "F",
+        "E"
+      ],
+      "a-minor-pop": [
+        "Am",
+        "F",
+        "C",
+        "G",
+        "E"
+      ],
+      "a-minor-sad": [
+        "Am",
+        "Em",
+        "F",
+        "C",
+        "G",
+        "Dm",
+        "E"
+      ],
+      "e-minor-basic": [
+        "Em",
+        "Am",
+        "Bm",
+        "C",
+        "B"
+      ],
+      "e-minor-pop": [
+        "Em",
+        "C",
+        "G",
+        "D",
+        "B"
+      ],
+      "d-minor-basic": [
+        "Dm",
+        "Gm",
+        "Am",
+        "Bb",
+        "A"
+      ],
+      "d-minor-pop": [
+        "Dm",
+        "Bb",
+        "F",
+        "C",
+        "A"
+      ],
+      "blues-e": [
+        "E7",
+        "A7",
+        "B7"
+      ],
+      "blues-a": [
+        "A7",
+        "D7",
+        "E7"
+      ],
+      "blues-g": [
+        "G7",
+        "C7",
+        "D7"
+      ],
+      "rock-classic": [
+        "E",
+        "A",
+        "D",
+        "B"
+      ],
+      "rock-power": [
+        "E5",
+        "G5",
+        "A5",
+        "C5",
+        "D5"
+      ],
+      "jazz-251-c": [
+        "Dm7",
+        "G7",
+        "Cmaj7",
+        "Em7",
+        "A7"
+      ],
+      "gospel-c": [
+        "C",
+        "Am7",
+        "Dm7",
+        "G7",
+        "F"
+      ]
+    },
+    "pitch": {
+      "startingOffset": 0,
+      "startingOctave": 4
+    },
+    "harmonicContext": {
+      "startingRoot": "C",
+      "startingMode": "major"
+    },
+    "chordModes": {
+      "major": [
+        {
+          "degree": 3,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "iii"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "V"
+        },
+        {
+          "degree": 6,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "vi"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "IV"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "I"
+        },
+        {
+          "degree": 3,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "V/vi"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "ii"
+        },
+        {
+          "degree": 7,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "none",
+          "display": "bVII"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "V/V7"
+        }
+      ],
+      "minor": [
+        {
+          "degree": 6,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "none",
+          "display": "bVI"
+        },
+        {
+          "degree": 7,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "none",
+          "display": "bVII"
+        },
+        {
+          "degree": 3,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "none",
+          "display": "III"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "iv"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "i"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "V"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "diminished",
+          "extension": "none",
+          "display": "ii\u00b0"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "none",
+          "display": "IV"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "V7"
+        }
+      ],
+      "jazz": [
+        {
+          "degree": 3,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "7",
+          "display": "iii7"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "V7"
+        },
+        {
+          "degree": 7,
+          "alteration": 0,
+          "quality": "half-diminished",
+          "extension": "m7b5",
+          "display": "vii\u00f87"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "maj7",
+          "display": "IVmaj7"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "maj7",
+          "display": "Imaj7"
+        },
+        {
+          "degree": 6,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "7",
+          "display": "vi7"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "7",
+          "display": "ii7"
+        },
+        {
+          "degree": 7,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "maj7",
+          "display": "bVIImaj7"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "V/V7"
+        }
+      ],
+      "blues": [
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "9",
+          "display": "V9"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "V7"
+        },
+        {
+          "degree": 7,
+          "alteration": -1,
+          "quality": "major",
+          "extension": "none",
+          "display": "bVII"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "IV7"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "7",
+          "display": "I7"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "9",
+          "display": "I9"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "major",
+          "extension": "9",
+          "display": "IV9"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "i"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "minor",
+          "extension": "none",
+          "display": "iv"
+        }
+      ],
+      "power": [
+        {
+          "degree": 6,
+          "alteration": -1,
+          "quality": "power",
+          "extension": "none",
+          "display": "bVI5"
+        },
+        {
+          "degree": 7,
+          "alteration": -1,
+          "quality": "power",
+          "extension": "none",
+          "display": "bVII5"
+        },
+        {
+          "degree": 3,
+          "alteration": -1,
+          "quality": "power",
+          "extension": "none",
+          "display": "bIII5"
+        },
+        {
+          "degree": 4,
+          "alteration": 0,
+          "quality": "power",
+          "extension": "none",
+          "display": "IV5"
+        },
+        {
+          "degree": 1,
+          "alteration": 0,
+          "quality": "power",
+          "extension": "none",
+          "display": "I5"
+        },
+        {
+          "degree": 5,
+          "alteration": 0,
+          "quality": "power",
+          "extension": "none",
+          "display": "V5"
+        },
+        {
+          "degree": 2,
+          "alteration": -1,
+          "quality": "power",
+          "extension": "none",
+          "display": "bII5"
+        },
+        {
+          "degree": 2,
+          "alteration": 0,
+          "quality": "power",
+          "extension": "none",
+          "display": "II5"
+        },
+        {
+          "degree": 7,
+          "alteration": 0,
+          "quality": "power",
+          "extension": "none",
+          "display": "VII5"
+        }
+      ]
+    }
+  },
+  "midi": {
+    "midiOutputBackend": "rtmidi",
+    "midiOutputId": "IAC Driver Bus 1",
+    "midiInputId": [],
+    "inputMode": "direct",
+    "midiInputExclude": [
+      "sketchatone",
+      "ZynMidiRouter",
+      "zynseq",
+      "zynsmf",
+      "ttymidi",
+      "Midi Through"
+    ],
+    "midiOutputExclude": [
+      "sketchatone"
+    ],
+    "midiPassthrough": [],
+    "jackClientName": "sketchatone",
+    "jackAutoConnect": "chain0",
+    "defaultNoteDuration": 1.5,
+    "midiInterMessageDelay": 0.0
+  },
+  "server": {
+    "device": "devices",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "wsPort": 8081,
+    "wssPort": 8082,
+    "wsMessageThrottle": 150,
+    "deviceFindingPollInterval": null
+  },
+  "deviceButtons": {
+    "buttons": [],
+    "keys": [
+      {
+        "key": "1",
+        "name": "Key 1"
+      },
+      {
+        "key": "2",
+        "name": "Key 2"
+      },
+      {
+        "key": "3",
+        "name": "Key 3"
+      },
+      {
+        "key": "4",
+        "name": "Key 4"
+      },
+      {
+        "key": "5",
+        "name": "Key 5"
+      },
+      {
+        "key": "6",
+        "name": "Key 6"
+      },
+      {
+        "key": "7",
+        "name": "Key 7"
+      },
+      {
+        "key": "8",
+        "name": "Key 8"
+      },
+      {
+        "key": "9",
+        "name": "Key 9"
+      },
+      {
+        "key": "comma",
+        "name": "Key COMMA"
+      },
+      {
+        "key": "dot",
+        "name": "Key DOT"
+      },
+      {
+        "key": "right",
+        "name": "Key RIGHT"
+      },
+      {
+        "key": "left",
+        "name": "Key LEFT"
+      },
+      {
+        "key": "down",
+        "name": "Key DOWN"
+      },
+      {
+        "key": "up",
+        "name": "Key UP"
+      }
+    ]
+  },
+  "keyboard": {
+    "enabled": true
+  }
+}

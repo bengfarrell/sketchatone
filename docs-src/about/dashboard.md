@@ -149,7 +149,7 @@ After connecting or disconnecting MIDI devices:
 - **Output Port** (`midi_output_id`) - MIDI device to send notes to
 - **Input Port** (`midi_input_id`) - MIDI keyboard for chord input
 - **Backend** (`midi_output_backend`) - `rtmidi` (default) or `jack` (Linux)
-- **Inter-Message Delay** (`midiInterMessageDelay`) - Prevent stuck notes on slow hardware (e.g., 0.08 for Raspberry Pi)
+- **Inter-Message Delay** (`midi_inter_message_delay`) - Prevent stuck notes on slow hardware (e.g., 0.08 for Raspberry Pi)
 - **JACK Settings** - Client name and auto-connect mode
 
 **To change MIDI settings:**
@@ -161,7 +161,7 @@ After connecting or disconnecting MIDI devices:
        "midi_output_backend": "rtmidi",
        "midi_output_id": 2,
        "midi_input_id": null,
-       "midiInterMessageDelay": 0.08
+       "midi_inter_message_delay": 0.08
      }
    }
    ```
