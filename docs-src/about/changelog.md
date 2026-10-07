@@ -7,6 +7,13 @@ description: Release notes and version history
 
 ## v0.3.0
 
+### Recent Updates
+
+- **Explicit chord-mode entries**: Chord layouts now use numeric scale degrees, semitone alterations, named qualities and extensions, plus optional display labels and enharmonic spelling. The Node.js and Python runtimes, performance panels, default config, and documentation use the same schema
+- **Parameter-mapping humanization**: Added optional curve-proportional randomization to mapped values. Noise is zero at the neutral centre, increases toward the range edges, and is disabled by default
+- **Hover-to-mute strumming**: Added the opt-in `strumming.hoverMute` setting to send note-off when hovering over a ringing string
+- **Safer configuration updates**: Config files are now written atomically while preserving existing permissions, ownership, and symlinks. Device button and key edits are converted to their typed config models and can be renamed, deleted, or cleared safely
+
 ### Installation
 - **Dropped choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice
 - **Interactive post-install menus**: `sudo sketchatone-configure` and `sudo sketchatone-ui-configure` cover autostart mode, USB MIDI gadget, and boot-time trimming in one place, replacing the need to run individual helper scripts
