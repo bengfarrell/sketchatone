@@ -33,7 +33,11 @@ from kivy.uix.widget import Widget
 from . import theme
 from .bridge import UIBridge
 from ..models.note import Note
-from ..strummer.actions import DEGREE_TO_SEMITONES
+from ..models.chord_mode import (
+    chord_mode_prefers_flat,
+    chord_mode_semitones,
+    resolve_chord_mode_entry,
+)
 
 
 # ---- Pure helpers --------------------------------------------------------
@@ -5363,18 +5367,18 @@ class ChordProgressionsPanel(BoxLayout):
 
 
 
-def _chord_name_from_degree(degree: str, quality: str, root: str) -> str:
-    """Compute a chord name (e.g. 'Am') from a degree, quality, and root note."""
-    semitones = DEGREE_TO_SEMITONES.get(degree)
-    if semitones is None:
+def _chord_name_from_entry(entry: dict, root: str = 'C') -> str:
+    """Compute a chord name from an explicit numeric chord-mode entry."""
+    resolved = resolve_chord_mode_entry(entry)
+    if resolved is None:
         return '?'
     root_clean = root.rstrip('0123456789')
     root_idx = Note.index_of_notation(root_clean)
     if root_idx == -1:
         return '?'
-    chord_idx = (root_idx + semitones) % 12
-    chord_root = Note.notation_at_index(chord_idx, prefer_flat='b' in root_clean)
-    return chord_root + quality
+    chord_idx = root_idx + chord_mode_semitones(resolved)
+    chord_root = Note.notation_at_index(chord_idx, prefer_flat=chord_mode_prefers_flat(resolved, root_clean))
+    return chord_root + resolved['chordSuffix']
 
 
 class _ChordCell(BoxLayout):
@@ -5609,16 +5613,15 @@ class ChordModePanel(BoxLayout):
         )
 
         for idx, entry in enumerate(entries):
-            degree = entry.get('degree', '')
-            quality = entry.get('quality', '')
-            chord = _chord_name_from_degree(degree, quality, self._root)
+            resolved = resolve_chord_mode_entry(entry)
+            chord = _chord_name_from_entry(entry, root=self._root)
             btn_id = self._chord_mode_buttons[idx] if idx < len(self._chord_mode_buttons) else ''
             colon = btn_id.find(':')
             btn_lbl = btn_id[colon + 1:] if colon >= 0 else btn_id
 
             cell = _ChordCell(
                 button_label=btn_lbl,
-                degree=degree + quality,
+                degree=resolved['display'] if resolved else '?',
                 chord=chord,
                 size_hint=(1, 1),
             )

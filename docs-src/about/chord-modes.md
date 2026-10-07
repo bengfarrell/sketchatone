@@ -7,15 +7,15 @@ description: Consistent harmonic layouts for keypad-based chord control
 
 Chord modes solve a specific problem: when each song maps different chords to the same physical buttons, you build no muscle memory and have to re-learn the layout for every song.
 
-The alternative is to assign each button a **harmonic function** — a Roman numeral scale degree — and let a shared harmonic context handle the key and quality. The physical gesture for a I–V–vi–IV progression is then the same whether you're playing in C, G, or E♭. The chords change; your fingers don't.
+The alternative is to assign each button a **harmonic function** — a numeric scale degree plus an alteration and chord structure — and let a shared harmonic context handle the key. The physical gesture for a I–V–vi–IV progression is then the same whether you're playing in C, G, or E♭. The chords change; your fingers don't.
 
-`chordModes` defines what chord *quality* plays at each scale degree for a given mode. Which mode is active, and which root it's transposed to, are set in `strummer.harmonicContext` and can be shifted at runtime by transpose actions.
+`chordModes` defines the root degree, chromatic alteration, chord quality, extension, and optional display label for each button. Which mode is active, and which root it's transposed to, are set in `strummer.harmonicContext` and can be shifted at runtime by transpose actions.
 
 ## Configuration Overview
 
 Three top-level sections work together:
 
-- **`strummer.chordModes`** — the layouts themselves (degree + quality per button).
+- **`strummer.chordModes`** — the layouts themselves (numeric degree, alteration, quality, extension, and optional display label per button).
 - **`strummer.harmonicContext`** — the starting `root` (e.g. `"C"`) and `mode` name (e.g. `"major"`).
 - **`strummer.pitch`** — the shared `startingOffset` (semitones applied to every strummed note) and `startingOctave` (default register for chord-setting actions).
 
@@ -45,27 +45,38 @@ The `transpose` and `toggle-transpose` actions mutate the shared pitch offset, s
 
 ## How It Works
 
-Each mode is an array of 9 objects, one per button. Each object has a `degree` (Roman numeral) and a `quality` (the chord suffix used in [Chord Notation](/about/chords-and-progressions/#chord-notation)):
+Each mode is an array of 9 objects, one per button. `degree` is a number from 1 to 7 measured from the major scale; `alteration` shifts that degree in semitones. Chord quality and extension are separate fields, while `display` is optional text used only as the UI label:
 
 ```json
 "chordModes": {
   "major": [
-    { "degree": "vi",  "quality": "m"  },
-    { "degree": "ii",  "quality": "m"  },
-    { "degree": "V/V", "quality": "7"  },
-    { "degree": "IV",  "quality": ""   },
-    { "degree": "I",   "quality": ""   },
-    { "degree": "bVII","quality": ""   },
-    { "degree": "iii", "quality": "m"  },
-    { "degree": "V",   "quality": ""   },
-    { "degree": "vii", "quality": "dim"}
+    { "degree": 6, "alteration": 0, "quality": "minor", "extension": "none", "display": "vi" },
+    { "degree": 2, "alteration": 0, "quality": "minor", "extension": "none", "display": "ii" },
+    { "degree": 2, "alteration": 0, "quality": "major", "extension": "7", "display": "V/V7" },
+    { "degree": 4, "alteration": 0, "quality": "major", "extension": "none", "display": "IV" },
+    { "degree": 1, "alteration": 0, "quality": "major", "extension": "none", "display": "I" },
+    { "degree": 7, "alteration": -1, "quality": "major", "extension": "none", "display": "bVII" },
+    { "degree": 3, "alteration": 0, "quality": "minor", "extension": "none", "display": "iii" },
+    { "degree": 5, "alteration": 0, "quality": "major", "extension": "none", "display": "V" },
+    { "degree": 7, "alteration": 0, "quality": "diminished", "extension": "none", "display": "vii°" }
   ]
 }
 ```
 
 **Array position = button number.** Index 0 is button 1, index 1 is button 2, and so on up to index 8 = button 9. This makes the keypad layout explicit and readable directly from the config.
 
-With `harmonicContext.startingRoot: "C"` and `startingMode: "major"`, button 5 (index 4, degree `I`, quality `""`) produces a C major triad. Applying a `+7` pitch offset shifts the effective root to G and the same button produces G major. The finger movement never changes.
+With `harmonicContext.startingRoot: "C"` and `startingMode: "major"`, button 5 (index 4, degree `1`, no alteration, major quality) produces a C major triad. Button 3's degree `2` with a dominant seventh extension produces D7; its `V/V7` display label is independent of the chord calculation. Applying a `+7` pitch offset shifts the effective root to G and the same button produces G major. The finger movement never changes.
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `degree` | integer 1–7 | Scale degree counted from the configured root, using major-scale pitch positions as the unaltered reference |
+| `alteration` | integer semitones, usually -1, 0, or 1 | Chromatic adjustment; for example degree 7 with -1 produces bVII |
+| `quality` | `major`, `minor`, `diminished`, `augmented`, `sus2`, `sus4`, `power` | Triad or base chord structure |
+| `extension` | `none`, `6`, `7`, `maj7`, `9`, `maj9`, `add9` | Chord extension; `7`/`9` mean dominant seventh/ninth, while `maj7`/`maj9` are major seventh/ninth |
+| `display` | any string (optional) | Label shown in the performance panel; does not affect the generated chord |
+| `spelling` | `auto`, `flat`, `sharp` (optional) | Override the default enharmonic spelling for the chord root |
+
+Chord-mode entries must use this explicit numeric schema; Roman-numeral strings are not parsed as chord degrees. Use `display` to show functional labels such as `V/V7` without coupling them to chord calculation.
 
 ## 3×3 Keypad Layout
 

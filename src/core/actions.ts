@@ -9,6 +9,12 @@ import { EventEmitter } from '../utils/event-emitter.js';
 import { Note, type NoteObject } from '../models/note.js';
 import type { Strummer } from './strummer.js';
 import type { ActionRulesConfig, ButtonId, TriggerType } from '../models/action-rules.js';
+import {
+  chordModePrefersFlat,
+  chordModeSemitones,
+  resolveChordModeEntry,
+  type ChordModeMap,
+} from '../models/chord-mode.js';
 
 /**
  * Manages the state of a chord progression.
@@ -207,23 +213,6 @@ interface HarmonicContextState {
   mode: string;
 }
 
-// Roman numeral degree to semitone offset from tonic
-const DEGREE_TO_SEMITONES: Record<string, number> = {
-  'I': 0, 'i': 0,
-  'bII': 1, 'bii': 1,
-  'II': 2, 'ii': 2,
-  'bIII': 3, 'biii': 3,
-  'III': 4, 'iii': 4,
-  'IV': 5, 'iv': 5,
-  'bV': 6, 'bv': 6,
-  'V': 7, 'v': 7,
-  'V/V': 2, // secondary dominant — same root as II
-  'bVI': 8, 'bvi': 8,
-  'VI': 9, 'vi': 9,
-  'bVII': 10, 'bvii': 10,
-  'VII': 11, 'vii': 11,
-};
-
 export class Actions extends EventEmitter {
   private config: ActionsConfig;
   private strummer: Strummer | null;
@@ -231,7 +220,7 @@ export class Actions extends EventEmitter {
   progressionState: ChordProgressionState;
   private actionRulesConfig: ActionRulesConfig | null = null;
   private chordProgressions: Record<string, string[]> = {};
-  private chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
+  private chordModes: ChordModeMap = {};
 
   // Internal state for repeater (managed by actions, not config)
   private repeaterState: RepeaterState = {
@@ -267,7 +256,7 @@ export class Actions extends EventEmitter {
     config: ActionsConfig,
     strummer: Strummer | null = null,
     chordProgressions?: Record<string, string[]>,
-    chordModes?: Record<string, Array<{ degree: string; quality: string }>>,
+    chordModes?: ChordModeMap,
     pitchStarting?: Partial<PitchStartingConfig>,
     harmonicContextStarting?: Partial<HarmonicContextStartingConfig>,
   ) {
@@ -386,7 +375,7 @@ export class Actions extends EventEmitter {
   /**
    * Update chord modes (called when harmonicContext config changes).
    */
-  setChordModes(chordModes: Record<string, Array<{ degree: string; quality: string }>>): void {
+  setChordModes(chordModes: ChordModeMap): void {
     this.chordModes = chordModes;
   }
 
@@ -1010,8 +999,6 @@ export class Actions extends EventEmitter {
     const modeName = this.harmonicContextState.mode;
     const root = this.harmonicContextState.root;
     const octave = this.pitchState.octave;
-    const preferFlat = root.includes('b');
-
     if (!this.strummer) {
       console.log('[ACTIONS] Error: No strummer instance available');
       return;
@@ -1028,21 +1015,21 @@ export class Actions extends EventEmitter {
       console.log(`[ACTIONS] Error: No chord at button index ${buttonIndex} in mode '${modeName}'`);
       return;
     }
-    const semitones = DEGREE_TO_SEMITONES[entry.degree];
-    if (semitones === undefined) {
-      console.log(`[ACTIONS] Error: Unknown degree '${entry.degree}'`);
+    const resolved = resolveChordModeEntry(entry);
+    if (!resolved) {
+      console.log(`[ACTIONS] Error: Invalid chord-mode entry at index ${buttonIndex}`);
       return;
     }
 
-    const rootIndex = Note.indexOfNotation(root.replace(/[0-9]/, ''));
+    const rootIndex = Note.indexOfNotation(root.replace(/[0-9]/g, ''));
     if (rootIndex === -1) {
       console.log(`[ACTIONS] Error: Unknown root note '${root}'`);
       return;
     }
 
-    const chordRootIndex = (rootIndex + semitones) % 12;
-    const chordRoot = Note.notationAtIndex(chordRootIndex, preferFlat);
-    const chordNotation = chordRoot + entry.quality;
+    const chordRootIndex = rootIndex + chordModeSemitones(resolved);
+    const chordRoot = Note.notationAtIndex(chordRootIndex, chordModePrefersFlat(resolved, root));
+    const chordNotation = chordRoot + resolved.chordSuffix;
 
     try {
       const notes = Note.parseChord(chordNotation, octave);
@@ -1056,7 +1043,7 @@ export class Actions extends EventEmitter {
       this.strummer.notes = Note.fillNoteSpread(notes, lowerSpread, upperSpread);
 
       const button = context.button ?? 'Unknown';
-      console.log(`[ACTIONS] ${button} set chord-mode '${modeName}'[${buttonIndex}] → ${entry.degree}${entry.quality} → ${chordNotation} (oct ${octave})`);
+      console.log(`[ACTIONS] ${button} set chord-mode '${modeName}'[${buttonIndex}] → ${resolved.display} → ${chordNotation} (oct ${octave})`);
     } catch (e) {
       console.log(`[ACTIONS] Error setting chord from mode: ${e}`);
     }

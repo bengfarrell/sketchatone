@@ -32,6 +32,7 @@ from sketchatone.ui.panel_widgets import (
     StrummingSettingsPanel,
     TabletVisualizerPanel,
     calculate_curve_output,
+    _chord_name_from_entry,
     extract_action_rules,
     extract_chord_progressions,
     extract_device_buttons,
@@ -94,6 +95,31 @@ class TestFormatStrum:
     def test_release_with_no_notes(self):
         out = format_strum(StrumEventData(type='release'))
         assert out == {'type': 'release', 'notes': [], 'velocity': 0}
+
+
+class TestChordModeFormatting:
+    def test_explicit_degree_and_display_independent_of_chord(self):
+        entry = {
+            'degree': 2,
+            'alteration': 0,
+            'quality': 'major',
+            'extension': '7',
+            'display': 'V/V7',
+        }
+        assert _chord_name_from_entry(entry, root='C') == 'D7'
+
+    def test_explicit_flat_alteration_uses_flat_spelling(self):
+        entry = {
+            'degree': 7,
+            'alteration': -1,
+            'quality': 'major',
+            'extension': 'none',
+            'display': 'bVII',
+        }
+        assert _chord_name_from_entry(entry, root='C') == 'Bb'
+
+    def test_rejects_roman_numeral_entry(self):
+        assert _chord_name_from_entry({'degree': 'V/vi', 'quality': ''}, root='C') == '?'
 
 
 class TestEventRateTracker:

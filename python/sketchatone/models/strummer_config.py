@@ -43,6 +43,7 @@ class StrummingConfig:
     upper_note_spread: int = 3
     lower_note_spread: int = 3
     invert_x: bool = False
+    hover_mute: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StrummingConfig':
@@ -65,6 +66,7 @@ class StrummingConfig:
             upper_note_spread=int(data.get('upper_note_spread', data.get('upperNoteSpread', 3))),
             lower_note_spread=int(data.get('lower_note_spread', data.get('lowerNoteSpread', 3))),
             invert_x=data.get('invert_x', data.get('invertX', False)),
+            hover_mute=data.get('hover_mute', data.get('hoverMute', False)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -86,6 +88,7 @@ class StrummingConfig:
             'upperNoteSpread': self.upper_note_spread,
             'lowerNoteSpread': self.lower_note_spread,
             'invertX': self.invert_x,
+            'hoverMute': self.hover_mute,
         }
 
 

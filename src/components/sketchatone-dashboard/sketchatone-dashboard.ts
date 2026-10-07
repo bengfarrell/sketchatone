@@ -75,6 +75,7 @@ import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
 import { Note, type NoteObject } from '../../models/note.js';
+import { resolveChordModeEntry, type ChordModeMap } from '../../models/chord-mode.js';
 import { PRESSURE_MODULATION_CC_PRESETS } from '../../models/strummer-features.js';
 
 // Shared tablet interaction controller for curve visualizers
@@ -956,7 +957,7 @@ export class SketchatoneDashboard extends LitElement {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const chordModes: Record<string, Array<{ degree: string; quality: string }>> = (this.fullConfig as any)?.strummer?.chordModes ?? {};
+    const chordModes: ChordModeMap = (this.fullConfig as any)?.strummer?.chordModes ?? {};
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const harmonic: { startingMode?: string } = (this.fullConfig as any)?.strummer?.harmonicContext ?? {};
     const activeMode = harmonic.startingMode ?? 'major';
@@ -973,7 +974,7 @@ export class SketchatoneDashboard extends LitElement {
         const entries = chordModes[activeMode] ?? [];
         for (let i = 0; i < group.buttons.length; i++) {
           const entry = entries[i];
-          push(group.buttons[i], entry ? `${entry.degree}${entry.quality}` : '–');
+          push(group.buttons[i], entry ? resolveChordModeEntry(entry)?.display ?? '?' : '–');
         }
       }
     }

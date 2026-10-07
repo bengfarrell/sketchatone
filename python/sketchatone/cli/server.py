@@ -173,6 +173,7 @@ from sketchatone.midi.protocol import MidiBackendProtocol
 from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
 from sketchatone.midi.jack_input import JackMidiInput
 from sketchatone.utils.keyboard_listener import KeyboardListener
+from sketchatone.utils.config_file import write_config_file
 
 from sketchatone.tablet.tablet_client import TabletClient, wait_for_device
 from sketchatone.tablet.otd.config_loader import ConfigIndex
@@ -1999,19 +2000,8 @@ class StrummerWebSocketServer:
         if not self.strummer_config_path:
             return
         try:
-            original_uid = None
-            original_gid = None
-            if os.path.exists(self.strummer_config_path):
-                stat_info = os.stat(self.strummer_config_path)
-                original_uid = stat_info.st_uid
-                original_gid = stat_info.st_gid
-
-            with open(self.strummer_config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config.to_dict(), f, indent=2)
-
-            if original_uid is not None and os.geteuid() == 0:
-                os.chown(self.strummer_config_path, original_uid, original_gid)
-        except Exception as e:
+            write_config_file(self.strummer_config_path, self.config.to_dict())
+        except (OSError, TypeError, ValueError, AttributeError) as e:
             abs_path = os.path.abspath(self.strummer_config_path)
             errno_name = getattr(e, 'errno', None)
             errno_str = f' ({errno.errorcode.get(errno_name, errno_name)})' if errno_name else ''
@@ -2133,21 +2123,7 @@ class StrummerWebSocketServer:
             return
 
         try:
-            # Get original file ownership before writing (to preserve when running as sudo)
-            original_uid = None
-            original_gid = None
-            if os.path.exists(self.strummer_config_path):
-                stat_info = os.stat(self.strummer_config_path)
-                original_uid = stat_info.st_uid
-                original_gid = stat_info.st_gid
-
-            config_dict = self.config.to_dict()
-            with open(self.strummer_config_path, 'w', encoding='utf-8') as f:
-                json.dump(config_dict, f, indent=2)
-
-            # Restore original ownership if we had it and we're running as root
-            if original_uid is not None and os.geteuid() == 0:
-                os.chown(self.strummer_config_path, original_uid, original_gid)
+            write_config_file(self.strummer_config_path, self.config.to_dict())
 
             print(colored(f'[Save Config] Configuration saved to {self.strummer_config_path}', Colors.GREEN))
 
@@ -2222,13 +2198,7 @@ class StrummerWebSocketServer:
 
         try:
             new_config = MidiStrummerConfig()
-            config_dict = new_config.to_dict()
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config_dict, f, indent=2)
-
-            # Set permissions to 0o666 to allow editing when created as root
-            if os.geteuid() == 0:
-                os.chmod(config_path, 0o666)
+            write_config_file(config_path, new_config.to_dict())
 
             print(colored(f'[Create Config] Created new config: {config_name}', Colors.GREEN))
 
@@ -2311,13 +2281,7 @@ class StrummerWebSocketServer:
             # Parse and validate the config data
             parsed_config = MidiStrummerConfig.from_dict(config_data)
 
-            # Write the config file
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, indent=2)
-
-            # Set permissions to 0o666 to allow editing when created as root
-            if os.geteuid() == 0:
-                os.chmod(config_path, 0o666)
+            write_config_file(config_path, config_data)
 
             print(colored(f'[Upload Config] Uploaded config: {config_name}', Colors.GREEN))
 
@@ -2552,6 +2516,16 @@ class StrummerWebSocketServer:
         last_part = parts[-1]
         snake_last = self._camel_to_snake(last_part)
 
+        from ..models.device_buttons_config import DeviceButtonsConfig, DeviceButton, DeviceKey
+
+        if isinstance(current, DeviceButtonsConfig) and snake_last in ('buttons', 'keys'):
+            if not isinstance(value, list):
+                raise ValueError(f"{path} must be a list")
+            converter = DeviceButton.from_dict if snake_last == 'buttons' else DeviceKey.from_dict
+            if not all(isinstance(entry, dict) for entry in value):
+                raise ValueError(f"{path} entries must be objects")
+            value = [converter(entry) for entry in value]
+
         # Convert dict values to proper config objects for known complex types
         if isinstance(value, dict):
             value = self._convert_dict_to_config(snake_last, value)
@@ -2760,6 +2734,21 @@ class StrummerWebSocketServer:
                 self._handle_slide(strum_x, pressure, x)
                 return
 
+            # Get transpose state from shared pitch offset
+            transpose_semitones = self.actions.get_pitch_offset()
+            transpose_enabled = transpose_semitones != 0
+
+            # Hover mute: hovering over a string sends immediate note-off (like touching a guitar string)
+            if (self.config.strummer.strumming.hover_mute
+                    and tablet_event.state == "hover"
+                    and self.backend
+                    and len(self.strummer.notes) > 0):
+                hover_index = self.strummer.layout.index_at(strum_x)
+                hover_note = self.strummer.notes[hover_index]
+                if transpose_enabled:
+                    hover_note = hover_note.transpose(transpose_semitones)
+                self.backend.send_note_off(hover_note)
+
             # Process strum
             _t = time.perf_counter()
             event = self.strummer.strum(strum_x, pressure)
@@ -2770,10 +2759,6 @@ class StrummerWebSocketServer:
             note_repeater_enabled = repeater_config['active']
             pressure_multiplier = repeater_config['pressure_multiplier']
             frequency_multiplier = repeater_config['frequency_multiplier']
-
-            # Get transpose state from shared pitch offset
-            transpose_semitones = self.actions.get_pitch_offset()
-            transpose_enabled = transpose_semitones != 0
 
             if event:
                 # Create strum event data

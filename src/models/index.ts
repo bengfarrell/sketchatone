@@ -3,6 +3,7 @@
  */
 
 export * from './note.js';
+export * from './chord-mode.js';
 export * from './parameter-mapping.js';
 export * from './strummer-features.js';
 export * from './strummer-config.js';

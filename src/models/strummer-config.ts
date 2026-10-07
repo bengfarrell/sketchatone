@@ -24,6 +24,7 @@ import {
   ActionRulesConfigData,
   DEFAULT_ACTION_RULES_CONFIG,
 } from './action-rules.js';
+import type { ChordModeMap } from './chord-mode.js';
 
 /**
  * Authored starting values for the global pitch state. `startingOffset` is the
@@ -74,6 +75,8 @@ export interface StrummingConfigData {
   lowerNoteSpread: number;
   /** Invert X axis for left-handed use (flips which notes are on which side) */
   invertX: boolean;
+  /** Hovering over a ringing string sends immediate note-off (like touching a guitar string to mute it) */
+  hoverMute: boolean;
 }
 
 /**
@@ -88,6 +91,7 @@ export const DEFAULT_STRUMMING_CONFIG: StrummingConfigData = {
   upperNoteSpread: 3,
   lowerNoteSpread: 3,
   invertX: false,
+  hoverMute: false,
 };
 
 /**
@@ -102,6 +106,7 @@ export class StrummingConfig implements StrummingConfigData {
   upperNoteSpread: number;
   lowerNoteSpread: number;
   invertX: boolean;
+  hoverMute: boolean;
 
   constructor(data: Partial<StrummingConfigData> = {}) {
     this.pressureThreshold = data.pressureThreshold ?? DEFAULT_STRUMMING_CONFIG.pressureThreshold;
@@ -112,6 +117,7 @@ export class StrummingConfig implements StrummingConfigData {
     this.upperNoteSpread = data.upperNoteSpread ?? DEFAULT_STRUMMING_CONFIG.upperNoteSpread;
     this.lowerNoteSpread = data.lowerNoteSpread ?? DEFAULT_STRUMMING_CONFIG.lowerNoteSpread;
     this.invertX = data.invertX ?? DEFAULT_STRUMMING_CONFIG.invertX;
+    this.hoverMute = data.hoverMute ?? DEFAULT_STRUMMING_CONFIG.hoverMute;
   }
 
   /**
@@ -137,6 +143,7 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: (data.upper_note_spread ?? data.upperNoteSpread) as number | undefined,
       lowerNoteSpread: (data.lower_note_spread ?? data.lowerNoteSpread) as number | undefined,
       invertX: (data.invert_x ?? data.invertX) as boolean | undefined,
+      hoverMute: (data.hover_mute ?? data.hoverMute) as boolean | undefined,
     });
   }
 
@@ -160,6 +167,7 @@ export class StrummingConfig implements StrummingConfigData {
       upperNoteSpread: this.upperNoteSpread,
       lowerNoteSpread: this.lowerNoteSpread,
       invertX: this.invertX,
+      hoverMute: this.hoverMute,
     };
   }
 }
@@ -190,7 +198,7 @@ export interface StrummerConfigData {
   pitch?: PitchConfigData;
   /** Authored starting values for the chord-mode harmonic context. */
   harmonicContext?: HarmonicContextConfigData;
-  chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
+  chordModes?: ChordModeMap;
 }
 
 /**
@@ -217,7 +225,7 @@ export class StrummerConfig {
   chordProgressions: Record<string, string[]>;
   pitch: PitchConfigData;
   harmonicContext: HarmonicContextConfigData;
-  chordModes: Record<string, Array<{ degree: string; quality: string }>> | undefined;
+  chordModes: ChordModeMap | undefined;
 
   constructor(data: {
     mode?: StrummerMode;
@@ -231,7 +239,7 @@ export class StrummerConfig {
     chordProgressions?: Record<string, string[]>;
     pitch?: Partial<PitchConfigData>;
     harmonicContext?: Partial<HarmonicContextConfigData>;
-    chordModes?: Record<string, Array<{ degree: string; quality: string }>>;
+    chordModes?: ChordModeMap;
   } = {}) {
     this.mode = data.mode ?? DEFAULT_STRUMMER_MODE;
     this.noteDuration = data.noteDuration ?? defaultNoteDuration();
@@ -287,7 +295,7 @@ export class StrummerConfig {
     const chordProgressionsData = (data.chordProgressions ?? data.chord_progressions ?? {}) as Record<string, string[]>;
     const pitchData = (data.pitch ?? {}) as Partial<PitchConfigData>;
     const harmonicContextData = (data.harmonicContext ?? data.harmonic_context ?? {}) as Partial<HarmonicContextConfigData>;
-    const chordModesData = (data.chordModes ?? data.chord_modes) as Record<string, Array<{ degree: string; quality: string }>> | undefined;
+    const chordModesData = (data.chordModes ?? data.chord_modes) as ChordModeMap | undefined;
 
     const rawMode = data.mode as string | undefined;
     const mode: StrummerMode = VALID_STRUMMER_MODES.includes(rawMode as StrummerMode)

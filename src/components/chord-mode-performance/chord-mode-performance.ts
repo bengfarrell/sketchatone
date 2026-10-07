@@ -1,23 +1,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { Note } from '../../models/note.js';
-
-// Roman numeral degree to semitone offset from tonic
-const DEGREE_TO_SEMITONES: Record<string, number> = {
-  'I': 0, 'i': 0,
-  'bII': 1, 'bii': 1,
-  'II': 2, 'ii': 2,
-  'bIII': 3, 'biii': 3,
-  'III': 4, 'iii': 4,
-  'IV': 5, 'iv': 5,
-  'bV': 6, 'bv': 6,
-  'V': 7, 'v': 7,
-  'V/V': 2,
-  'bVI': 8, 'bvi': 8,
-  'VI': 9, 'vi': 9,
-  'bVII': 10, 'bvii': 10,
-  'VII': 11, 'vii': 11,
-};
+import {
+  chordModePrefersFlat,
+  chordModeSemitones,
+  resolveChordModeEntry,
+  type ChordModeMap,
+} from '../../models/chord-mode.js';
 
 function buttonLabel(buttonId: string | undefined): string {
   if (!buttonId) return '';
@@ -25,14 +14,14 @@ function buttonLabel(buttonId: string | undefined): string {
   return colonIdx >= 0 ? buttonId.slice(colonIdx + 1) : buttonId;
 }
 
-function computeChordName(degree: string, quality: string, root: string): string {
-  const semitones = DEGREE_TO_SEMITONES[degree];
-  if (semitones === undefined) return '?';
+function computeChordName(entry: unknown, root: string): string {
+  const resolved = resolveChordModeEntry(entry);
+  if (!resolved) return '?';
   const rootIndex = Note.indexOfNotation(root);
   if (rootIndex === -1) return '?';
-  const chordRootIndex = (rootIndex + semitones) % 12;
-  const chordRoot = Note.notationAtIndex(chordRootIndex, root.includes('b'));
-  return chordRoot + quality;
+  const chordRootIndex = rootIndex + chordModeSemitones(resolved);
+  const chordRoot = Note.notationAtIndex(chordRootIndex, chordModePrefersFlat(resolved, root));
+  return chordRoot + resolved.chordSuffix;
 }
 
 @customElement('chord-mode-performance')
@@ -168,7 +157,7 @@ export class ChordModePerformance extends LitElement {
   `;
 
   @property({ type: Object })
-  chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
+  chordModes: ChordModeMap = {};
 
   @property({ type: String })
   modeName: string = '';
@@ -211,8 +200,9 @@ export class ChordModePerformance extends LitElement {
         ${entries.map((entry, idx) => {
           const label = buttonLabel(this.buttons[idx]);
           if (!entry) return html`<div class="cell"><span class="cell-key">${label}</span></div>`;
-          const chord = computeChordName(entry.degree, entry.quality, this.root);
-          const degreeLabel = entry.degree + (entry.quality || '');
+          const resolved = resolveChordModeEntry(entry);
+          const chord = computeChordName(entry, this.root);
+          const degreeLabel = resolved?.display ?? '?';
           return html`
             <div class="cell ${idx === this.activeIndex ? 'active' : ''}">
               <span class="cell-key">${label}</span>

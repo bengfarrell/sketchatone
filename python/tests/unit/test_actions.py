@@ -372,3 +372,28 @@ class TestActionsChordProgression:
         
         # Notes should be different (different chord)
         assert first_notes != second_notes
+
+
+class TestActionsChordMode:
+    def test_set_chord_from_explicit_numeric_entry(self):
+        strummer = Strummer()
+        config = MidiStrummerConfig()
+        config.strummer.strumming.lower_note_spread = 0
+        config.strummer.strumming.upper_note_spread = 0
+        actions = Actions(
+            config=config,
+            strummer=strummer,
+            chord_modes={
+                'major': [{
+                    'degree': 2,
+                    'alteration': 0,
+                    'quality': 'major',
+                    'extension': '7',
+                    'display': 'V/V7',
+                }],
+            },
+        )
+
+        actions.set_chord_from_mode([0], {'button': 'Test'})
+
+        assert [note.notation for note in strummer.notes] == ['D', 'F#', 'A', 'C']

@@ -202,6 +202,59 @@ describe('ParameterMapping', () => {
       // Output: 0 + (-0.25) * 100 = -25
       expect(mapping.mapValue(0.25)).toBe(-25.0);
     });
+
+    it('should not randomize the neutral centre of a central spread', () => {
+      const mapping = new ParameterMapping({
+        min: -1.0,
+        max: 1.0,
+        curve: 1.0,
+        spread: 'central',
+        control: 'yaxis',
+        randomization: 0.5,
+      });
+      // The flat part of the curve maps to 0 and must stay exactly 0.
+      for (let i = 0; i < 2000; i++) {
+        expect(mapping.mapValue(0.5)).toBe(0.0);
+      }
+    });
+
+    it('should scale randomization with distance from the neutral centre', () => {
+      const mapping = new ParameterMapping({
+        min: -1.0,
+        max: 1.0,
+        curve: 1.0,
+        spread: 'central',
+        control: 'yaxis',
+        randomization: 0.25,
+      });
+      // range_width = 2.0; noise_amp = randomization * range_width * scale
+      // At input 0.75 -> base 0.5, scale 0.5 -> amp 0.25 -> output within [0.25, 0.75]
+      for (let i = 0; i < 2000; i++) {
+        const out = mapping.mapValue(0.75);
+        expect(out).toBeGreaterThanOrEqual(0.25);
+        expect(out).toBeLessThanOrEqual(0.75);
+      }
+      // At input 1.0 -> base 1.0, scale 1.0 -> amp 0.50 -> output within [0.5, 1.0] (clamped high)
+      for (let i = 0; i < 2000; i++) {
+        const out = mapping.mapValue(1.0);
+        expect(out).toBeGreaterThanOrEqual(0.5);
+        expect(out).toBeLessThanOrEqual(1.0);
+      }
+    });
+
+    it('should be deterministic when randomization is zero', () => {
+      const mapping = new ParameterMapping({
+        min: -1.0,
+        max: 1.0,
+        curve: 4.0,
+        spread: 'central',
+        control: 'yaxis',
+        randomization: 0.0,
+      });
+      expect(mapping.mapValue(0.0)).toBe(-1.0);
+      expect(mapping.mapValue(0.5)).toBe(0.0);
+      expect(mapping.mapValue(1.0)).toBe(1.0);
+    });
   });
 
   describe('Default Mappings', () => {

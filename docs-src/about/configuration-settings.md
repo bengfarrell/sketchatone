@@ -420,7 +420,7 @@ Starting values for the chord-mode harmonic context. Consumed by `chord-mode` gr
 
 ## chordModes
 
-Positional chord-mode layouts. Each mode is an array of 9 `{ degree, quality }` entries, one per button. Required if any group rule uses `type: "chord-mode"`. See **[Chord Modes](/about/chord-modes/)** for the full description of degrees, qualities, and layout conventions.
+Positional chord-mode layouts. Each mode is an array of 9 entries, one per button, with numeric `degree`, semitone `alteration`, named `quality`, `extension`, and optional `display` label. Required if any group rule uses `type: "chord-mode"`. See **[Chord Modes](/about/chord-modes/)** for the full schema and layout conventions.
 
 ```json
 {

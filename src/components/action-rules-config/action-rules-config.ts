@@ -33,6 +33,7 @@ import {
 import { ActionDefinition } from '../../core/actions.js';
 import { getAllChordProgressionNames } from '../../models/strummer-features.js';
 import { Note } from '../../models/note.js';
+import type { ChordModeMap } from '../../models/chord-mode.js';
 
 // Root note options for scale picker (chromatic, sharp notation)
 const ROOT_NOTE_OPTIONS: { value: string; label: string }[] = Note.sharpNotations.map((n) => ({ value: n, label: n }));
@@ -117,7 +118,7 @@ export class ActionRulesConfigComponent extends LitElement {
 
   /** Chord modes from config */
   @property({ type: Object })
-  chordModes: Record<string, Array<{ degree: string; quality: string }>> = {};
+  chordModes: ChordModeMap = {};
 
   /** Map of triggered action rule IDs to timestamps (for status dot display) */
   @property({ type: Object })

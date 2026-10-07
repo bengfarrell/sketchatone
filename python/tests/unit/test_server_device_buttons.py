@@ -16,6 +16,7 @@ import pytest
 
 from sketchatone.cli.server import StrummerWebSocketServer, StrummerEventBus
 from sketchatone.models import MidiStrummerConfig
+from sketchatone.models.device_buttons_config import DeviceButton, DeviceKey
 
 
 def _make_server():
@@ -202,4 +203,99 @@ class TestSetButtonDetectionMessage:
         assert server.detecting_device_buttons is False
 
 
+class TestDeviceButtonsConfigUpdates:
+    @pytest.mark.parametrize('section, entries, model', [
+        ('keys', [{'key': 'a', 'name': 'Key A'}, {'key': 'b', 'name': 'Key B'}], DeviceKey),
+        ('buttons', [{'code': 10, 'name': 'Button 1'}, {'code': 20, 'name': 'Button 2'}], DeviceButton),
+    ])
+    @pytest.mark.parametrize('root', ['deviceButtons', 'device_buttons'])
+    def test_delete_rename_and_clear_round_trip(self, tmp_path, section, entries, model, root):
+        server = _make_server()
+        server.strummer_config_path = str(tmp_path / 'config.json')
+        path = f'{root}.{section}'
 
+        server._handle_config_update(path, entries)
+        server._handle_config_update(path, entries[1:])
+        remaining = getattr(server.config.device_buttons, section)
+        assert len(remaining) == 1
+        assert isinstance(remaining[0], model)
+        loaded = MidiStrummerConfig.from_json_file(server.strummer_config_path)
+        assert getattr(loaded.device_buttons, section)[0].to_dict() == entries[1]
+
+        renamed = [{**entries[1], 'name': 'Renamed'}]
+        server._handle_config_update(path, renamed)
+        loaded = MidiStrummerConfig.from_json_file(server.strummer_config_path)
+        assert getattr(loaded.device_buttons, section)[0].name == 'Renamed'
+
+        server._handle_config_update(path, [])
+        loaded = MidiStrummerConfig.from_json_file(server.strummer_config_path)
+        assert getattr(loaded.device_buttons, section) == []
+
+    @pytest.mark.parametrize('section, invalid', [
+        ('keys', None),
+        ('keys', ['a']),
+        ('keys', [{'key': 'a'}, {'key': ''}]),
+        ('buttons', [{'code': 10}, {'code': 'invalid'}]),
+    ])
+    def test_invalid_update_does_not_mutate_config(self, section, invalid):
+        server = _make_server()
+        original = getattr(server.config.device_buttons, section)
+        with pytest.raises(ValueError):
+            server._set_config_value(f'deviceButtons.{section}', invalid)
+        assert getattr(server.config.device_buttons, section) is original
+
+    @pytest.mark.parametrize('save_method', ['_persist_config_to_file', '_handle_save_config'])
+    def test_serialization_failure_preserves_saved_config(self, tmp_path, capsys, save_method):
+        server = _make_server()
+        config_path = tmp_path / 'config.json'
+        original = json.dumps(server.config.to_dict())
+        config_path.write_text(original)
+        server.strummer_config_path = str(config_path)
+        server.config.device_buttons.keys = [{'key': 'a', 'name': 'Key A'}]
+
+        with patch.object(server, 'broadcast_config') as broadcast:
+            getattr(server, save_method)()
+
+        assert config_path.read_text() == original
+        assert 'dict' in capsys.readouterr().out
+        broadcast.assert_not_called()
+
+    def test_explicit_save_round_trips_and_broadcasts(self, tmp_path):
+        server = _make_server()
+        server.strummer_config_path = str(tmp_path / 'config.json')
+        server._set_config_value('deviceButtons.keys', [{'key': 'a', 'name': 'Key A'}])
+
+        with patch.object(server, 'broadcast_config') as broadcast:
+            server._handle_save_config()
+
+        loaded = MidiStrummerConfig.from_json_file(server.strummer_config_path)
+        assert loaded.device_buttons.keys == [DeviceKey(key='a', name='Key A')]
+        broadcast.assert_called_once_with(is_saved_state=True)
+
+    def test_create_config_round_trips(self, tmp_path):
+        server = _make_server()
+        server.strummer_config_dir = str(tmp_path)
+
+        with patch.object(server, 'broadcast_config') as broadcast:
+            server._handle_create_config('new')
+
+        assert server.current_config_name == 'new.json'
+        loaded = MidiStrummerConfig.from_json_file(server.strummer_config_path)
+        assert loaded.to_dict() == server.config.to_dict()
+        broadcast.assert_called_once_with(is_saved_state=True)
+
+    def test_failed_upload_preserves_existing_config(self, tmp_path, capsys):
+        server = _make_server()
+        server.strummer_config_dir = str(tmp_path)
+        config_path = tmp_path / 'config.json'
+        original = json.dumps(server.config.to_dict())
+        config_path.write_text(original)
+
+        with patch('sketchatone.utils.config_file.os.replace', side_effect=OSError('write failed')), \
+             patch.object(server, 'broadcast_config') as broadcast:
+            server._handle_upload_config('config.json', server.config.to_dict())
+
+        assert config_path.read_text() == original
+        assert 'write failed' in capsys.readouterr().out
+        assert list(tmp_path.iterdir()) == [config_path]
+        broadcast.assert_not_called()
