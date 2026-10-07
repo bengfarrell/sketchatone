@@ -7,13 +7,6 @@ description: Release notes and version history
 
 ## v0.3.0
 
-### Recent Updates
-
-- **Explicit chord-mode entries**: Chord layouts now use numeric scale degrees, semitone alterations, named qualities and extensions, plus optional display labels and enharmonic spelling. The Node.js and Python runtimes, performance panels, default config, and documentation use the same schema
-- **Parameter-mapping humanization**: Added optional curve-proportional randomization to mapped values. Noise is zero at the neutral centre, increases toward the range edges, and is disabled by default
-- **Hover-to-mute strumming**: Added the opt-in `strumming.hoverMute` setting to send note-off when hovering over a ringing string
-- **Safer configuration updates**: Config files are now written atomically while preserving existing permissions, ownership, and symlinks. Device button and key edits are converted to their typed config models and can be renamed, deleted, or cleared safely
-
 ### Installation
 - **Dropped choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice
 - **Interactive post-install menus**: `sudo sketchatone-configure` and `sudo sketchatone-ui-configure` cover autostart mode, USB MIDI gadget, and boot-time trimming in one place, replacing the need to run individual helper scripts
@@ -75,6 +68,7 @@ description: Release notes and version history
 - **Python action editor missing keys**: Keyboard key entries (`key:X`) now appear in the button dropdown when adding or editing a single button action, matching the behaviour already present in the group button selector
 - **Python chord mode panel button labels**: Fixed button labels in the chord mode performance grid — previously showed raw numpad indices; now shows the actual mapped button/key identifier (e.g. `7`, `numpad0`, `c`)
 - **Web chord mode panel button labels**: Same fix — labels are now derived from the group's actual `buttons` array instead of a hardcoded numpad sequence
+- **Safer configuration updates**: Config files are now written atomically while preserving existing permissions, ownership, and symlinks. Device button and key edits are converted to their typed config models and can be renamed, deleted, or cleared safely
 
 ### Keyboard Input Support
 
@@ -159,7 +153,10 @@ description: Release notes and version history
 - **Removed choice of MIDI backend from install**: Given there was only one option needed to support Zynthian (the Jack backend), remove the installation choice and allow it to be configurable in UI (or JSON as always)
 - **Group actions no longer carry `root`, `mode`, or `octave` for chord mode**: Existing `chord-mode` group rules with those fields will have them silently dropped on load. To preserve a non-default starting key, move the values to `strummer.harmonicContext.startingRoot` / `startingMode` and `strummer.pitch.startingOctave`. `chord-progression` group actions still accept an optional `octave` override; when omitted, it defaults to `strummer.pitch.startingOctave` (previously hardcoded `4`)
 
+### Strumming Improvements
 
+- **Parameter-mapping humanization**: Added optional curve-proportional randomization to mapped values. Noise is zero at the neutral centre, increases toward the range edges, and is disabled by default
+- **Hover-to-mute strumming**: Added the opt-in `strumming.hoverMute` setting to send note-off when hovering over a ringing string
 ---
 
 ## v0.2.0
