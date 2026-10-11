@@ -19,6 +19,7 @@ from sketchatone.ui.panel_widgets import (
     PARAMETER_MAPPING_SPECS,
     ActionRulesPanel,
     ChordProgressionsPanel,
+    ChordModePanel,
     DeviceButtonsPanel,
     EventRateTracker,
     EventsPanel,
@@ -98,6 +99,46 @@ class TestFormatStrum:
 
 
 class TestChordModeFormatting:
+    @pytest.mark.parametrize('offset,root,chord', [
+        (12, 'C (oct 6)', 'B7 (oct 6)'),
+        (-12, 'C (oct 4)', 'B7 (oct 4)'),
+        (-1, 'B (oct 4)', 'A#7 (oct 5)'),
+        (-25, 'B (oct 2)', 'A#7 (oct 3)'),
+        (1, 'C# (oct 5)', 'C7 (oct 6)'),
+    ])
+    def test_panel_updates_octaves_with_transposition(self, offset, root, chord):
+        bridge = UIBridge()
+        panel = ChordModePanel(bridge=bridge)
+        payload = {
+            'config': {'strummer': {
+                'harmonicContext': {'startingRoot': 'C', 'startingMode': 'major'},
+                'pitch': {'startingOctave': 5},
+                'chordModes': {'major': [{
+                    'degree': 7, 'alteration': 0, 'quality': 'major',
+                    'extension': '7', 'display': 'VII7',
+                }]},
+            }},
+        }
+        bridge._emit('config', payload)
+        assert panel._header.text == 'C (oct 5)  —  major'
+        assert panel._cells[0]._chord_label.text == 'B7 (oct 5)'
+
+        bridge._emit('config', {**payload, 'pitchOffset': offset})
+        assert panel._header.text == f'{root}  —  major'
+        assert panel._cells[0]._chord_label.text == chord
+
+    def test_panel_defaults_to_octave_four(self):
+        panel = ChordModePanel()
+        panel._on_config({'config': {'strummer': {
+            'harmonicContext': {'startingMode': 'major'},
+            'chordModes': {'major': [{
+                'degree': 1, 'alteration': 0, 'quality': 'major',
+                'extension': 'none', 'display': 'I',
+            }]},
+        }}})
+        assert panel._header.text == 'C (oct 4)  —  major'
+        assert panel._cells[0]._chord_label.text == 'C (oct 4)'
+
     def test_explicit_degree_and_display_independent_of_chord(self):
         entry = {
             'degree': 2,

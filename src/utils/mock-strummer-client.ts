@@ -17,6 +17,7 @@ import type {
   ServerConfigData,
   StrumEventData,
 } from '../types/tablet-events.js';
+import { configFingerprint, configValidationTemplate, validateCompleteConfig } from './config-validation.js';
 
 const MOCK_NOTES = [
   { notation: 'E', octave: 2, midiNote: 40 },
@@ -67,6 +68,7 @@ function buildMockConfig(): ServerConfigData {
     notes: MOCK_NOTES.map(n => ({ notation: n.notation, octave: n.octave })),
     chord: 'Em',
     config,
+    configValidationTemplate: configValidationTemplate(config),
     serverVersion: 'mock',
     currentConfigName: 'mock.json',
     availableConfigs: ['mock.json'],
@@ -82,6 +84,35 @@ export class MockStrummerClient extends StrummerWebSocketClient {
 
   constructor() {
     super({ autoReconnect: false });
+  }
+
+  override applyConfig(config: unknown, configName: string | null, baseConfig: unknown, requestId: string): void {
+    const errors = validateCompleteConfig(config, this.mockConfig.configValidationTemplate!);
+    const conflict = configName !== this.mockConfig.currentConfigName ||
+      configFingerprint(baseConfig) !== configFingerprint(this.mockConfig.config);
+    if (conflict || errors.length) {
+      this.emit('apply-config-result', { requestId, success: false, error: conflict ? 'Configuration changed. Reset to current.' : errors.join('\n') });
+      return;
+    }
+    this.mockConfig = { ...this.mockConfig, config: JSON.parse(JSON.stringify(config)) };
+    this.emit('config', this.mockConfig);
+    this.emit('apply-config-result', { requestId, success: true, message: 'Mock configuration applied (preview only; not saved to disk).' });
+  }
+
+  override renameConfig(oldName: string, newName: string): void {
+    if (!newName.endsWith('.json')) newName += '.json';
+    const availableConfigs = this.mockConfig.availableConfigs ?? [];
+    if (!availableConfigs.includes(oldName) || availableConfigs.includes(newName) || /[\\/]/.test(newName)) {
+      this.emit('rename-config-result', { oldName, newName, success: false, error: 'Cannot rename configuration: invalid or existing filename.' });
+      return;
+    }
+    this.mockConfig = {
+      ...this.mockConfig,
+      currentConfigName: this.mockConfig.currentConfigName === oldName ? newName : this.mockConfig.currentConfigName,
+      availableConfigs: availableConfigs.map(name => name === oldName ? newName : name),
+    };
+    this.emit('config', this.mockConfig);
+    this.emit('rename-config-result', { oldName, newName, success: true });
   }
 
   override connect(_url?: string): void {
@@ -114,7 +145,7 @@ export class MockStrummerClient extends StrummerWebSocketClient {
 
   override updateConfig(path: string, value: unknown): void {
     const segments = path.split('.');
-    const root = this.mockConfig.config as Record<string, unknown> | undefined;
+    const root = this.mockConfig.config ? JSON.parse(JSON.stringify(this.mockConfig.config)) as Record<string, unknown> : undefined;
     if (!root) return;
     let node: Record<string, unknown> = root;
     for (let i = 0; i < segments.length - 1; i++) {
@@ -123,7 +154,7 @@ export class MockStrummerClient extends StrummerWebSocketClient {
       node = node[key] as Record<string, unknown>;
     }
     node[segments[segments.length - 1]] = value;
-    this.mockConfig = { ...this.mockConfig, isSavedState: false };
+    this.mockConfig = { ...this.mockConfig, config: root, isSavedState: false };
     this.emit<ServerConfigData>('config', this.mockConfig);
   }
 

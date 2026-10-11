@@ -1,5 +1,5 @@
-export type ChordModeQuality = 'major' | 'minor' | 'diminished' | 'augmented' | 'sus2' | 'sus4' | 'power';
-export type ChordModeExtension = 'none' | '6' | '7' | 'maj7' | '9' | 'maj9' | 'add9';
+export type ChordModeQuality = 'major' | 'minor' | 'diminished' | 'half-diminished' | 'augmented' | 'sus2' | 'sus4' | 'power';
+export type ChordModeExtension = 'none' | '6' | '7' | 'maj7' | '9' | 'maj9' | 'add9' | 'm7b5';
 
 export interface ChordModeEntry {
   degree: number;
@@ -19,7 +19,7 @@ export interface ResolvedChordModeEntry extends ChordModeEntry {
 
 const MAJOR_SCALE_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
 const EXTENSION_SUFFIX: Record<ChordModeExtension, string> = {
-  none: '', '6': '6', '7': '7', maj7: 'maj7', '9': '9', maj9: 'maj9', add9: 'add9',
+  none: '', '6': '6', '7': '7', maj7: 'maj7', '9': '9', maj9: 'maj9', add9: 'add9', m7b5: 'm7b5',
 };
 
 export function resolveChordModeEntry(value: unknown): ResolvedChordModeEntry | null {
@@ -37,9 +37,9 @@ export function resolveChordModeEntry(value: unknown): ResolvedChordModeEntry | 
     degree = entry.degree;
     alteration = typeof entry.alteration === 'number' ? entry.alteration : 0;
     if (!Number.isInteger(alteration) || alteration < -2 || alteration > 2) return null;
-    if (!['major', 'minor', 'diminished', 'augmented', 'sus2', 'sus4', 'power'].includes(String(entry.quality))) return null;
+    if (!['major', 'minor', 'diminished', 'half-diminished', 'augmented', 'sus2', 'sus4', 'power'].includes(String(entry.quality))) return null;
     quality = entry.quality as ChordModeQuality;
-    if (!['none', '6', '7', 'maj7', '9', 'maj9', 'add9'].includes(String(entry.extension ?? 'none'))) return null;
+    if (!['none', '6', '7', 'maj7', '9', 'maj9', 'add9', 'm7b5'].includes(String(entry.extension ?? 'none'))) return null;
     extension = (entry.extension ?? 'none') as ChordModeExtension;
     display = typeof entry.display === 'string' ? entry.display : undefined;
     if (entry.spelling !== undefined && !['auto', 'flat', 'sharp'].includes(String(entry.spelling))) return null;
@@ -73,6 +73,8 @@ export function chordModePrefersFlat(entry: ResolvedChordModeEntry, root: string
 }
 
 function getChordSuffix(quality: ChordModeQuality, extension: ChordModeExtension): string | null {
+  if (quality === 'half-diminished') return extension === 'm7b5' ? 'm7b5' : null;
+  if (extension === 'm7b5') return null;
   if (quality === 'major') return EXTENSION_SUFFIX[extension];
   if (quality === 'minor') {
     if (extension === 'maj7' || extension === 'maj9' || extension === 'add9') return null;

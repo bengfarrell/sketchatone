@@ -5367,7 +5367,9 @@ class ChordProgressionsPanel(BoxLayout):
 
 
 
-def _chord_name_from_entry(entry: dict, root: str = 'C') -> str:
+def _chord_name_from_entry(
+    entry: dict, root: str = 'C', octave: Optional[int] = None, pitch_offset: int = 0,
+) -> str:
     """Compute a chord name from an explicit numeric chord-mode entry."""
     resolved = resolve_chord_mode_entry(entry)
     if resolved is None:
@@ -5376,9 +5378,13 @@ def _chord_name_from_entry(entry: dict, root: str = 'C') -> str:
     root_idx = Note.index_of_notation(root_clean)
     if root_idx == -1:
         return '?'
-    chord_idx = root_idx + chord_mode_semitones(resolved)
-    chord_root = Note.notation_at_index(chord_idx, prefer_flat=chord_mode_prefers_flat(resolved, root_clean))
-    return chord_root + resolved['chordSuffix']
+    # Chord-setting actions wrap the chord root before MIDI transposition.
+    chord_idx = (root_idx + chord_mode_semitones(resolved)) % 12 + pitch_offset
+    effective_root = Note.notation_at_index((root_idx + pitch_offset) % 12, 'b' in root_clean)
+    chord_root = Note.notation_at_index(
+        chord_idx % 12, prefer_flat=chord_mode_prefers_flat(resolved, effective_root))
+    chord = chord_root + resolved['chordSuffix']
+    return f'{chord} (oct {octave + chord_idx // 12})' if octave is not None else chord
 
 
 class _ChordCell(BoxLayout):
@@ -5476,6 +5482,8 @@ class ChordModePanel(BoxLayout):
         self._chord_modes: dict = {}
         self._mode_name: str = ''
         self._root: str = 'C'
+        self._octave: int = 4
+        self._pitch_offset: int = 0
         self._active_index: Optional[int] = None
         self._cells: list = []
         self._clear_event = None
@@ -5515,13 +5523,9 @@ class ChordModePanel(BoxLayout):
         runtime_mode = payload.get('harmonicContextMode')
         self._mode_name = runtime_mode if runtime_mode else hc.get('startingMode', '')
         starting_root: str = hc.get('startingRoot', 'C')
-        pitch_offset: int = int(payload.get('pitchOffset') or 0)
-        if pitch_offset:
-            root_idx = Note.index_of_notation(starting_root.rstrip('0123456789'))
-            if root_idx != -1:
-                shifted = ((root_idx + pitch_offset) % 12 + 12) % 12
-                starting_root = Note.notation_at_index(shifted, 'b' in starting_root)
         self._root = starting_root
+        self._octave = int((strummer.get('pitch') or {}).get('startingOctave', 4))
+        self._pitch_offset = int(payload.get('pitchOffset') or 0)
 
         action_rules = strummer.get('actionRules') or {}
         chord_mode_rule = next(
@@ -5602,7 +5606,13 @@ class ChordModePanel(BoxLayout):
             self._grid_container.add_widget(placeholder)
             return
 
-        self._header.text = f'{self._root}  —  {self._mode_name}'
+        root_idx = Note.index_of_notation(self._root.rstrip('0123456789'))
+        root_label = self._root
+        if root_idx != -1:
+            shifted = root_idx + self._pitch_offset
+            root = Note.notation_at_index(shifted % 12, 'b' in self._root)
+            root_label = f'{root} (oct {self._octave + shifted // 12})'
+        self._header.text = f'{root_label}  —  {self._mode_name}'
 
         cols = self._COLS
         rows = (len(entries) + cols - 1) // cols
@@ -5614,7 +5624,8 @@ class ChordModePanel(BoxLayout):
 
         for idx, entry in enumerate(entries):
             resolved = resolve_chord_mode_entry(entry)
-            chord = _chord_name_from_entry(entry, root=self._root)
+            chord = _chord_name_from_entry(
+                entry, root=self._root, octave=self._octave, pitch_offset=self._pitch_offset)
             btn_id = self._chord_mode_buttons[idx] if idx < len(self._chord_mode_buttons) else ''
             colon = btn_id.find(':')
             btn_lbl = btn_id[colon + 1:] if colon >= 0 else btn_id

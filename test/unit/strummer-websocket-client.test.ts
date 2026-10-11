@@ -515,6 +515,33 @@ describe('StrummerWebSocketClient', () => {
   });
 
   describe('sending messages', () => {
+    it('sends complete config requests and routes correlated acknowledgements', () => {
+      const client = new StrummerWebSocketClient();
+      client.connect();
+      mockWebSocketInstances[0].simulateOpen();
+      const config = { strummer: {}, midi: {}, server: {} };
+      const result = vi.fn();
+      client.on('apply-config-result', result);
+      client.applyConfig(config, 'current.json', config, 'request');
+      expect(JSON.parse(mockWebSocketInstances[0].getSentMessages()[0])).toEqual({
+        type: 'apply-config', requestId: 'request', configName: 'current.json', baseConfig: config, config,
+      });
+      mockWebSocketInstances[0].simulateMessage({
+        type: 'apply-config-result', data: { requestId: 'request', success: false, error: 'disk failure' },
+      });
+      expect(result).toHaveBeenCalledWith({ requestId: 'request', success: false, error: 'disk failure' });
+      client.cleanup();
+    });
+
+    it('reports complete config apply failure when disconnected', () => {
+      const client = new StrummerWebSocketClient();
+      const result = vi.fn();
+      client.on('apply-config-result', result);
+      client.applyConfig({}, 'current.json', {}, 'request');
+      expect(result).toHaveBeenCalledWith({ requestId: 'request', success: false, error: 'Not connected to the server.' });
+      client.cleanup();
+    });
+
     it('should send set-mode message', () => {
       const client = new StrummerWebSocketClient();
 
@@ -723,6 +750,22 @@ describe('StrummerWebSocketClient', () => {
   });
 
   describe('cleanup', () => {
+    it('forwards explicit rename result, error and acknowledgement messages', () => {
+      const client = new StrummerWebSocketClient();
+      const result = vi.fn();
+      client.on('rename-config-result', result);
+      client.connect();
+      const ws = mockWebSocketInstances[0];
+      ws.simulateOpen();
+      ws.simulateMessage({ type: 'rename-config-result', data: { success: false, error: 'Already exists' } });
+      expect(result).toHaveBeenLastCalledWith({ success: false, error: 'Already exists' });
+      ws.simulateMessage({ type: 'rename-config-error', error: 'Permission denied' });
+      expect(result.mock.calls.at(-1)?.[0]).toMatchObject({ success: false, error: 'Permission denied' });
+      ws.simulateMessage({ type: 'rename-config-ack', oldName: 'old.json', newName: 'new.json' });
+      expect(result.mock.calls.at(-1)?.[0]).toMatchObject({ success: true, oldName: 'old.json', newName: 'new.json' });
+      client.cleanup();
+    });
+
     it('should cleanup all resources', () => {
       const client = new StrummerWebSocketClient();
       const callback = vi.fn();

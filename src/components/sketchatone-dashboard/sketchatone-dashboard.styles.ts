@@ -39,6 +39,36 @@ export const styles = css`
     box-sizing: border-box;
   }
 
+  .config-editor-view {
+    min-height: 100dvh;
+    color: var(--sketch-color-gray-900);
+  }
+
+  .config-editor-heading, .config-editor-filename {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .config-editor-heading h1 {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .config-editor-filename input {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .config-editor-view > p {
+    margin: 0;
+  }
+
+  .config-editor-view config-json-editor {
+    min-height: 65dvh;
+  }
+
   @media (max-width: 640px) {
     .dashboard {
       padding: 8px;

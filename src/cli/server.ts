@@ -54,6 +54,8 @@ import {
 } from '../utils/strummer-event-bus.js';
 import { KeyboardListener } from '../utils/keyboard-listener.js';
 import { generateSelfSignedCert, loadSSLCert, getSSLCertPaths } from '../utils/ssl-cert.js';
+import { configValidationTemplate, configFingerprint, validateCompleteConfig, normalizeCompleteConfig } from '../utils/config-validation.js';
+import type { ApplyConfigMessage, ApplyConfigResult } from '../types/tablet-events.js';
 
 /**
  * WebSocket tablet event envelope
@@ -95,6 +97,7 @@ function getLocalIP(): string | null {
  * Full config data sent to clients on connection
  */
 interface ServerConfigData {
+  configValidationTemplate?: Record<string, unknown>;
   /** Event throttle in milliseconds */
   throttleMs: number;
   /** Current notes (computed from chord or initial notes) */
@@ -160,6 +163,7 @@ class StrummerWebSocketServer {
   private httpPort: number | undefined;
   private httpsPort: number | undefined;
   private config: MidiStrummerConfig;
+  private applyingConfig = false;
   private strummer: Strummer;
   private slider: Slider;
   // Slide-mode state: currently held note (for routing slide_update/slide_off) and
@@ -535,12 +539,13 @@ class StrummerWebSocketServer {
    * Similar to Python implementation
    */
   private registerMidiPassthrough(): void {
-    if (!this.midiInput || !this.backend) {
+    if (!this.midiInput) {
       return;
     }
 
     const passthroughConnections = this.config.midi.midiPassthrough || [];
-    if (passthroughConnections.length === 0) {
+    if (!this.backend || passthroughConnections.length === 0) {
+      this.midiInput.setPassthroughCallback(null);
       console.log(chalk.gray('[MIDI Passthrough] No passthrough connections configured'));
       return;
     }
@@ -842,6 +847,7 @@ class StrummerWebSocketServer {
         octave: n.octave,
       })),
       config: this.config.toDict(),
+      configValidationTemplate: configValidationTemplate(new MidiStrummerConfig().toDict()),
       deviceCapabilities: this.tabletClient?.capabilities ?? undefined,
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
@@ -877,7 +883,8 @@ class StrummerWebSocketServer {
    * Broadcast config to all connected clients
    */
   private broadcastConfig(isSavedState = false): void {
-    if (!this.wss) return;
+    if (this.applyingConfig) return;
+    if (!this.wss && !this.wssSecure) return;
 
     const configData: ServerConfigData = {
       throttleMs: this.eventBus.throttleMs,
@@ -886,6 +893,7 @@ class StrummerWebSocketServer {
         octave: n.octave,
       })),
       config: this.config.toDict(),
+      configValidationTemplate: configValidationTemplate(new MidiStrummerConfig().toDict()),
       deviceCapabilities: this.tabletClient?.capabilities ?? undefined,
       currentConfigName: this.currentConfigName,
       availableConfigs: this.listConfigs(),
@@ -899,11 +907,11 @@ class StrummerWebSocketServer {
       data: configData,
     });
 
-    this.wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
-      }
-    });
+    for (const server of [this.wss, this.wssSecure]) {
+      server?.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) client.send(message);
+      });
+    }
   }
 
   private broadcastNotesChanged(): void {
@@ -1032,6 +1040,7 @@ class StrummerWebSocketServer {
    * Updates the config and broadcasts the new config to all clients
    */
   private handleConfigUpdate(path: string, value: unknown): void {
+    if (this.applyingConfig) return;
     try {
       // Capture old mode so we can detect a strum <-> slide transition
       const previousMode = this.config.strummer.mode;
@@ -1158,11 +1167,127 @@ class StrummerWebSocketServer {
     }
   }
 
+  private async handleApplyConfig(client: WebSocket, message: ApplyConfigMessage): Promise<void> {
+    const result: ApplyConfigResult = { requestId: message.requestId, success: false };
+    const previous = this.config;
+    let written = false;
+    let acquired = false;
+    try {
+      if (this.applyingConfig) throw new Error('Another configuration apply is in progress.');
+      if (!this.strummerConfigPath) throw new Error('No current configuration file. Create or load one first.');
+      if (message.configName !== (this.currentConfigName ?? null) ||
+          configFingerprint(message.baseConfig) !== configFingerprint(this.config.toDict())) {
+        throw new Error('Configuration changed on the server. Reset to current configuration before applying.');
+      }
+      const errors = validateCompleteConfig(message.config, configValidationTemplate(new MidiStrummerConfig().toDict()));
+      if (errors.length) throw new Error(errors.join('\n'));
+      const candidate = MidiStrummerConfig.fromDict(normalizeCompleteConfig(message.config, configValidationTemplate(new MidiStrummerConfig().toDict())));
+      if (candidate.chord) Note.parseChord(candidate.chord);
+      candidate.notes.forEach(note => Note.parseNotation(note));
+      this.applyingConfig = true;
+      acquired = true;
+      this.writeCompleteConfig(candidate);
+      written = true;
+      this.config = candidate;
+      await this.refreshCompleteConfig(previous);
+      result.success = true;
+      result.message = 'Configuration applied and saved. Server ports, device selection, and MIDI backend options take effect after restart.';
+    } catch (error) {
+      result.error = error instanceof Error ? error.message : String(error);
+      if (written) {
+        const failed = this.config;
+        this.config = previous;
+        try {
+          this.writeCompleteConfig(previous);
+          await this.refreshCompleteConfig(failed);
+        } catch (rollbackError) {
+          result.error += ` Rollback failed: ${String(rollbackError)}`;
+        }
+      }
+    } finally {
+      if (acquired) {
+        this.applyingConfig = false;
+        this.broadcastConfig(true);
+      }
+      client.send(JSON.stringify({ type: 'apply-config-result', data: result }));
+    }
+  }
+
+  private writeCompleteConfig(config: MidiStrummerConfig): void {
+    const destination = fs.realpathSync(this.strummerConfigPath!);
+    const staging = `${destination}.apply-${process.pid}-${Date.now()}`;
+    try {
+      fs.writeFileSync(staging, JSON.stringify(config.toDict(), null, 2), { encoding: 'utf8', flag: 'wx', mode: fs.statSync(destination).mode });
+      const original = fs.statSync(destination);
+      const staged = fs.statSync(staging);
+      if (original.uid !== staged.uid || original.gid !== staged.gid) fs.chownSync(staging, original.uid, original.gid);
+      fs.chmodSync(staging, original.mode);
+      fs.renameSync(staging, destination);
+    } finally {
+      if (fs.existsSync(staging)) fs.unlinkSync(staging);
+    }
+  }
+
+  private async refreshCompleteConfig(previous: MidiStrummerConfig): Promise<void> {
+    this.clearControllerState();
+    this.strummer.configure(this.config.pressureThreshold, this.config.strumming.pressureBufferSize);
+    this.slider.configure(this.config.strummer.slide.pressureThreshold, this.config.strummer.slide.maxBendSemitones);
+    this.setupNotes();
+    this.actions.setConfig(this.config);
+    this.actions.setChordProgressions(this.config.strummer.chordProgressions);
+    this.actions.setChordModes(this.config.strummer.chordModes ?? {});
+    this.actions.setPitchStartingConfig(this.config.strummer.pitch);
+    this.actions.setHarmonicContextStartingConfig(this.config.strummer.harmonicContext);
+    this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+    this.actions.executeStartupRules();
+    this.setThrottle(this.config.wsMessageThrottle);
+    this.devicePollInterval = this.config.deviceFindingPollInterval;
+    this.backend?.setChannel(this.config.strumming.midiChannel ?? this.config.channel);
+    if (this.bridge) this.bridge.noteDuration = this.config.noteDuration.default;
+    if (this.backend && this.config.outputPort !== previous.outputPort) {
+      this.backend.disconnect();
+      if (this.config.outputPort !== null && !await this.backend.connect(this.config.outputPort)) {
+        throw new Error(`Failed to connect MIDI output: ${this.config.outputPort}`);
+      }
+    }
+    if (this.midiInput && configFingerprint(this.config.midi) !== configFingerprint(previous.midi)) {
+      this.midiInput.disconnect();
+      const port = this.config.inputPort as string | number | null | number[];
+      if (Array.isArray(port)) {
+        if (port.length && !await this.midiInput.connectMultiple(port, this.config.midi.inputExclude)) {
+          throw new Error(`Failed to connect MIDI inputs: ${JSON.stringify(port)}`);
+        }
+      } else if (port === null) {
+        // Automatic selection may have no devices yet; hot-swap monitoring will reconnect.
+        await this.midiInput.connectAll(this.config.midi.inputExclude);
+      } else {
+        if (!await this.midiInput.connect(port)) {
+          throw new Error(`Failed to connect MIDI input: ${port}`);
+        }
+      }
+      this.registerMidiInputCallback();
+    }
+    this.registerMidiPassthrough();
+    if (previous.keyboard.enabled !== this.config.keyboard.enabled) {
+      this.keyboardListener?.stop();
+      if (this.config.keyboard.enabled) {
+        this.keyboardListener = new KeyboardListener({
+          enabled: true,
+          onKeyPress: key => this.handleKeyboardKeyPress(key),
+          onKeyRelease: key => this.handleKeyboardKeyRelease(key),
+        });
+        this.keyboardListener.start();
+      }
+    }
+    this.broadcastMidiDevices();
+  }
+
   /**
    * Write the current in-memory config to disk (if a file path is configured).
    * Used by auto-learn and other server-initiated config mutations.
    */
   private persistConfigToFile(): void {
+    if (this.applyingConfig) return;
     if (!this.strummerConfigPath) return;
     try {
       const configJson = JSON.stringify(this.config.toDict(), null, 2);
@@ -1179,6 +1304,7 @@ class StrummerWebSocketServer {
    * broadcast the updated config to all clients.
    */
   private maybeLearnDeviceButton(code: number): void {
+    if (this.applyingConfig) return;
     if (!this.detectingDeviceButtons) return;
     const dbc = this.config.deviceButtons;
     if (dbc.buttons.some(b => b.code === code)) return;
@@ -1196,6 +1322,7 @@ class StrummerWebSocketServer {
    * broadcast the updated config to all clients.
    */
   private maybeLearnDeviceKey(key: string): void {
+    if (this.applyingConfig) return;
     if (!this.detectingDeviceButtons) return;
     if (!key) return;
     const dbc = this.config.deviceButtons;
@@ -1306,6 +1433,7 @@ class StrummerWebSocketServer {
       );
       this.setupNotes();
       this.actions.setActionRulesConfig(this.config.strummer.actionRules);
+      this.registerMidiPassthrough();
 
       console.log(chalk.green(`[Load Config] Loaded config: ${configName}`));
 
@@ -2353,6 +2481,7 @@ class StrummerWebSocketServer {
       ws.on('message', (message) => {
         try {
           const parsed = JSON.parse(message.toString());
+          if (this.applyingConfig && parsed.type !== 'apply-config') return;
           if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
             this.setThrottle(parsed.throttleMs);
             console.log(chalk.yellow(`Throttle changed to: ${parsed.throttleMs}ms`));
@@ -2360,6 +2489,8 @@ class StrummerWebSocketServer {
             this.detectingDeviceButtons = parsed.enabled;
             console.log(chalk.cyan(`[Device Buttons] Detection ${parsed.enabled ? 'started' : 'stopped'}`));
             this.broadcastButtonDetectionState();
+          } else if (parsed.type === 'apply-config') {
+            void this.handleApplyConfig(ws, parsed);
           } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
             this.handleConfigUpdate(parsed.path, parsed.value);
           } else if (parsed.type === 'save-config') {
@@ -2441,9 +2572,12 @@ class StrummerWebSocketServer {
           ws.on('message', (message) => {
             try {
               const parsed = JSON.parse(message.toString());
+              if (this.applyingConfig && parsed.type !== 'apply-config') return;
               if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
                 this.setThrottle(parsed.throttleMs);
                 console.log(chalk.yellow(`Throttle changed to: ${parsed.throttleMs}ms`));
+              } else if (parsed.type === 'apply-config') {
+                void this.handleApplyConfig(ws, parsed);
               } else if (parsed.type === 'update-config' && typeof parsed.path === 'string') {
                 this.handleConfigUpdate(parsed.path, parsed.value);
               } else if (parsed.type === 'save-config') {

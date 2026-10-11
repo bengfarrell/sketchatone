@@ -78,7 +78,7 @@ export interface DeviceStatusData {
 /**
  * WebSocket message types from server to client
  */
-export type ServerMessageType = 'tablet' | 'config' | 'status' | 'midi-devices';
+export type ServerMessageType = 'tablet' | 'config' | 'status' | 'midi-devices' | 'apply-config-result';
 
 /**
  * Device capabilities from the matched OTD tablet configuration.
@@ -104,6 +104,7 @@ export interface DeviceCapabilities {
  * Server config data sent on connection
  */
 export interface ServerConfigData {
+  configValidationTemplate?: Record<string, unknown>;
   throttleMs: number;
   notes: Array<{ notation: string; octave: number }>;
   chord?: string;
@@ -183,7 +184,22 @@ export interface MidiDevicesData {
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service' | 'set-button-detection';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'apply-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service' | 'set-button-detection';
+
+export interface ApplyConfigMessage {
+  type: 'apply-config';
+  requestId: string;
+  configName: string | null;
+  baseConfig: unknown;
+  config: unknown;
+}
+
+export interface ApplyConfigResult {
+  requestId: string;
+  success: boolean;
+  error?: string;
+  message?: string;
+}
 
 /**
  * Set throttle client message
@@ -305,7 +321,7 @@ export interface MidiDevicesMessage {
 /**
  * Client message to server
  */
-export type ClientMessage = SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage | SetButtonDetectionMessage;
+export type ClientMessage = ApplyConfigMessage | SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage | SetButtonDetectionMessage;
 
 /**
  * Tablet data for visualization components

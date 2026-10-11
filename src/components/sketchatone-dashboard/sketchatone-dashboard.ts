@@ -71,6 +71,9 @@ import {
   type ServerActionEvent,
 } from '../../utils/strummer-websocket-client.js';
 import { MockStrummerClient } from '../../utils/mock-strummer-client.js';
+import '../config-json-editor/config-json-editor.js';
+import type { ConfigJsonEditor } from '../config-json-editor/config-json-editor.js';
+import type { ApplyConfigResult } from '../../types/tablet-events.js';
 import type { StrumEventData, ServerConfigData, CombinedEventData } from '../../types/tablet-events.js';
 import type { StrumTabletEvent } from '../strum-visualizers/strum-events-display.js';
 import type { MidiStrummerConfigData } from '../../models/midi-strummer-config.js';
@@ -156,7 +159,14 @@ export class SketchatoneDashboard extends LitElement {
   private showNewConfigDialog = false;
 
   @state()
-  private showRenameConfigDialog = false;
+  private editingConfig = false;
+
+  @state() private editorFilename = '';
+  @state() private editorApplying = false;
+  @state() private renameStatus = '';
+  @state() private pendingRename: { oldName: string; newName: string } | null = null;
+  private renameTimeout: ReturnType<typeof setTimeout> | null = null;
+  private editorOriginalName = '';
 
   @state()
   private newConfigName = '';
@@ -244,6 +254,7 @@ export class SketchatoneDashboard extends LitElement {
 
   // WebSocket client instance
   private client: StrummerWebSocketClient;
+  @state() private configApplyResult: ApplyConfigResult | null = null;
   private isMockMode = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('mock') === '1';
 
@@ -254,6 +265,7 @@ export class SketchatoneDashboard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('beforeunload', this.handleEditorBeforeUnload);
     this.setupClient();
     if (this.isMockMode) {
       this.client.connect();
@@ -262,12 +274,17 @@ export class SketchatoneDashboard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    window.removeEventListener('beforeunload', this.handleEditorBeforeUnload);
+    if (this.renameTimeout) clearTimeout(this.renameTimeout);
     this.client.cleanup();
   }
 
   private setupClient() {
     this.client.onConnectionStateChange((state) => {
       this.websocketConnected = state === 'connected';
+      if (!this.websocketConnected && this.pendingRename) {
+        this.finishRename('Connection lost. Rename outcome unknown; reconnect and inspect the filename.');
+      }
       if (state === 'connected') {
         // Request MIDI devices list when connected
         this.client.requestMidiDevices();
@@ -279,12 +296,29 @@ export class SketchatoneDashboard extends LitElement {
     });
 
     this.client.onConfig((config: ServerConfigData) => {
+      if (this.pendingRename && config.currentConfigName === this.pendingRename.newName &&
+          !(config.availableConfigs ?? []).includes(this.pendingRename.oldName)) {
+        this.configEditor?.acceptRename(this.pendingRename.oldName, this.pendingRename.newName, config.config);
+        this.editorFilename = this.pendingRename.newName;
+        this.editorOriginalName = this.pendingRename.newName;
+        this.finishRename('Filename saved.');
+      }
       this.websocketServerInfo = `${config.notes?.length ?? 0} strings`;
       this.strummerConfig = config;
       this.serverVersion = config.serverVersion ?? null;
       // Update config management state
       this.currentConfigName = config.currentConfigName;
       this.availableConfigs = config.availableConfigs ?? [];
+    });
+    this.client.on('apply-config-result', (result: ApplyConfigResult) => {
+      this.configApplyResult = result;
+    });
+    this.client.on('rename-config-result', (result: any) => {
+      if (!this.pendingRename) return;
+      if (result.oldName && result.oldName !== this.pendingRename.oldName) return;
+      if (result.newName && result.newName !== this.pendingRename.newName) return;
+      if (result.success === false) this.finishRename(result.error ?? 'Rename failed.');
+      // Success is finalized by the authoritative configuration broadcast.
     });
 
     this.client.onNotesChanged((data) => {
@@ -516,7 +550,7 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   /**
-   * Render config management dialogs (new config, rename config)
+   * Render config management dialogs
    */
   private renderConfigDialogs() {
     return html`
@@ -535,25 +569,6 @@ export class SketchatoneDashboard extends LitElement {
             <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
               <sketch-button variant="secondary" @click=${() => this.showNewConfigDialog = false}>Cancel</sketch-button>
               <sketch-button variant="primary" @click=${this.handleCreateConfig} ?disabled=${!this.newConfigName.trim()}>Create</sketch-button>
-            </div>
-          </div>
-        </sketch-dialog>
-      ` : ''}
-      ${this.showRenameConfigDialog ? html`
-        <sketch-dialog
-          headline="Rename Configuration"
-          dismissable
-          underlay
-          @close=${() => this.showRenameConfigDialog = false}>
-          <div style="padding: 16px;">
-            <input type="text" class="sketch-input"
-              placeholder="my-config"
-              .value=${this.newConfigName}
-              @input=${(e: Event) => this.newConfigName = (e.target as HTMLInputElement).value}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleRenameConfig(); }}>
-            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
-              <sketch-button variant="secondary" @click=${() => this.showRenameConfigDialog = false}>Cancel</sketch-button>
-              <sketch-button variant="primary" @click=${this.handleRenameConfig} ?disabled=${!this.newConfigName.trim()}>Rename</sketch-button>
             </div>
           </div>
         </sketch-dialog>
@@ -593,14 +608,111 @@ export class SketchatoneDashboard extends LitElement {
     this.showNewConfigDialog = false;
   }
 
-  /**
-   * Rename the current config file
-   */
+  private get configEditor(): ConfigJsonEditor | null {
+    return this.renderRoot.querySelector('config-json-editor');
+  }
+
+  private openConfigEditor(): void {
+    this.editorFilename = this.currentConfigName ?? '';
+    this.editorOriginalName = this.editorFilename;
+    this.renameStatus = '';
+    this.editorApplying = false;
+    this.editingConfig = true;
+  }
+
+  private closeConfigEditor(): void {
+    if (this.pendingRename || this.editorApplying || this.configEditor?.isApplying) return;
+    if ((this.configEditor?.hasUnsavedChanges || this.editorFilename !== this.editorOriginalName) &&
+        !window.confirm('Discard unsaved JSON and filename edits and return to the dashboard?')) return;
+    this.editingConfig = false;
+  }
+
+  private handleEditorBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (this.editingConfig && (this.pendingRename || this.editorApplying ||
+        this.configEditor?.hasUnsavedChanges || this.editorFilename !== this.editorOriginalName)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  };
+
+  private finishRename(message: string): void {
+    if (this.renameTimeout) clearTimeout(this.renameTimeout);
+    this.renameTimeout = null;
+    this.pendingRename = null;
+    this.renameStatus = message;
+  }
+
   private handleRenameConfig(): void {
-    if (!this.currentConfigName || !this.newConfigName.trim()) return;
-    this.client.renameConfig(this.currentConfigName, this.newConfigName.trim());
-    this.newConfigName = '';
-    this.showRenameConfigDialog = false;
+    if (!this.currentConfigName || !this.websocketConnected || this.pendingRename ||
+        this.editorApplying || this.configEditor?.isApplying) return;
+    if (this.currentConfigName !== this.editorOriginalName || this.configEditor?.hasConflict) {
+      this.renameStatus = 'The server configuration or file changed. Reset to current before renaming.';
+      return;
+    }
+    const name = this.editorFilename.trim();
+    if (!name || /[\\/]/.test(name) || name === '.' || name === '..') {
+      this.renameStatus = 'Enter a filename without directory separators.';
+      return;
+    }
+    const newName = name.endsWith('.json') ? name : `${name}.json`;
+    if (newName === this.currentConfigName) {
+      this.editorFilename = newName;
+      this.renameStatus = 'Filename unchanged.';
+      return;
+    }
+    if (this.availableConfigs.includes(newName)) {
+      this.renameStatus = 'A configuration with that filename already exists.';
+      return;
+    }
+    this.pendingRename = { oldName: this.currentConfigName, newName };
+    this.renameStatus = 'Saving filename…';
+    this.renameTimeout = setTimeout(() => {
+      this.finishRename('No confirmation received. Rename outcome unknown; inspect the current filename before retrying.');
+    }, 15000);
+    this.client.renameConfig(this.currentConfigName, newName);
+  }
+
+  private renderConfigEditor() {
+    const busy = !!this.pendingRename || this.editorApplying;
+    return html`
+      <main class="dashboard config-editor-view" aria-label="Edit configuration">
+        <div class="config-editor-heading">
+          <sketch-button id="config-editor-back" variant="secondary" ?disabled=${busy}
+            @click=${this.closeConfigEditor}>Back to dashboard</sketch-button>
+          <h1>Edit configuration</h1>
+        </div>
+        <div class="config-editor-filename">
+          <label for="config-editor-filename">Filename</label>
+          <input id="config-editor-filename" class="sketch-input" type="text"
+            .value=${this.editorFilename} ?disabled=${busy || !this.websocketConnected}
+            @input=${(e: Event) => this.editorFilename = (e.target as HTMLInputElement).value}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.handleRenameConfig(); }}>
+          <sketch-button id="config-editor-rename" variant="secondary"
+            ?disabled=${busy || !this.websocketConnected || !this.editorFilename.trim()}
+            @click=${this.handleRenameConfig}>Save filename</sketch-button>
+        </div>
+        <p role="status">${this.renameStatus}</p>
+        <config-json-editor
+          .config=${this.strummerConfig?.config ?? null}
+          .template=${this.strummerConfig?.configValidationTemplate ?? null}
+          .configName=${this.currentConfigName ?? null}
+          .connected=${this.websocketConnected}
+          .locked=${!!this.pendingRename}
+          .result=${this.configApplyResult}
+          @editor-state-change=${(event: CustomEvent) => {
+            this.editorApplying = event.detail.pending;
+            if (!event.detail.dirty && !this.pendingRename) {
+              if (this.editorFilename === this.editorOriginalName) this.editorFilename = this.currentConfigName ?? '';
+              this.editorOriginalName = this.currentConfigName ?? '';
+            }
+          }}
+          @apply-config=${(event: CustomEvent) => {
+            this.editorApplying = true;
+            const { config, configName, baseConfig, requestId } = event.detail;
+            this.client.applyConfig(config, configName, baseConfig, requestId);
+          }}
+        ></config-json-editor>
+      </main>`;
   }
 
   /**
@@ -1101,6 +1213,7 @@ export class SketchatoneDashboard extends LitElement {
   }
 
   render() {
+    if (this.editingConfig) return this.renderConfigEditor();
     const hasActiveConnection = this.websocketConnected;
     const compact = this.isCompactMode;
     // In compact mode, render only the current panel; otherwise honor user toggles.
@@ -1206,7 +1319,7 @@ export class SketchatoneDashboard extends LitElement {
                 <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected} @click=${() => { this.newConfigName = ''; this.showNewConfigDialog = true; }} title="New Config">
                   <sketch-icon slot="icon" name="add"></sketch-icon>
                 </sketch-button>
-                <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected || !this.currentConfigName} @click=${() => { this.newConfigName = this.currentConfigName?.replace(/\.json$/i, '') ?? ''; this.showRenameConfigDialog = true; }} title="Rename Config">
+                <sketch-button variant="quiet" size="s" ?disabled=${!this.websocketConnected || !this.currentConfigName} @click=${this.openConfigEditor} title="Edit Config" aria-label="Edit configuration">
                   <sketch-icon slot="icon" name="edit"></sketch-icon>
                 </sketch-button>
                 <input type="file" accept=".json" id="config-upload-input" style="display: none" @change=${this.handleConfigUpload}>
@@ -1757,13 +1870,6 @@ export class SketchatoneDashboard extends LitElement {
               const pitch = strummer.pitch ?? {};
               const startingRoot: string = hc.startingRoot ?? 'C';
               const pitchOffset: number = this.strummerConfig?.pitchOffset ?? 0;
-              const effectiveRoot = (() => {
-                if (pitchOffset === 0) return startingRoot;
-                const rootIndex = Note.indexOfNotation(startingRoot);
-                if (rootIndex === -1) return startingRoot;
-                const shifted = ((rootIndex + pitchOffset) % 12 + 12) % 12;
-                return Note.notationAtIndex(shifted, startingRoot.includes('b'));
-              })();
               const actionRules = strummer.actionRules ?? {};
               const chordModeGroupRule = (actionRules.groupRules ?? []).find((r: any) => r.action?.type === 'chord-mode');
               const chordModeGroup = chordModeGroupRule
@@ -1780,8 +1886,9 @@ export class SketchatoneDashboard extends LitElement {
                       .chordModes=${strummer.chordModes ?? {}}
                       .modeName=${currentModeName}
                       .allModeNames=${allModeNames}
-                      .root=${effectiveRoot}
+                      .root=${startingRoot}
                       .octave=${pitch.startingOctave ?? 4}
+                      .pitchOffset=${pitchOffset}
                       .buttons=${chordModeButtons}
                       .activeIndex=${this.chordModeActiveIndex}>
                     </chord-mode-performance>

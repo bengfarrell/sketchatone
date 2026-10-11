@@ -173,6 +173,7 @@ from sketchatone.midi.protocol import MidiBackendProtocol
 from sketchatone.midi.rtmidi_input import RtMidiInput, MidiInputNoteEvent
 from sketchatone.midi.jack_input import JackMidiInput
 from sketchatone.utils.keyboard_listener import KeyboardListener
+from sketchatone.models.config_validation import config_validation_template, validate_complete_config, normalize_complete_config
 from sketchatone.utils.config_file import write_config_file
 
 from sketchatone.tablet.tablet_client import TabletClient, wait_for_device
@@ -1473,6 +1474,7 @@ class StrummerWebSocketServer:
                 for n in self.strummer.notes
             ],
             'config': self.config.to_dict(),
+            'configValidationTemplate': config_validation_template(),
             'serverVersion': SKETCHATONE_VERSION,
             'deviceCapabilities': device_capabilities,
             'currentConfigName': self.current_config_name,
@@ -1516,6 +1518,8 @@ class StrummerWebSocketServer:
             is_saved_state: True when config represents the saved state (after load/save),
                            False for updates (default)
         """
+        if getattr(self, '_applying_config', False):
+            return
         _t0 = time.perf_counter()
         message = {
             'type': 'config',
@@ -1748,6 +1752,9 @@ class StrummerWebSocketServer:
                 ))
                 self._broadcast_button_detection_state()
 
+            elif msg_type == 'apply-config':
+                await self._handle_apply_config(websocket, data)
+
             elif msg_type == 'update-config':
                 # Handle path-based config updates (like Node.js server)
                 path = data.get('path')
@@ -1813,6 +1820,99 @@ class StrummerWebSocketServer:
         except json.JSONDecodeError:
             print(colored(f'Invalid JSON message received', Colors.RED))
     
+    async def _handle_apply_config(self, websocket, message) -> None:
+        result = {'requestId': message.get('requestId'), 'success': False}
+        previous = self.config
+        written = False
+        self._applying_config = True
+        try:
+            if not self.strummer_config_path:
+                raise ValueError('No current configuration file. Create or load one first.')
+            if (message.get('configName') != self.current_config_name or
+                    message.get('baseConfig') != self.config.to_dict()):
+                raise ValueError('Configuration changed on the server. Reset to current configuration before applying.')
+            errors = validate_complete_config(message.get('config'))
+            if errors:
+                raise ValueError('\n'.join(errors))
+            candidate = MidiStrummerConfig.from_dict(normalize_complete_config(message['config']))
+            if candidate.chord:
+                Note.parse_chord(candidate.chord)
+            for note in candidate.notes:
+                Note.parse_notation(note)
+            # Validate and serialize the whole candidate before changing live state.
+            write_config_file(self.strummer_config_path, candidate.to_dict())
+            written = True
+            self.config = candidate
+            self._refresh_complete_config(previous)
+            result['success'] = True
+            result['message'] = ('Configuration applied and saved. Server ports, device selection, '
+                                 'and MIDI backend options take effect after restart.')
+        except Exception as error:
+            result['error'] = str(error)
+            if written:
+                failed = self.config
+                self.config = previous
+                try:
+                    write_config_file(self.strummer_config_path, previous.to_dict())
+                    self._refresh_complete_config(failed)
+                except Exception as rollback_error:
+                    result['error'] += f' Rollback failed: {rollback_error}'
+        finally:
+            self._applying_config = False
+            if written:
+                self.broadcast_config(is_saved_state=True)
+            await websocket.send(json.dumps({'type': 'apply-config-result', 'data': result}))
+
+    def _refresh_complete_config(self, previous) -> None:
+        self._clear_controller_state()
+        self.strummer.configure(self.config.pressure_threshold, self.config.strummer.strumming.pressure_buffer_size)
+        self.slider.configure(self.config.strummer.slide.pressure_threshold, self.config.strummer.slide.max_bend_semitones)
+        self._setup_notes()
+        self.actions.config = self.config
+        self.actions.set_chord_progressions(self.config.strummer.chord_progressions)
+        self.actions.set_chord_modes(self.config.strummer.chord_modes or {})
+        self.actions.set_pitch_starting_config(self.config.strummer.pitch)
+        self.actions.set_harmonic_context_starting_config(self.config.strummer.harmonic_context)
+        self.actions.set_action_rules_config(self.config.strummer.action_rules)
+        self.actions.execute_startup_rules()
+        self.event_bus.set_throttle(self.config.ws_message_throttle)
+        self.poll_ms = self.config.device_finding_poll_interval
+        if self.backend is not None:
+            self.backend.set_channel(self.config.channel)
+            if self.config.midi_output_id != previous.midi_output_id:
+                self.backend.disconnect()
+                if self.config.midi_output_id is not None:
+                    if not self.backend.connect(self.config.midi_output_id):
+                        raise ValueError(f'Failed to connect MIDI output: {self.config.midi_output_id}')
+        if self.bridge is not None:
+            self.bridge.note_duration = self.config.midi.default_note_duration
+        if self.midi_input is not None and self.config.midi.to_dict() != previous.midi.to_dict():
+            self.midi_input.disconnect()
+            port = self.config.midi_input_id
+            exclude = list(self.config.midi.midi_input_exclude)
+            if isinstance(port, list):
+                if port and not self.midi_input.connect_multiple(port, exclude_ports=exclude):
+                    raise ValueError(f'Failed to connect MIDI inputs: {port}')
+            elif port is None:
+                # Automatic selection may have no devices yet; hot-swap monitoring will reconnect.
+                self.midi_input.connect_all(exclude_ports=exclude)
+            else:
+                if not self.midi_input.connect(port):
+                    raise ValueError(f'Failed to connect MIDI input: {port}')
+            self._register_midi_input_callback()
+        self._register_midi_passthrough()
+        if previous.keyboard.enabled != self.config.keyboard.enabled:
+            if self.keyboard_listener is not None:
+                self.keyboard_listener.stop()
+            if self.config.keyboard.enabled:
+                self.keyboard_listener = KeyboardListener(
+                    enabled=True, on_key_press=self._handle_keyboard_key_press,
+                    on_key_release=self._handle_keyboard_key_release,
+                    tablet_vid_pids=set(ConfigIndex.from_vendored().all_vid_pid_pairs()),
+                )
+                self.keyboard_listener.start()
+        self._broadcast_midi_devices()
+
     def _update_config(self, config_data: Dict[str, Any]) -> None:
         """Update configuration from client data"""
         # Update basic settings
@@ -1997,6 +2097,8 @@ class StrummerWebSocketServer:
         Used by auto-learn and other server-initiated config mutations.
         Preserves original file ownership when running as root (sudo).
         """
+        if getattr(self, '_applying_config', False):
+            return
         if not self.strummer_config_path:
             return
         try:
@@ -2022,6 +2124,8 @@ class StrummerWebSocketServer:
         known, append it to ``device_buttons.buttons`` with a default name,
         persist, and broadcast the updated config to all clients.
         """
+        if getattr(self, '_applying_config', False):
+            return
         from ..models.device_buttons_config import DeviceButton
         if not self.detecting_device_buttons:
             return
@@ -2044,6 +2148,8 @@ class StrummerWebSocketServer:
         append it to ``device_buttons.keys`` with a default name, persist, and
         broadcast the updated config to all clients.
         """
+        if getattr(self, '_applying_config', False):
+            return
         from ..models.device_buttons_config import DeviceKey
         if not self.detecting_device_buttons or not key:
             return

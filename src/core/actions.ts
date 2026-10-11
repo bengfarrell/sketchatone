@@ -215,6 +215,10 @@ interface HarmonicContextState {
 
 export class Actions extends EventEmitter {
   private config: ActionsConfig;
+
+  setConfig(config: ActionsConfig): void {
+    this.config = config;
+  }
   private strummer: Strummer | null;
   private actionHandlers: Map<string, ActionHandler>;
   progressionState: ChordProgressionState;

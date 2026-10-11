@@ -7,6 +7,7 @@ QUALITY_SUFFIXES = {
     'major': '',
     'minor': 'm',
     'diminished': 'dim',
+    'half-diminished': 'm7b5',
     'augmented': 'aug',
     'sus2': 'sus2',
     'sus4': 'sus4',
@@ -21,6 +22,7 @@ EXTENSION_SUFFIXES = {
     '9': '9',
     'maj9': 'maj9',
     'add9': 'add9',
+    'm7b5': 'm7b5',
 }
 
 MAJOR_SCALE_SEMITONES = (0, 2, 4, 5, 7, 9, 11)
@@ -96,6 +98,10 @@ def chord_mode_prefers_flat(entry: Dict[str, Any], root: str) -> bool:
 
 
 def chord_mode_suffix(quality: str, extension: str) -> Optional[str]:
+    if quality == 'half-diminished':
+        return 'm7b5' if extension == 'm7b5' else None
+    if extension == 'm7b5':
+        return None
     if quality == 'major':
         return EXTENSION_SUFFIXES[extension]
     if quality == 'minor':

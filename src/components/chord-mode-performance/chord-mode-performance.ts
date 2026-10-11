@@ -14,14 +14,20 @@ function buttonLabel(buttonId: string | undefined): string {
   return colonIdx >= 0 ? buttonId.slice(colonIdx + 1) : buttonId;
 }
 
-function computeChordName(entry: unknown, root: string): string {
+function computeChordName(entry: unknown, root: string, octave: number, pitchOffset: number): string {
   const resolved = resolveChordModeEntry(entry);
   if (!resolved) return '?';
   const rootIndex = Note.indexOfNotation(root);
   if (rootIndex === -1) return '?';
-  const chordRootIndex = rootIndex + chordModeSemitones(resolved);
-  const chordRoot = Note.notationAtIndex(chordRootIndex, chordModePrefersFlat(resolved, root));
-  return chordRoot + resolved.chordSuffix;
+  // Chord-setting actions wrap the chord root before applying MIDI transposition.
+  const chordRootIndex = ((rootIndex + chordModeSemitones(resolved)) % 12 + 12) % 12;
+  const shiftedIndex = chordRootIndex + pitchOffset;
+  const effectiveRoot = Note.notationAtIndex(
+    ((rootIndex + pitchOffset) % 12 + 12) % 12, root.includes('b'));
+  const chordRoot = Note.notationAtIndex(
+    ((shiftedIndex % 12) + 12) % 12, chordModePrefersFlat(resolved, effectiveRoot));
+  const chordOctave = octave + Math.floor(shiftedIndex / 12);
+  return `${chordRoot}${resolved.chordSuffix} (oct ${chordOctave})`;
 }
 
 @customElement('chord-mode-performance')
@@ -168,6 +174,9 @@ export class ChordModePerformance extends LitElement {
   @property({ type: Number })
   octave: number = 4;
 
+  @property({ type: Number })
+  pitchOffset: number = 0;
+
   @property({ type: Array })
   buttons: string[] = [];
 
@@ -179,6 +188,14 @@ export class ChordModePerformance extends LitElement {
 
   render() {
     const entries = this.modeName ? this.chordModes[this.modeName] : undefined;
+    const rootIndex = Note.indexOfNotation(this.root);
+    const shiftedRootIndex = rootIndex + this.pitchOffset;
+    const effectiveRoot = rootIndex === -1
+      ? this.root
+      : Note.notationAtIndex(((shiftedRootIndex % 12) + 12) % 12, this.root.includes('b'));
+    const rootLabel = rootIndex === -1
+      ? this.root
+      : `${effectiveRoot} (oct ${this.octave + Math.floor(shiftedRootIndex / 12)})`;
 
     if (!entries) {
       return html`<div class="empty">No chord mode configured</div>`;
@@ -194,14 +211,14 @@ export class ChordModePerformance extends LitElement {
       : '';
 
     return html`
-      <div class="header">${this.root} — ${this.modeName}</div>
+      <div class="header">${rootLabel} — ${this.modeName}</div>
       ${modeStrip}
       <div class="grid">
         ${entries.map((entry, idx) => {
           const label = buttonLabel(this.buttons[idx]);
           if (!entry) return html`<div class="cell"><span class="cell-key">${label}</span></div>`;
           const resolved = resolveChordModeEntry(entry);
-          const chord = computeChordName(entry, this.root);
+          const chord = computeChordName(entry, this.root, this.octave, this.pitchOffset);
           const degreeLabel = resolved?.display ?? '?';
           return html`
             <div class="cell ${idx === this.activeIndex ? 'active' : ''}">

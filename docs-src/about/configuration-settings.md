@@ -23,6 +23,48 @@ Example: To use MIDI channel 1, specify `--channel 1` in CLI, or set `"midi_chan
 
 Sketchatone can be configured via the **[Web Dashboard](/about/dashboard/)** (live, visual interface) or **JSON configuration files** (version-controlled, headless). Changes made in the dashboard apply immediately, while JSON file changes require a restart.
 
+### Editing the full configuration in the web dashboard
+
+In the dashboard's configuration controls, select the **pencil (Edit configuration)**
+to open the full-page editor in place of the dashboard, toolbar and panels.
+The **Filename** field is at the top. Choose **Save filename** to rename the current
+file separately from applying JSON; a confirmed rename preserves your JSON draft.
+**Back to dashboard** returns to the normal view and asks before discarding unsaved
+JSON or filename edits. Navigation and editing are blocked while Apply or rename
+is pending. New, Import and Export remain available on the normal dashboard.
+The textarea contains the current full configuration, not tablet device definitions.
+Every input is checked for JSON syntax and supported structure, including nested
+types, arrays, known fields, enums and common numeric ranges. Errors appear inline;
+invalid drafts are never sent to the server.
+
+**Apply** sends one complete replacement to either the Node or Python server.
+The server validates again using its configuration loader, refreshes musical settings,
+notes, action rules, pitch/harmonic context, MIDI routing and throttle, and autosaves
+the currently loaded file. Omitted settings reset to server defaults; this is not a
+merge. MIDI backend/JACK options, message delay, device selection and listening ports
+require a server restart. Apply reports success or failure explicitly; write failures
+leave the running configuration unchanged.
+
+Incoming broadcasts do not overwrite your draft. If another client changes the
+configuration, or a different file is loaded/renamed externally, Apply is blocked to prevent
+overwriting newer state or the wrong file. Copy any edits you want to keep and choose
+**Reset to current**, then reapply them. A lost connection or acknowledgement timeout
+means the outcome is unknown: reconnect and inspect/reset to the current configuration
+before retrying. Older servers without editor support disable Apply. Mock previews
+apply in memory only and do not save a file. This editor is web-only, not part of
+the native Kivy UI.
+
+Filename saving reports confirmed success or explicit server errors when supported.
+Existing servers confirm a rename via the updated configuration broadcast; if no
+confirmation arrives, the editor reports an unknown outcome after a timeout rather
+than assuming it succeeded. Reconnect and inspect the current filename before retrying.
+
+The WebSocket protocol uses `apply-config` with `requestId`, `configName`,
+`baseConfig` (the original snapshot) and `config` (the replacement). It returns
+`apply-config-result` with `data: {requestId, success, message?, error?}`.
+The server rejects stale base snapshots and file identity mismatches. Existing
+path-based `update-config` controls are unchanged.
+
 ---
 
 ## Configuration Files

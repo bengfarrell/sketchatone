@@ -64,6 +64,7 @@ export class Note {
     min7: [0, 3, 7, 10], // Minor 7th
     m7: [0, 3, 7, 10], // Minor 7th (short form)
     dim7: [0, 3, 6, 9], // Diminished 7th
+    m7b5: [0, 3, 6, 10], // Half-diminished 7th
     aug7: [0, 4, 8, 10], // Augmented 7th
     maj9: [0, 4, 7, 11, 14], // Major 9th
     min9: [0, 3, 7, 10, 14], // Minor 9th

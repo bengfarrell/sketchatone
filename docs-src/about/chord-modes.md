@@ -43,6 +43,8 @@ A `chord-mode` group rule then binds a set of buttons to those settings — the 
 
 The `transpose` and `toggle-transpose` actions mutate the shared pitch offset, so pressing one of them shifts the effective root of every chord-mode button without changing the layout. See **[Action Rules → Pitch and Harmonic Context](/about/action-rules/#pitch-and-harmonic-context)** for the full config reference.
 
+Both the web and Python/Kivy chord-mode dashboards show the octave beside the root and each chord, such as `C (oct 4)` and `D7 (oct 4)`. These octaves include the current pitch offset, including transposition across octave boundaries.
+
 ## How It Works
 
 Each mode is an array of 9 objects, one per button. `degree` is a number from 1 to 7 measured from the major scale; `alteration` shifts that degree in semitones. Chord quality and extension are separate fields, while `display` is optional text used only as the UI label:
@@ -71,12 +73,14 @@ With `harmonicContext.startingRoot: "C"` and `startingMode: "major"`, button 5 (
 |-------|--------|---------|
 | `degree` | integer 1–7 | Scale degree counted from the configured root, using major-scale pitch positions as the unaltered reference |
 | `alteration` | integer semitones, usually -1, 0, or 1 | Chromatic adjustment; for example degree 7 with -1 produces bVII |
-| `quality` | `major`, `minor`, `diminished`, `augmented`, `sus2`, `sus4`, `power` | Triad or base chord structure |
-| `extension` | `none`, `6`, `7`, `maj7`, `9`, `maj9`, `add9` | Chord extension; `7`/`9` mean dominant seventh/ninth, while `maj7`/`maj9` are major seventh/ninth |
+| `quality` | `major`, `minor`, `diminished`, `half-diminished`, `augmented`, `sus2`, `sus4`, `power` | Triad or base chord structure |
+| `extension` | `none`, `6`, `7`, `maj7`, `9`, `maj9`, `add9`, `m7b5` | Chord extension; `7`/`9` mean dominant seventh/ninth, while `maj7`/`maj9` are major seventh/ninth; `m7b5` pairs only with `half-diminished` |
 | `display` | any string (optional) | Label shown in the performance panel; does not affect the generated chord |
 | `spelling` | `auto`, `flat`, `sharp` (optional) | Override the default enharmonic spelling for the chord root |
 
 Chord-mode entries must use this explicit numeric schema; Roman-numeral strings are not parsed as chord degrees. Use `display` to show functional labels such as `V/V7` without coupling them to chord calculation.
+
+For half-diminished seventh chords, use `quality: "half-diminished"` with `extension: "m7b5"`. Degree 7 in C produces Bm7b5 (B, D, F, A), distinct from the fully diminished Bdim7 (B, D, F, Ab).
 
 ## 3×3 Keypad Layout
 

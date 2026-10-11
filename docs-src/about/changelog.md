@@ -145,7 +145,7 @@ description: Release notes and version history
 - **New `wss_port` setting**: Secure WebSocket port (default: 8082)
 - **Allow new system config**: Add a service restart button which works for systemctl as we add UI config for HTTP(s) and web socket ports as well as MIDI backend (restart for these to take effect after saving)
 - **Removed sample configs**: Consolidated to single `public/configs/default.json` with all settings
-
+- **Add JSON editing and validation**: Config editor now supports JSON editing with validation and error reporting
 ### Breaking Changes
 
 - **Chord progressions required in config**: Old configs without `chordProgressions` section will have no progressions available. Users must add chord progressions to their config files (see `public/configs/default.json` for examples)

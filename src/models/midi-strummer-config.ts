@@ -267,7 +267,7 @@ export class MidiConfig implements MidiConfigData {
     this.inputExclude = data.inputExclude ?? [...DEFAULT_MIDI_INPUT_EXCLUDE];
     this.outputExclude = data.outputExclude ?? [...DEFAULT_MIDI_OUTPUT_EXCLUDE];
     this.jackClientName = data.jackClientName ?? DEFAULT_MIDI_CONFIG.jackClientName;
-    this.jackAutoConnect = data.jackAutoConnect ?? DEFAULT_MIDI_CONFIG.jackAutoConnect;
+    this.jackAutoConnect = data.jackAutoConnect === undefined ? DEFAULT_MIDI_CONFIG.jackAutoConnect : data.jackAutoConnect;
     this.defaultNoteDuration = data.defaultNoteDuration ?? DEFAULT_MIDI_CONFIG.defaultNoteDuration;
     this.midiInterMessageDelay = data.midiInterMessageDelay ?? DEFAULT_MIDI_CONFIG.midiInterMessageDelay;
     this.midiPassthrough = data.midiPassthrough ?? [];
@@ -290,7 +290,7 @@ export class MidiConfig implements MidiConfigData {
       inputExclude: (data.input_exclude ?? data.inputExclude ?? data.midi_input_exclude ?? data.midiInputExclude) as string[] | undefined,
       outputExclude: (data.output_exclude ?? data.outputExclude ?? data.midi_output_exclude ?? data.midiOutputExclude) as string[] | undefined,
       jackClientName: (data.jack_client_name ?? data.jackClientName ?? 'sketchatone') as string,
-      jackAutoConnect: (data.jack_auto_connect ?? data.jackAutoConnect ?? 'chain0') as string | null | undefined,
+      jackAutoConnect: ('jack_auto_connect' in data ? data.jack_auto_connect : data.jackAutoConnect) as string | null | undefined,
       defaultNoteDuration: (data.default_note_duration ?? data.defaultNoteDuration ?? data.note_duration ?? data.noteDuration) as number | undefined,
       midiInterMessageDelay: (data.midi_inter_message_delay ?? data.midiInterMessageDelay ?? 0) as number,
       midiPassthrough: (data.midi_passthrough ?? data.midiPassthrough ?? []) as MidiPassthroughConnection[],

@@ -15,6 +15,7 @@ import type {
   ClientMessage,
   DeviceStatus,
   DeviceStatusData,
+  ApplyConfigResult,
 } from '../types/tablet-events.js';
 import type { MidiPassthroughConnection } from '../models/midi-strummer-config.js';
 
@@ -85,6 +86,7 @@ export interface StrummerWebSocketClientEvents {
   'strum': StrumEventData;
   'combined': CombinedEventData;
   'config': ServerConfigData;
+  'apply-config-result': ApplyConfigResult;
   'notes-changed': { notes: Array<{ notation: string; octave: number }> };
   'midi-input': ServerMidiInputEvent;
   'midi-input-status': ServerMidiInputStatus;
@@ -269,6 +271,14 @@ export class StrummerWebSocketClient extends EventEmitter {
    */
   updateConfig(path: string, value: unknown): void {
     this.send({ type: 'update-config', path, value });
+  }
+
+  applyConfig(config: unknown, configName: string | null, baseConfig: unknown, requestId: string): void {
+    if (!this.isConnected) {
+      this.emit('apply-config-result', { requestId, success: false, error: 'Not connected to the server.' });
+      return;
+    }
+    this.send({ type: 'apply-config', config, configName, baseConfig, requestId });
   }
 
   /**
@@ -534,6 +544,18 @@ export class StrummerWebSocketClient extends EventEmitter {
             ruleId: message.ruleId,
             isStartup: message.isStartup,
           });
+          break;
+        case 'apply-config-result':
+          this.emit('apply-config-result', message.data);
+          break;
+        case 'rename-config-result':
+          this.emit('rename-config-result', message.data ?? message);
+          break;
+        case 'rename-config-error':
+          this.emit('rename-config-result', { ...(message.data ?? message), success: false });
+          break;
+        case 'rename-config-ack':
+          this.emit('rename-config-result', { ...(message.data ?? message), success: true });
           break;
         case 'restart-service-ack':
           // Service restart acknowledged
