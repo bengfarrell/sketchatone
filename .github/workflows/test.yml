@@ -124,7 +124,12 @@ jobs:
         if [ "$RUNNER_OS" = "Linux" ]; then
           xvfb-run -a python -m pytest tests/unit/ -v -s
         else
-          python -m pytest tests/unit/ -v -s
+          # Hosted macOS runners cannot create the OpenGL window these tests require.
+          echo "::notice::Skipping Kivy app, panel widget, and hot-reload tests on macOS; Linux runs them under Xvfb."
+          python -m pytest tests/unit/ -v -s \
+            --ignore=tests/unit/test_ui_app.py \
+            --ignore=tests/unit/test_ui_panel_widgets.py \
+            --deselect=tests/unit/test_ui_cli.py::TestHotReloadApp
         fi
     
     - name: Run integration tests (config loading)
