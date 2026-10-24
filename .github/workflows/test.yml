@@ -1,20 +1,8 @@
 name: Test Suite
 
+# Application tests are opt-in; automatic Actions builds deploy the static site.
 on:
-  push:
-    branches: [ main, develop ]
-    paths-ignore:
-      - 'docs-src/**'
-      - 'docs/**'
-      - 'eleventy.config.mjs'
-      - '.github/workflows/deploy-docs.yml'
-  pull_request:
-    branches: [ main, develop ]
-    paths-ignore:
-      - 'docs-src/**'
-      - 'docs/**'
-      - 'eleventy.config.mjs'
-      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
 
 jobs:
   test-nodejs:
