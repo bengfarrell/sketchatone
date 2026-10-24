@@ -1,5 +1,5 @@
 ---
-title: Introduction
+title: About Sketchatone
 description: Transform your graphics tablet into an expressive MIDI strumming controller
 ---
 

@@ -1,0 +1,78 @@
+---
+layout: landing.njk
+title: Strum with your drawing tablet
+description: Use your drawing tablet to strum chords on a synth or in your DAW. Sketchatone turns pen movements into MIDI notes.
+---
+{% from "illustrations.njk" import illustration %}
+<section class="hero section-wrap">
+  <div class="hero-copy">
+    <p class="eyebrow">A MIDI controller for your drawing tablet</p>
+    <h1>Strum your synth<br><em>with a pen.</em></h1>
+    <p class="lede">Sketchatone lets you use a drawing tablet a bit like a guitar. Move your pen across virtual strings to play chords on your synth or in your DAW.</p>
+    <div class="actions">
+      <a class="button" href="/playing/">Play Sketchatone <span aria-hidden="true">&nearr;</span></a>
+      <a class="text-link" href="#the-instrument">How it works <span aria-hidden="true">&darr;</span></a>
+    </div>
+    <p class="hero-note">MIDI controller software for macOS &amp; Raspberry Pi</p>
+  </div>
+  <figure class="hero-art">
+    {{ illustration("hero", "A stylus sweeps across the virtual strings of a drawing tablet") }}
+    <figcaption><span>A drawing tablet with virtual strings</span><span>Move the pen across to strum</span></figcaption>
+  </figure>
+</section>
+
+<section class="manifesto section-wrap" id="the-instrument" aria-labelledby="manifesto-title">
+  <p class="eyebrow">How it works</p>
+  <h2 id="manifesto-title">Choose a chord.<br><em>Strum across the tablet.</em></h2>
+  <p>Each time your pen crosses a virtual string, Sketchatone sends a MIDI note. Your synth or DAW makes the sound. Move slowly to pick out notes, or sweep across for a full strum.</p>
+</section>
+
+<section class="feature-grid section-wrap" aria-label="What you can do with Sketchatone">
+  <a class="feature-card" href="/playing/strum/">
+    <div class="card-art">{{ illustration("strum", "A pen crosses six virtual strings") }}</div>
+    <div class="card-heading"><span class="eyebrow">01 / Strumming</span><span aria-hidden="true">&nearr;</span></div>
+    <h3>Strum with your pen.</h3>
+    <p>Choose how many strings to use, then drag your pen across them. Pressure, tilt, and position can control how loud the notes are, how long they last, and how much they bend.</p>
+    <span class="card-link">More about strumming <span aria-hidden="true">&rarr;</span></span>
+  </a>
+  <a class="feature-card" href="/playing/chords/">
+    <div class="card-art">{{ illustration("chords", "Tablet buttons and piano keys offer different ways to choose a chord") }}</div>
+    <div class="card-heading"><span class="eyebrow">02 / Chords</span><span aria-hidden="true">&nearr;</span></div>
+    <h3>Set your chord.</h3>
+    <p>Use a tablet button, a computer keyboard, or a MIDI keyboard. Choose a single chord or move through a progression.</p>
+    <span class="card-link">Ways to change chords <span aria-hidden="true">&rarr;</span></span>
+  </a>
+  <a class="feature-card" href="/playing/midi/">
+    <div class="card-art">{{ illustration("midi", "A drawing tablet connects to a synthesizer through MIDI") }}</div>
+    <div class="card-heading"><span class="eyebrow">03 / MIDI</span><span aria-hidden="true">&nearr;</span></div>
+    <h3>Use your own synth.</h3>
+    <p>Send MIDI to your synth or DAW from a computer or Raspberry Pi. A guitar, harp, or plucked synth patch is a good place to start. Sketchatone doesn't make sound on its own.</p>
+    <span class="card-link">Connect a synth or DAW <span aria-hidden="true">&rarr;</span></span>
+  </a>
+  <a class="feature-card" href="/playing/assemble/">
+    <div class="card-art">{{ illustration("assemble", "A tablet and compact computer become a strap-worn instrument") }}</div>
+    <div class="card-heading"><span class="eyebrow">04 / Your setup</span><span aria-hidden="true">&nearr;</span></div>
+    <h3>Put together your setup.</h3>
+    <p>Keep the tablet on your desk or beside a MIDI keyboard. If you're up for some DIY, you can mount it with a Raspberry Pi, add a strap, and wear it like a guitar.</p>
+    <span class="card-link">Setup ideas <span aria-hidden="true">&rarr;</span></span>
+  </a>
+</section>
+
+<section class="sound-section section-wrap" aria-labelledby="sound-title">
+  <div>
+    <p class="eyebrow">About the project</p>
+    <h2 id="sound-title">A side project<br><em>by Ben Farrell.</em></h2>
+  </div>
+  <div>
+    <p>I'm a keyboard player who wanted to strum guitar parts, so I tried using a drawing tablet as a controller. That became Sketchatone. It's software you can use with your own gear, not a synth or a hardware kit.</p>
+    <p>Start with a supported drawing tablet, a computer, and a MIDI sound source. Tablet compatibility is still being explored, so check the setup guide before buying anything.</p>
+    <a class="text-link" href="/about/">More about the project &amp; some demos <span aria-hidden="true">&nearr;</span></a>
+  </div>
+</section>
+
+<section class="closing section-wrap" aria-labelledby="closing-title">
+  <p class="eyebrow">Want to try it?</p>
+  <h2 id="closing-title">Here's how<br><em>to play.</em></h2>
+  <a class="button button-light" href="/playing/">Read the playing guide <span aria-hidden="true">&nearr;</span></a>
+  <p>You'll need a supported tablet, a computer, and a synth or DAW.</p>
+</section>

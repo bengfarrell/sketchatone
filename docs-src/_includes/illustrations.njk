@@ -1,0 +1,70 @@
+{% macro illustration(kind, label) %}
+<svg class="instrument-illustration illustration-{{ kind }}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="{{ label }}">
+  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  {% if kind == "hero" %}
+    <ellipse cx="330" cy="372" rx="247" ry="48" stroke-dasharray="1 9" opacity=".25"/>
+    <path d="M88 219 368 121 Q380 117 391 125 L566 245 Q580 255 567 267 L286 390 Q275 395 264 388 L88 256 Q69 241 88 219Z" fill="var(--paper)"/>
+    <path d="m80 240 187 139 q10 7 22 1 l283-123 M80 241v16q0 8 10 15l172 128q13 9 27 3l276-121q10-4 10-15v-13"/>
+    <path d="m140 222 222-78 161 110-238 101Z" fill="var(--art-fill)"/>
+    <g opacity=".6">
+      <path d="m174 210 158 121 M211 197l159 117 M248 184l159 114 M285 171l159 110 M322 158l159 108 M359 146l159 108"/>
+    </g>
+    <path d="m110 234 13-5 14 10-13 5Z M133 252l13-5 14 10-13 5Z M157 270l13-5 14 10-13 5Z M181 288l13-5 14 10-13 5Z"/>
+    <path d="M232 96q89-44 175 8 M246 78q84-38 151 2" stroke-dasharray="4 8" opacity=".5"/>
+    <path d="m304 252 93-196q4-8 11-4l9 5q7 4 3 12l-99 190-21 19Z" fill="var(--paper)" stroke-width="2.5"/>
+    <path d="m300 278 4-26 17 7 M390 72l23 12 M395 61l23 12 M309 243l88-174"/>
+    <circle cx="300" cy="278" r="25" stroke-dasharray="2 7" opacity=".6"/>
+    <path d="M454 137q32 5 43 31m-33-48q41 9 49 43 M190 356q-17 6-29 0"/>
+    <path d="M70 124h74m-37-37v74 M521 353h40m-20-20v40" opacity=".35"/>
+    <path d="M108 111 202 75 M448 383l76-32" stroke-dasharray="1 6" opacity=".5"/>
+  {% elif kind == "strum" %}
+    <rect x="118" y="108" width="404" height="270" rx="20" fill="var(--paper)"/>
+    <rect x="155" y="134" width="339" height="215" rx="4" fill="var(--art-fill)"/>
+    <path d="M201 135v213 M250 135v213 M299 135v213 M348 135v213 M397 135v213 M446 135v213" opacity=".65"/>
+    <path d="M177 280q138-115 279-68 M439 198l17 14-21 6" stroke-dasharray="5 7"/>
+    <path d="m303 252 104-178q4-6 10-2l8 5q6 4 2 10L317 261l-20 16Z" fill="var(--paper)" stroke-width="3"/>
+    <path d="m297 277 6-25 14 9 M400 87l22 14"/>
+    <circle cx="136" cy="169" r="5"/><circle cx="136" cy="201" r="5"/><circle cx="136" cy="233" r="5"/>
+    <circle cx="299" cy="275" r="22" stroke-dasharray="2 6"/>
+    <path d="M194 401h253 M218 394v14 M420 394v14" opacity=".4"/>
+  {% elif kind == "chords" %}
+    <rect x="112" y="187" width="416" height="175" rx="10" fill="var(--paper)"/>
+    <path d="M112 226h416 M171 227v135 M230 227v135 M289 227v135 M348 227v135 M407 227v135 M466 227v135"/>
+    <g fill="currentColor">
+      <rect x="155" y="227" width="29" height="79" rx="2"/><rect x="214" y="227" width="29" height="79" rx="2"/>
+      <rect x="332" y="227" width="29" height="79" rx="2"/><rect x="391" y="227" width="29" height="79" rx="2"/><rect x="450" y="227" width="29" height="79" rx="2"/>
+    </g>
+    <circle cx="142" cy="338" r="8" fill="currentColor"/><circle cx="260" cy="338" r="8" fill="currentColor"/><circle cx="378" cy="338" r="8" fill="currentColor"/>
+    <path d="M142 149v-24h236v24 M260 125V99" stroke-dasharray="3 6"/>
+    <circle cx="142" cy="166" r="13"/><circle cx="260" cy="166" r="13"/><circle cx="378" cy="166" r="13"/>
+    <path d="M443 113h68m-34-34v68" opacity=".4"/>
+    <path d="M155 211h49 M460 211h45"/>
+  {% elif kind == "midi" %}
+    <rect x="66" y="123" width="198" height="155" rx="12" fill="var(--paper)"/>
+    <rect x="90" y="143" width="153" height="111" rx="3" fill="var(--art-fill)"/>
+    <path d="M112 144v109 M138 144v109 M164 144v109 M190 144v109 M216 144v109" opacity=".5"/>
+    <path d="m159 224 69-121 12 7-72 119-14 10Z" fill="var(--paper)"/>
+    <path d="M266 199h26q22 0 22 22v77q0 24 25 24h35" stroke-width="3"/>
+    <path d="m355 313 19 9-19 9"/>
+    <rect x="378" y="231" width="200" height="133" rx="9" fill="var(--paper)"/>
+    <path d="M378 295h200 M407 296v68 M435 296v68 M463 296v68 M491 296v68 M519 296v68 M547 296v68"/>
+    <path d="M404 296v36h9v-36 M432 296v36h9v-36 M488 296v36h9v-36 M516 296v36h9v-36 M544 296v36h9v-36" fill="currentColor"/>
+    <circle cx="401" cy="257" r="8"/><circle cx="430" cy="257" r="8"/><path d="M456 249h99v21h-99Z"/>
+    <path d="M374 145q12-35 24 0t24 0 24 0 24 0 24 0 24 0" opacity=".6"/>
+    <path d="M93 341h107m-54-15v30" stroke-dasharray="2 7" opacity=".4"/>
+  {% elif kind == "assemble" %}
+    <path d="M174 195q-12-106 56-139 90-43 170 49l66 81 M197 192q-7-89 44-113 75-35 145 42l57 66" stroke-width="3"/>
+    <g transform="rotate(-18 320 270)">
+      <rect x="113" y="173" width="414" height="213" rx="34" fill="var(--paper)" stroke-width="3"/>
+      <rect x="151" y="203" width="254" height="149" rx="8" fill="var(--art-fill)"/>
+      <path d="M184 204v147 M222 204v147 M260 204v147 M298 204v147 M336 204v147 M374 204v147" opacity=".6"/>
+      <rect x="433" y="212" width="62" height="81" rx="5"/>
+      <circle cx="449" cy="229" r="4"/><circle cx="479" cy="275" r="4"/>
+      <path d="M445 248h38 M445 257h38 M447 319h34 M447 333h21"/>
+      <circle cx="132" cy="277" r="4"/><circle cx="509" cy="277" r="4"/>
+    </g>
+    <path d="M94 401h74m-37-37v74 M514 120h41m-20-20v40" opacity=".35"/>
+  {% endif %}
+  </g>
+</svg>
+{% endmacro %}

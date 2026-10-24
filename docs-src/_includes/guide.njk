@@ -1,0 +1,30 @@
+{% include "header.njk" %}
+{% from "illustrations.njk" import illustration %}
+<main id="main-content" class="guide-main section-wrap">
+  <nav class="guide-nav" aria-label="Playing chapters">
+    <a href="/playing/">The playing guide</a>
+    {% set chapters = [
+      { url: '/playing/strum/', label: '01 Strum' },
+      { url: '/playing/chords/', label: '02 Chords' },
+      { url: '/playing/midi/', label: '03 Sound' },
+      { url: '/playing/assemble/', label: '04 Assemble' }
+    ] %}
+    {% for chapter in chapters %}
+    <a href="{{ chapter.url }}"{% if page.url == chapter.url %} aria-current="page"{% endif %}>{{ chapter.label }}</a>
+    {% endfor %}
+  </nav>
+  <header class="guide-intro">
+    <div>
+      <p class="eyebrow">The playing guide / {{ chapter }}</p>
+      <h1>{{ title }}</h1>
+      <p class="lede">{{ description }}</p>
+    </div>
+    <figure>{{ illustration(art, artDescription) }}</figure>
+  </header>
+  <article class="prose guide-prose">{{ content | safe }}</article>
+  <div class="guide-next">
+    <div><p class="eyebrow">Up next</p><h2>{{ nextTitle }}</h2></div>
+    <a class="button" href="{{ nextUrl }}">{{ nextLabel }} <span aria-hidden="true">&rarr;</span></a>
+  </div>
+</main>
+{% include "footer.njk" %}

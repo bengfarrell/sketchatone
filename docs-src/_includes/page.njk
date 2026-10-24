@@ -1,11 +1,18 @@
-{% renderFile "docs-src/_includes/header.njk", { title: title, page: page.url, version: version } %}
-<div id="main-wrapper">
-  {% renderFile "docs-src/_includes/side-nav.njk", { title: title, page: page.url, version: version }%}
-  <main>
-      <div class="content">
-        <h2 id="page-title">{{ description }}</h2>
-        {{content | safe}}
-      </div>
+{% include "header.njk" %}
+<div class="reference-shell section-wrap">
+  <aside class="reference-sidebar">
+    <details class="reference-menu" open>
+      <summary>Browse the reference</summary>
+      {% include "side-nav.njk" %}
+    </details>
+  </aside>
+  <main id="main-content" class="reference-main">
+      <p class="eyebrow">Sketchatone / Reference</p>
+      <p class="reference-description">{{ description }}</p>
+      <div class="prose">{{ content | safe }}</div>
   </main>
 </div>
-{% renderFile "docs-src/_includes/footer.njk" %}
+<script>
+  document.querySelector('.reference-menu').open = window.matchMedia('(min-width: 741px)').matches;
+</script>
+{% include "footer.njk" %}
