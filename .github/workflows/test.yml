@@ -77,6 +77,9 @@ jobs:
   test-python:
     name: Python Tests
     runs-on: ${{ matrix.os }}
+    env:
+      KIVY_NO_ARGS: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -96,6 +99,12 @@ jobs:
       run: |
         cd python
         pip install -e ".[dev,ui]"
+
+    - name: Install virtual display for UI tests
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb xauth libgl1 libegl1 libgl1-mesa-dri
     
     - name: Setup Virtual MIDI (Linux, optional)
       if: runner.os == 'Linux'
@@ -109,9 +118,14 @@ jobs:
         fi
     
     - name: Run unit tests
+      shell: bash
       run: |
         cd python
-        pytest tests/unit/ -v
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          xvfb-run -a python -m pytest tests/unit/ -v -s
+        else
+          python -m pytest tests/unit/ -v -s
+        fi
     
     - name: Run integration tests (config loading)
       run: |
@@ -127,6 +141,9 @@ jobs:
   test-coverage:
     name: Test Coverage Report
     runs-on: ubuntu-latest
+    env:
+      KIVY_NO_ARGS: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
     
     steps:
     - uses: actions/checkout@v3
@@ -149,6 +166,11 @@ jobs:
         npm ci
         cd python && pip install -e ".[dev,ui]"
 
+    - name: Install virtual display for UI tests
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb xauth libgl1 libegl1 libgl1-mesa-dri
+
     - name: Install Rollup native binding
       shell: bash
       run: |
@@ -170,7 +192,7 @@ jobs:
       run: |
         npm run build:cli
         npm test -- --coverage || true
-        cd python && pytest --cov=sketchatone --cov-report=term || true
+        cd python && xvfb-run -a python -m pytest -s --cov=sketchatone --cov-report=term || true
     
     - name: Test Summary
       run: |
