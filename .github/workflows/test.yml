@@ -26,6 +26,14 @@ jobs:
     
     - name: Install dependencies
       run: npm ci
+
+    - name: Install Rollup native binding
+      shell: bash
+      run: |
+        # Work around platform-specific optional dependencies missing from the lockfile.
+        ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version")
+        ROLLUP_PLATFORM=$(node -p "process.platform + '-' + process.arch + (process.platform === 'linux' ? '-gnu' : '')")
+        npm install --no-save --package-lock=false --ignore-scripts "@rollup/rollup-${ROLLUP_PLATFORM}@${ROLLUP_VERSION}"
     
     - name: Build
       run: npm run build:cli
@@ -130,6 +138,14 @@ jobs:
       run: |
         npm ci
         cd python && pip install -e ".[dev]"
+
+    - name: Install Rollup native binding
+      shell: bash
+      run: |
+        # Work around platform-specific optional dependencies missing from the lockfile.
+        ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version")
+        ROLLUP_PLATFORM=$(node -p "process.platform + '-' + process.arch + (process.platform === 'linux' ? '-gnu' : '')")
+        npm install --no-save --package-lock=false --ignore-scripts "@rollup/rollup-${ROLLUP_PLATFORM}@${ROLLUP_VERSION}"
     
     - name: Setup Virtual MIDI (optional)
       run: |
