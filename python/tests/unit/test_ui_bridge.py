@@ -1,26 +1,48 @@
-"""
-Tests for the in-process UI bridge (sketchatone.ui.bridge).
-
-These tests exercise subscription semantics and event fan-out without
-booting Kivy or the WebSocket transport. We monkey-patch the bridge's
-Kivy main-thread scheduler so callbacks run synchronously.
-"""
+"""Tests for the subprocess-backed Kivy UI bridge."""
 
 from __future__ import annotations
+
+import json
+import sys
 
 import pytest
 
 from sketchatone.ui import bridge as bridge_mod
-from sketchatone.ui.bridge import UIBridge, EVENT_NAMES
+from sketchatone.ui.bridge import EVENT_NAMES, UIBridge
 
 
 @pytest.fixture(autouse=True)
 def _run_on_main_inline(monkeypatch):
-    """Make ``_schedule_on_kivy_main`` invoke the callback synchronously
-    so tests don't need a Kivy event loop."""
-    def _inline(func, *args):
-        func(*args)
-    monkeypatch.setattr(bridge_mod, '_schedule_on_kivy_main', _inline)
+    """Run scheduled callbacks inline so tests do not need a Kivy loop."""
+    monkeypatch.setattr(
+        bridge_mod, '_schedule_on_kivy_main',
+        lambda callback, *args: callback(*args),
+    )
+
+
+class _FakeLoop:
+    def call_soon_threadsafe(self, callback, *args):
+        callback(*args)
+
+
+class _FakeQueue:
+    def __init__(self):
+        self.items = []
+
+    def put_nowait(self, item):
+        self.items.append(item)
+
+
+def _bridge_with_outbox():
+    bridge = UIBridge()
+    outbox = _FakeQueue()
+    bridge._loop = _FakeLoop()
+    bridge._send_queue = outbox
+    return bridge, outbox
+
+
+def _messages(outbox):
+    return [json.loads(message) for message in outbox.items]
 
 
 class TestUIBridgeSubscription:
@@ -28,527 +50,270 @@ class TestUIBridgeSubscription:
         assert set(EVENT_NAMES) == {
             'device-status', 'tablet', 'strum', 'combined', 'config',
             'midi-devices', 'midi-input', 'button-detection-state',
+            'notes-changed', 'action',
         }
 
     def test_on_unknown_event_raises(self):
-        b = UIBridge()
         with pytest.raises(ValueError):
-            b.on('not-a-real-event', lambda _payload: None)
+            UIBridge().on('not-a-real-event', lambda _payload: None)
 
     def test_on_returns_unsubscribe(self):
-        b = UIBridge()
-        received: list = []
-        off = b.on('device-status', received.append)
-        b._emit('device-status', {'connected': True})
-        assert received == [{'connected': True}]
+        bridge = UIBridge()
+        received = []
+        off = bridge.on('device-status', received.append)
+
+        bridge._emit('device-status', {'connected': True})
         off()
-        b._emit('device-status', {'connected': False})
-        assert received == [{'connected': True}]  # no further deliveries
+        bridge._emit('device-status', {'connected': False})
+
+        assert received == [{'connected': True}]
 
     def test_multiple_listeners_each_called(self):
-        b = UIBridge()
-        a, c = [], []
-        b.on('tablet', a.append)
-        b.on('tablet', c.append)
-        b._emit('tablet', 'evt')
-        assert a == ['evt']
-        assert c == ['evt']
+        bridge = UIBridge()
+        first, second = [], []
+        bridge.on('tablet', first.append)
+        bridge.on('tablet', second.append)
+
+        bridge._emit('tablet', 'event')
+
+        assert first == ['event']
+        assert second == ['event']
+
+    def test_clear_listeners_removes_subscriptions_but_preserves_cache(self):
+        bridge = UIBridge()
+        received = []
+        bridge.on('config', received.append)
+        bridge._dispatch_message({'type': 'config', 'data': {'config': {}}})
+        bridge.clear_listeners()
+        bridge.replay_config()
+
+        assert len(received) == 1
+        assert bridge._last_config == {'config': {}}
 
 
-class TestUIBridgeFanOut:
-    def test_combined_event_fans_to_tablet_and_strum(self):
-        from sketchatone.cli.server import (
-            CombinedEventData, TabletEventData, StrumEventData,
-        )
-        b = UIBridge()
+class TestUIBridgeMessageDispatch:
+    def test_tablet_message_fans_out_tablet_strum_and_combined(self):
+        bridge = UIBridge()
         combined, tablet, strum = [], [], []
-        b.on('combined', combined.append)
-        b.on('tablet', tablet.append)
-        b.on('strum', strum.append)
+        bridge.on('combined', combined.append)
+        bridge.on('tablet', tablet.append)
+        bridge.on('strum', strum.append)
 
-        tablet_data = TabletEventData(x=0.5, y=0.5)
-        strum_data = StrumEventData(type='strum')
-        b._on_combined(CombinedEventData(tablet=tablet_data, strum=strum_data))
+        bridge._dispatch_message({
+            'type': 'tablet-data',
+            'x': 0.5,
+            'y': 0.25,
+            'pressure': 0.8,
+            'strum': {
+                'type': 'strum',
+                'velocity': 90,
+                'notes': [{'note': {'notation': 'C', 'octave': 4, 'midiNote': 60},
+                           'velocity': 90}],
+            },
+        })
 
-        assert combined and combined[0].tablet is tablet_data
-        assert tablet == [tablet_data]
-        assert strum == [strum_data]
+        assert tablet[0].x == 0.5
+        assert tablet[0].y == 0.25
+        assert tablet[0].pressure == 0.8
+        assert not hasattr(tablet[0], 'type')
+        assert strum[0].type == 'strum'
+        assert strum[0].notes[0].name == 'C'
+        assert strum[0].notes[0].octave == 4
+        assert strum[0].notes[0].note == 60
+        assert combined[0].tablet is tablet[0]
+        assert combined[0].strum is strum[0]
 
-    def test_combined_event_without_tablet_skips_tablet_listeners(self):
-        from sketchatone.cli.server import CombinedEventData, StrumEventData
-        b = UIBridge()
-        tablet, strum = [], []
-        b.on('tablet', tablet.append)
-        b.on('strum', strum.append)
-        b._on_combined(CombinedEventData(tablet=None, strum=StrumEventData(type='strum')))
-        assert tablet == []
-        assert len(strum) == 1
+    def test_tablet_message_without_strum_only_emits_tablet(self):
+        bridge = UIBridge()
+        tablet, strum, combined = [], [], []
+        bridge.on('tablet', tablet.append)
+        bridge.on('strum', strum.append)
+        bridge.on('combined', combined.append)
 
-    def test_status_callback_emits_device_status(self):
-        b = UIBridge()
-        received: list = []
-        b.on('device-status', received.append)
-        b._on_status(True, 'XP-Pen Deco')
+        bridge._dispatch_message({'type': 'tablet-data', 'x': 0.1})
+
+        assert len(tablet) == 1
+        assert strum == []
+        assert combined[0].strum is None
+
+    def test_status_message_is_cached_and_replayable(self):
+        bridge = UIBridge()
+        bridge._dispatch_message({
+            'type': 'status', 'deviceConnected': True, 'message': 'XP-Pen Deco connected',
+        })
+        received = []
+        bridge.on('device-status', received.append)
+        assert received == []
+
+        bridge.replay_status()
+
         assert received == [{'connected': True, 'deviceName': 'XP-Pen Deco'}]
 
-    def test_status_is_cached_for_replay(self):
-        b = UIBridge()
-        b._on_status(True, 'Huion')
-        # Subscriber that joined after the event must miss it initially...
-        received: list = []
-        b.on('device-status', received.append)
-        assert received == []
-        # ...but ``replay_status`` re-emits the cached payload.
-        b.replay_status()
-        assert received == [{'connected': True, 'deviceName': 'Huion'}]
+    def test_disconnected_status_has_no_device_name(self):
+        bridge = UIBridge()
+        received = []
+        bridge.on('device-status', received.append)
 
-    def test_replay_status_noop_when_never_received(self):
-        b = UIBridge()
-        received: list = []
-        b.on('device-status', received.append)
-        b.replay_status()
-        assert received == []
+        bridge._dispatch_message({
+            'type': 'status', 'deviceConnected': False, 'message': 'No tablet connected',
+        })
 
-    def test_clear_listeners_drops_all_subscriptions(self):
-        b = UIBridge()
-        received_tablet: list = []
-        received_status: list = []
-        b.on('tablet', received_tablet.append)
-        b.on('device-status', received_status.append)
-        b.clear_listeners()
-        b._emit('tablet', 'evt')
-        b._on_status(True, 'X')
-        assert received_tablet == []
-        assert received_status == []
+        assert received == [{'connected': False, 'deviceName': None}]
 
-    def test_config_callback_emits_config(self):
-        b = UIBridge()
-        received: list = []
-        b.on('config', received.append)
-        b._on_config({'throttleMs': 150, 'notes': []})
-        assert received == [{'throttleMs': 150, 'notes': []}]
+    def test_config_message_is_cached_and_replayed(self):
+        bridge = UIBridge()
+        payload = {'currentConfigName': 'default.json', 'config': {}}
+        bridge._dispatch_message({'type': 'config', 'data': payload})
+        received = []
+        bridge.on('config', received.append)
 
-    def test_config_is_cached_and_replayed_to_late_subscriber(self):
-        # The backend broadcasts during server ``__init__`` (before any
-        # panel exists). Subscribers that arrive afterwards must still
-        # receive the snapshot, otherwise the Actions panel boots empty.
-        b = UIBridge()
-        b._on_config({'config': {'strummer': {'actionRules': {'rules': [{'id': 'r1'}]}}}})
-        received: list = []
-        b.on('config', received.append)
-        assert received == [{'config': {'strummer': {'actionRules': {'rules': [{'id': 'r1'}]}}}}]
-
-    def test_replay_config_redelivers_to_current_listeners(self):
-        b = UIBridge()
-        b._on_config({'currentConfigName': 'default.json'})
-        received: list = []
-        b.on('config', received.append)
+        assert received == [payload]
         received.clear()
-        b.replay_config()
-        assert received == [{'currentConfigName': 'default.json'}]
+        bridge.replay_config()
+        assert received == [payload]
 
-    def test_replay_config_noop_when_never_received(self):
-        b = UIBridge()
-        received: list = []
-        b.on('config', received.append)
-        b.replay_config()
-        assert received == []
+    def test_midi_devices_message_emits_payload(self):
+        bridge = UIBridge()
+        received = []
+        bridge.on('midi-devices', received.append)
+        payload = {'outputPorts': [], 'inputPorts': []}
 
-    def test_start_reraises_worker_exception(self, monkeypatch):
-        # Simulate a strummer-config FileNotFoundError surfacing from
-        # the worker thread. ``start()`` must propagate so the CLI can
-        # exit cleanly instead of letting Kivy boot a dead bridge.
-        from sketchatone.ui import bridge as bridge_mod
+        bridge._dispatch_message({'type': 'midi-devices', 'data': payload})
 
-        class _BoomServer:
-            def __init__(self, *_a, **_kw):
-                raise FileNotFoundError("simulated missing config")
+        assert received == [payload]
 
-        monkeypatch.setattr(bridge_mod, '_BridgeServer', _BoomServer)
-        b = UIBridge(dev_mode=True)
-        with pytest.raises(FileNotFoundError, match='simulated missing config'):
-            b.start()
-        # _run_on_loop must no-op against the closed/missing loop so
-        # follow-up calls from panel widgets don't blow up.
-        b._run_on_loop(lambda: None)
+    def test_midi_input_is_cached_for_late_subscribers(self):
+        bridge = UIBridge()
+        payload = {'type': 'midi-input', 'connected': True}
+        bridge._dispatch_message(payload)
+        received = []
+        bridge.on('midi-input', received.append)
 
-    def test_run_on_loop_noop_when_loop_closed(self):
-        import asyncio
-        b = UIBridge()
-        loop = asyncio.new_event_loop()
-        loop.close()
-        b._loop = loop
-        # Should silently no-op, not raise RuntimeError('Event loop is closed').
-        b._run_on_loop(lambda: None)
+        assert received == [payload]
 
-    def test_clear_listeners_preserves_config_cache(self):
-        # After a theme rebuild the bridge drops subscriptions but the
-        # cached config must survive so ``replay_config`` can reseed the
-        # new panel tree.
-        b = UIBridge()
-        b._on_config({'currentConfigName': 'default.json'})
-        b.clear_listeners()
-        assert b._last_config == {'currentConfigName': 'default.json'}
+    def test_button_detection_state_is_cached_for_late_subscribers(self):
+        bridge = UIBridge()
+        bridge._dispatch_message({'type': 'button-detection-state', 'enabled': True})
+        received = []
 
+        bridge.on('button-detection-state', received.append)
 
-class TestUIBridgeDefaultsToNoWS:
-    """The bridge must default to no WebSocket transport for boot speed."""
-
-    def test_default_ws_port_is_none(self):
-        b = UIBridge()
-        assert b._ws_port is None
-
-    def test_explicit_ws_port_is_kept(self):
-        b = UIBridge(ws_port=9001)
-        assert b._ws_port == 9001
-
-
-class TestUIBridgeDeviceResolution:
-    """Bridge must auto-detect tablet config so the HID reader starts."""
-
-    def test_default_poll_ms_is_set(self):
-        # Without polling, the backend would skip the tablet thread when
-        # no config is provided — exactly the empty-events bug.
-        b = UIBridge()
-        assert b._poll_ms is not None
-        assert b._poll_ms > 0
-
-    # Device-path resolution is now handled inside the server's reader
-    # thread via ``TabletClient.discover()``; the bridge no longer owns
-    # any config-resolution logic.
-
-
-
-class TestUIBridgeEventBusKeptResumed:
-    """Without a WS client, the event bus is paused by ``run_server`` and
-    never resumed by the upstream code, so combined-event listeners never
-    fire. The bridge must resume it explicitly for the in-process UI."""
-
-    def test_keep_event_bus_resumed_calls_resume_once_ready(self):
-        import asyncio
-
-        class _FakeBus:
-            def __init__(self):
-                self._interval_task = None
-                self.resumed = 0
-            def resume(self):
-                self.resumed += 1
-
-        class _FakeServer:
-            def __init__(self):
-                self.event_bus = _FakeBus()
-
-        b = UIBridge()
-        srv = _FakeServer()
-        b._server = srv  # type: ignore[assignment]
-
-        async def _run():
-            # Simulate ``run_server`` starting the bus shortly after.
-            async def _later():
-                await asyncio.sleep(0.05)
-                srv.event_bus._interval_task = object()
-            asyncio.create_task(_later())
-            await b._keep_event_bus_resumed()
-
-        asyncio.run(_run())
-        assert srv.event_bus.resumed == 1
-
-    def test_flushed_combined_event_reaches_listener(self):
-        """End-to-end check on the bus: emit + flush + listener invocation
-        with the bridge's bus-resume in effect."""
-        from sketchatone.cli.server import (
-            StrummerEventBus, TabletEventData,
-        )
-        bus = StrummerEventBus(throttle_ms=1)
-        received: list = []
-        bus.on_combined_event(received.append)
-        bus.emit_tablet_event(TabletEventData(x=0.1, y=0.2, pressure=0.5))
-        # While paused, flush returns None
-        bus.pause()
-        assert bus.flush() is None
-        # Emit again, resume, then flush should deliver
-        bus.emit_tablet_event(TabletEventData(x=0.3, y=0.4, pressure=0.6))
-        bus.resume()
-        payload = bus.flush()
-        assert payload is not None
-        assert payload.tablet is not None
-        assert payload.tablet.x == pytest.approx(0.3)
-
-
-
-class _FakeLoop:
-    """Stand-in for the bridge's asyncio loop; runs callbacks inline."""
-
-    def __init__(self):
-        self.scheduled: list = []
-
-    def call_soon_threadsafe(self, fn, *args):
-        self.scheduled.append(fn)
-        fn(*args)
-
-
-class _FakeServer:
-    def __init__(self, devices: dict):
-        self._devices = devices
-        self.config_updates: list = []
-        self.save_calls: int = 0
-        self.load_calls: list = []
-        self.create_calls: list = []
-
-    def _get_midi_devices_data(self) -> dict:
-        return self._devices
-
-    def _handle_config_update(self, path: str, value):
-        self.config_updates.append((path, value))
-
-    def _handle_save_config(self):
-        self.save_calls += 1
-
-    def _handle_load_config(self, name: str):
-        self.load_calls.append(name)
-
-    def _handle_create_config(self, name: str):
-        self.create_calls.append(name)
-
-
-class _FakeEventBus:
-    def __init__(self, throttle_ms: int = 150):
-        self.throttle_ms = throttle_ms
-        self.set_calls: list = []
-
-    def set_throttle(self, value: int) -> None:
-        self.set_calls.append(value)
-        self.throttle_ms = value
-
-
-class TestUIBridgeMidiDevices:
-    def test_midi_devices_callback_emits_event(self):
-        b = UIBridge()
-        received: list = []
-        b.on('midi-devices', received.append)
-        b._on_midi_devices({'outputPorts': [], 'inputPorts': []})
-        assert received == [{'outputPorts': [], 'inputPorts': []}]
-
-    def test_request_midi_devices_fetches_and_emits(self):
-        b = UIBridge()
-        snapshot = {
-            'outputPorts': [{'id': 0, 'name': 'IAC Bus 1'}],
-            'inputPorts': [],
-            'currentOutputPort': 0,
-            'currentInputPorts': [],
-        }
-        b._server = _FakeServer(snapshot)  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-
-        received: list = []
-        b.on('midi-devices', received.append)
-        b.request_midi_devices()
-        assert received == [snapshot]
-
-    def test_request_midi_devices_noop_without_loop(self):
-        b = UIBridge()
-        # No loop, no server — should not raise.
-        b.request_midi_devices()
-
-    def test_request_midi_devices_noop_without_server(self):
-        b = UIBridge()
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        received: list = []
-        b.on('midi-devices', received.append)
-        b.request_midi_devices()
-        assert received == []
-
-    def test_set_midi_output_dispatches_config_update(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        b.set_midi_output('IAC Bus 1')
-        assert srv.config_updates == [('midi.midiOutputId', 'IAC Bus 1')]
-
-    def test_set_midi_output_none_is_ignored(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        b.set_midi_output(None)
-        assert srv.config_updates == []
-
-    def test_set_midi_input_dispatches_config_update(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        b.set_midi_input([0, 2])
-        assert srv.config_updates == [('midi.midiInputId', [0, 2])]
-
-    def test_set_midi_input_empty_list_disconnects(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        b.set_midi_input([])
-        assert srv.config_updates == [('midi.midiInputId', [])]
-
-
-class TestUIBridgeSetConfig:
-    """Generic config writes used by settings panels."""
-
-    def test_set_config_dispatches_path_and_value(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        b.set_config('strummer.strumming.pressureThreshold', 0.25)
-        assert srv.config_updates == [
-            ('strummer.strumming.pressureThreshold', 0.25),
-        ]
-
-    def test_set_config_noop_without_loop(self):
-        b = UIBridge()
-        # No loop, no server — must not raise.
-        b.set_config('strummer.mode', 'slide')
-
-
-class TestUIBridgeConfigPersistence:
-    """Bridge methods that wrap save/load/create config dispatch."""
-
-    def _wired(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        return b, srv
-
-    def test_save_config_invokes_server_handler(self):
-        b, srv = self._wired()
-        b.save_config()
-        assert srv.save_calls == 1
-
-    def test_load_config_invokes_server_handler(self):
-        b, srv = self._wired()
-        b.load_config('default.json')
-        assert srv.load_calls == ['default.json']
-
-    def test_load_config_empty_name_ignored(self):
-        b, srv = self._wired()
-        b.load_config('')
-        assert srv.load_calls == []
-
-    def test_create_config_invokes_server_handler(self):
-        b, srv = self._wired()
-        b.create_config('my-new.json')
-        assert srv.create_calls == ['my-new.json']
-
-    def test_create_config_empty_name_ignored(self):
-        b, srv = self._wired()
-        b.create_config('')
-        assert srv.create_calls == []
-
-    def test_persistence_methods_noop_without_loop(self):
-        # No loop, no server — must not raise.
-        b = UIBridge()
-        b.save_config()
-        b.load_config('default.json')
-        b.create_config('new.json')
-
-
-
-class TestUIBridgeSetThrottle:
-    """Throttle adjustment flows through to event_bus + rebroadcasts config."""
-
-    def _wired(self, throttle_ms: int = 150):
-        b = UIBridge()
-        srv = _FakeServer({})
-        srv.event_bus = _FakeEventBus(throttle_ms)  # type: ignore[attr-defined]
-        srv.broadcast_calls = 0  # type: ignore[attr-defined]
-
-        def _bcast():
-            srv.broadcast_calls += 1  # type: ignore[attr-defined]
-        srv.broadcast_config = _bcast  # type: ignore[attr-defined]
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        return b, srv
-
-    def test_set_throttle_updates_event_bus_and_broadcasts(self):
-        b, srv = self._wired()
-        b.set_throttle(33)
-        assert srv.event_bus.set_calls == [33]
-        assert srv.event_bus.throttle_ms == 33
-        assert srv.broadcast_calls == 1
-
-    def test_set_throttle_coerces_to_int(self):
-        b, srv = self._wired()
-        b.set_throttle('60')  # type: ignore[arg-type]
-        assert srv.event_bus.set_calls == [60]
-
-    def test_set_throttle_rejects_negative(self):
-        b, srv = self._wired()
-        b.set_throttle(-1)
-        assert srv.event_bus.set_calls == []
-        assert srv.broadcast_calls == 0
-
-    def test_set_throttle_rejects_non_numeric(self):
-        b, srv = self._wired()
-        b.set_throttle('abc')  # type: ignore[arg-type]
-        assert srv.event_bus.set_calls == []
-
-    def test_set_throttle_noop_without_loop(self):
-        b = UIBridge()
-        # No loop, no server — must not raise.
-        b.set_throttle(60)
-
-
-class TestUIBridgeButtonDetection:
-    """Ephemeral device-button learning flag mirrored on both sides."""
-
-    def _wired(self):
-        b = UIBridge()
-        srv = _FakeServer({})
-        srv.detecting_device_buttons = False  # type: ignore[attr-defined]
-        srv.broadcast_calls = 0  # type: ignore[attr-defined]
-
-        def _bcast():
-            srv.broadcast_calls += 1  # type: ignore[attr-defined]
-        srv._broadcast_button_detection_state = _bcast  # type: ignore[attr-defined]
-        b._server = srv  # type: ignore[assignment]
-        b._loop = _FakeLoop()  # type: ignore[assignment]
-        return b, srv
-
-    def test_new_subscriber_receives_current_state_immediately(self):
-        b = UIBridge()
-        received: list = []
-        b.on('button-detection-state', received.append)
-        assert received == [{'enabled': False}]
-
-    def test_on_button_detection_updates_cache_and_emits(self):
-        b = UIBridge()
-        received: list = []
-        b.on('button-detection-state', received.append)
-        b._on_button_detection(True)
-        # First payload is the replay (False), second is the new state.
-        assert received == [{'enabled': False}, {'enabled': True}]
-        assert b._last_button_detection is True
-
-    def test_late_subscriber_receives_latest_cached_state(self):
-        b = UIBridge()
-        b._on_button_detection(True)
-        received: list = []
-        b.on('button-detection-state', received.append)
         assert received == [{'enabled': True}]
 
-    def test_set_button_detection_flips_flag_and_broadcasts(self):
-        b, srv = self._wired()
-        b.set_button_detection(True)
-        assert srv.detecting_device_buttons is True
-        assert srv.broadcast_calls == 1
+    @pytest.mark.parametrize(
+        ('message_type', 'event_name'),
+        [('notes-changed', 'notes-changed'), ('action-event', 'action')],
+    )
+    def test_forwarded_event_messages(self, message_type, event_name):
+        bridge = UIBridge()
+        received = []
+        bridge.on(event_name, received.append)
+        message = {'type': message_type, 'data': 'payload'}
 
-    def test_set_button_detection_coerces_truthy(self):
-        b, srv = self._wired()
-        b.set_button_detection('yes')  # type: ignore[arg-type]
-        assert srv.detecting_device_buttons is True
+        bridge._dispatch_message(message)
 
-    def test_set_button_detection_noop_without_loop(self):
-        # No loop, no server — must not raise.
-        b = UIBridge()
-        b.set_button_detection(True)
+        assert received == [message]
+
+
+class TestUIBridgeTransport:
+    def test_default_and_explicit_websocket_ports(self):
+        assert UIBridge()._ws_port == 8081
+        assert UIBridge(ws_port=9001)._ws_port == 9001
+
+    def test_server_command_includes_transport_and_optional_arguments(self):
+        bridge = UIBridge(
+            strummer_config_path='config.json',
+            ws_port=9001,
+            poll_ms=500,
+            dev_mode=True,
+            throttle_ms=60,
+        )
+
+        assert bridge._build_server_cmd() == [
+            sys.executable, '-m', 'sketchatone.cli.server',
+            '--ws-port', '9001', '--no-http', '--no-https',
+            '-c', 'config.json', '--poll', '500', '--dev', '--throttle', '60',
+        ]
+
+    def test_outgoing_requests_and_config_commands(self):
+        bridge, outbox = _bridge_with_outbox()
+        bridge.request_midi_devices()
+        bridge.set_midi_output('IAC Bus 1')
+        bridge.set_midi_output(None)
+        bridge.set_midi_input([0, 2])
+        bridge.set_midi_input([])
+        bridge.set_config('strummer.mode', 'slide')
+        bridge.save_config()
+        bridge.load_config('default.json')
+        bridge.load_config('')
+        bridge.create_config('custom.json')
+        bridge.create_config('')
+        bridge.set_button_detection(True)
+
+        assert _messages(outbox) == [
+            {'type': 'get-midi-devices'},
+            {'type': 'update-config', 'path': 'midi.midiOutputId', 'value': 'IAC Bus 1'},
+            {'type': 'update-config', 'path': 'midi.midiInputId', 'value': [0, 2]},
+            {'type': 'update-config', 'path': 'midi.midiInputId', 'value': []},
+            {'type': 'update-config', 'path': 'strummer.mode', 'value': 'slide'},
+            {'type': 'save-config'},
+            {'type': 'load-config', 'configName': 'default.json'},
+            {'type': 'create-config', 'configName': 'custom.json'},
+            {'type': 'set-button-detection', 'enabled': True},
+        ]
+
+    def test_set_throttle_coerces_valid_values_and_rejects_invalid_values(self):
+        bridge, outbox = _bridge_with_outbox()
+        bridge.set_throttle('60')
+        bridge.set_throttle(-1)
+        bridge.set_throttle('invalid')
+
+        assert _messages(outbox) == [{'type': 'set-throttle', 'throttleMs': 60}]
+
+    def test_commands_are_safe_before_transport_starts(self):
+        bridge = UIBridge()
+        bridge.request_midi_devices()
+        bridge.set_config('strummer.mode', 'slide')
+        bridge.save_config()
+        bridge.set_button_detection(True)
+
+    def test_duplicate_config_uploads_copy_with_available_configs(self):
+        bridge, outbox = _bridge_with_outbox()
+        config = {'strummer': {'mode': 'strum'}}
+        bridge._last_config = {
+            'availableConfigs': ['live.json', 'live Copy.json'],
+            'currentConfigName': 'live.json',
+            'config': config,
+        }
+
+        name = bridge.duplicate_current_config()
+
+        assert name == 'live Copy 2.json'
+        assert _messages(outbox) == [{
+            'type': 'upload-config',
+            'configName': name,
+            'configData': config,
+        }]
+
+    def test_duplicate_config_seeds_bundled_default_when_pool_is_empty(self, monkeypatch):
+        bridge, outbox = _bridge_with_outbox()
+        default_config = {'strummer': {'mode': 'strum'}}
+        monkeypatch.setattr(
+            bridge_mod, '_load_bundled_default_config', lambda: default_config,
+        )
+
+        name = bridge.duplicate_current_config()
+
+        assert name == 'default.json'
+        assert _messages(outbox) == [{
+            'type': 'upload-config',
+            'configName': 'default.json',
+            'configData': default_config,
+        }]
+
+    def test_duplicate_config_returns_none_without_any_source(self, monkeypatch):
+        bridge, outbox = _bridge_with_outbox()
+        monkeypatch.setattr(bridge_mod, '_load_bundled_default_config', lambda: None)
+
+        assert bridge.duplicate_current_config() is None
+        assert outbox.items == []
