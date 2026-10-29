@@ -61,7 +61,7 @@ export interface ServerConfigData {
   device: string | null;
   /** HTTP server port for serving webapps (null = disabled) */
   httpPort: number | null;
-  /** HTTPS server port for captive portal detection (null = disabled) */
+  /** HTTPS server port for serving webapps (null = disabled) */
   httpsPort: number | null;
   /** WebSocket server port (null = disabled) */
   wsPort: number | null;

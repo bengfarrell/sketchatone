@@ -28,14 +28,13 @@ See **[macOS Installation Guide](/about/builds/#macos)** for details.
 
 **[Download from GitHub Releases](https://github.com/bengfarrell/sketchatone/releases/latest)**
 
-Download `sketchatone-debian-installer.tar.gz` for simple installation with automatic USB auto-start configuration.
+Download `sketchatone-<version>-pi-bundle.tar.gz` and `install-sketchatone.sh`
+for installation with automatic USB auto-start configuration. Keep both files
+in the same directory.
 
 **Quick install:**
 ```bash
-# Download and extract
-tar xzf sketchatone-debian-installer.tar.gz
-
-# Run installer
+# Run installer alongside the bundle (no manual extraction needed)
 sudo ./install-sketchatone.sh
 ```
 
@@ -71,18 +70,15 @@ Make sure you have a MIDI destination ready:
 
 **macOS:** Launch the Sketchatone app - the dashboard opens automatically in your browser
 
-**Raspberry Pi/Zynthian:** Plug in your tablet (auto-starts by default, no dashboard)
+**Raspberry Pi/Zynthian:** Plug in your tablet (auto-starts by default).
+With always-on startup, the backend and dashboard also remain available without a tablet.
 
 **From source:**
 ```bash
 # With dashboard (recommended for configuration)
-npm run server
-# or
 python -m sketchatone.cli.server
 
 # Without dashboard (MIDI only)
-npm run midi-strummer
-# or
 python -m sketchatone.cli.midi_strummer
 ```
 
@@ -98,7 +94,10 @@ The dashboard lets you:
 
 See **[Web Dashboard](/about/dashboard/)** for complete documentation.
 
-**Raspberry Pi/Zynthian:** Dashboard is typically disabled for performance. Configure via JSON files (see **[Configuration](/about/configuration-settings/)**).
+**Raspberry Pi/Zynthian:** Open the Pi's address from another device on the same
+network. See **[Web Dashboard](/about/dashboard/)** for ports and optional
+device networking setup. JSON configuration is also available (see
+**[Configuration](/about/configuration-settings/)**).
 
 ### 5. Start Strumming!
 
@@ -135,6 +134,5 @@ If you want to use an external MIDI keyboard to change the notes being strummed,
 
 ### Advanced
 
-- **[Node.js CLI](/about/node-cli/)** - Command-line reference (Node.js)
 - **[Python CLI](/about/python-cli/)** - Command-line reference (Python)
 - **[Action Rules](/about/action-rules/)** - Button action system

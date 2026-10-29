@@ -5,6 +5,39 @@ description: Release notes and version history
 
 # Changelog
 
+## v0.4.0
+
+### Raspberry Pi Installation and Appliance Setup
+
+- **Unified release bundle**: One Pi bundle and installer replace the separate web and native UI release variants. Install the headless core by default, select `--with-ui` for the native display add-on, and use `--appliance` for guided appliance setup
+- **Shared Python runtime**: Core and UI packages share `/opt/sketchatone/venv`, built with the OS's Python 3.11 or newer. The initial appliance target is 64-bit Raspberry Pi OS Lite Bookworm; installation leaves OS-managed Python packages untouched and stops on required dependency failures
+- **Fresh dashboard assets and preserved presets**: Core packaging rebuilds the web dashboard before creating the package. Locally edited presets are preserved across upgrades, and legacy standalone UI presets are backed up separately
+- **Guided appliance profile**: `sudo sketchatone-configure --appliance` configures always-on startup and offers USB MIDI gadget mode, boot trimming, and optional native UI autostart. Existing OS networking and `/etc/sketchatone/network.json` are preserved; setup changes require confirmation and boot changes defer reboot
+- **Tablet device setup fixes**: Device permissions and USB-triggered startup rules now use the bundled OpenTabletDriver definitions while retaining custom legacy definitions. USB MIDI gadget setup writes the correct camelCase MIDI configuration keys and supports `--yes` and `--no-reboot`
+
+### Optional Device Networking
+
+- **Network dashboard panel**: Configure an ordered Wi-Fi list, per-network connection timeout, password-protected fallback hotspot, and independent USB phone tethering. Includes form and JSON editing, connection status, and explicit confirmation before applying changes
+- **Opt-in NetworkManager integration**: The Python server accepts `--network-config PATH`; the packaged service uses `/etc/sketchatone/network.json`. Network management is disabled by default and requires an existing Linux NetworkManager installation with suitable permissions
+- **Separate private settings**: Network credentials are stored in a restricted device file, redacted from browser responses, and excluded from musical presets and exports. Revision checks reject stale edits, and concurrent applies are blocked
+- **Connection recovery**: Wi-Fi failures fall back to the configured hotspot. A stable hotspot remains available until an explicit apply/retry rather than periodically disconnecting users to scan; USB tethering can coexist with Wi-Fi
+- **Dashboard reconnection**: Network settings are saved and acknowledged before the transition starts. The browser extends its reconnect window during changes that may disconnect it; users may need to join the new network and reopen the Pi's address
+- **Backend scope**: Managed networking is Python-only on Linux. The Node.js server explicitly reports it as unsupported. These controls do not add user authentication and are intended for trusted networks
+
+### Native UI and Service Lifecycle
+
+- **Attach to an existing backend**: `sketchatone-ui --connect ws://HOST:PORT` (or `wss://`) connects without starting or stopping a backend process. Attach mode retries service outages with backoff and does not replay edits made while disconnected; standalone source launches remain supported
+- **Shared-service UI add-on**: The packaged native UI connects to the core service using its configured WebSocket port, with `SKETCHATONE_UI_URL` or `--connect` overrides. It shares presets and backend state instead of launching a second MIDI/tablet process
+- **Explicit display autostart**: Installing the UI does not enable display autostart. Enabling it requires always-on backend mode; migration updates only existing managed launchers, and removal leaves the core service, device rules, and presets intact
+
+### Server Defaults and Documentation
+
+- **Secure no-config defaults**: Python server launches without a config default to HTTPS on port 443 and WSS on port 8082, with HTTP and WS disabled unless explicitly enabled. Configured ports remain respected, and explicit `--ws-port` values take precedence
+- **Removed connectivity-check responses**: The Python HTTP server no longer returns special success responses for phone connectivity-check endpoints. HTTPS is documented as encrypted dashboard access, not captive portal support
+- **Runtime guidance**: Documentation now identifies Python as the primary desktop and appliance backend. Node.js remains a manually launched alternative for shared musical behavior and diagnostics, not the appliance runtime
+
+---
+
 ## v0.3.0
 
 ### Installation
@@ -77,11 +110,10 @@ description: Release notes and version history
 - **Full parity**: Identical implementation in both Node.js and Python
 - **Event simulation**: Keyboard events emit synthetic tablet events for full integration with action rules system
 
-### HTTPS & Captive Portal Support
+### HTTPS Support
 
-- **HTTPS server**: Added HTTPS support alongside HTTP for Android 10+ captive portal compatibility (both Python and Node.js)
+- **HTTPS server**: HTTPS support alongside HTTP for encrypted web dashboard access (both Python and Node.js)
 - **Self-signed certificates**: Automatic generation and storage of SSL certificates in `~/.sketchatone/ssl/` or `/opt/sketchatone/ssl/`
-- **Captive portal detection endpoint**: `/generate_204` endpoint responds to Android connectivity checks
 - **Secure WebSocket (WSS)**: WSS (WebSocket Secure) support on separate port for encrypted connections (both Python and Node.js)
 - **Configuration**: New `https_port` and `wss_port` settings in server config
 
@@ -141,7 +173,7 @@ description: Release notes and version history
 ### Configuration Changes
 
 - **New `keyboard` section**: Optional configuration for keyboard input mappings
-- **New `https_port` setting**: HTTPS server port for captive portal support (default: 443)
+- **New `https_port` setting**: HTTPS server port for encrypted dashboard access (default: 443)
 - **New `wss_port` setting**: Secure WebSocket port (default: 8082)
 - **Allow new system config**: Add a service restart button which works for systemctl as we add UI config for HTTP(s) and web socket ports as well as MIDI backend (restart for these to take effect after saving)
 - **Removed sample configs**: Consolidated to single `public/configs/default.json` with all settings

@@ -1,119 +1,80 @@
 #!/bin/bash
-# Package Sketchatone for Raspberry Pi / Zynthian
-# Creates a ready-to-install .deb package (no build needed on Pi)
-#
-# Usage:
-#   ./package-for-pi.sh                  # default web variant (current behavior)
-#   ./package-for-pi.sh --variant web    # explicit web variant
-#   ./package-for-pi.sh --variant ui     # Kivy UI variant (no webapp)
-
+# One release bundle: core by default, optional native UI at installation.
 set -e
-
-VARIANT="web"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 while [ $# -gt 0 ]; do
     case "$1" in
         --variant)
-            VARIANT="${2:-}"
-            shift 2
-            ;;
-        --variant=*)
-            VARIANT="${1#--variant=}"
-            shift
-            ;;
-        *)
-            echo "❌ Unknown argument: $1"
-            echo "Usage: $0 [--variant web|ui]"
-            exit 1
-            ;;
+            [ $# -ge 2 ] || { echo "Missing --variant value" >&2; exit 2; }
+            case "$2" in web|ui) ;; *) echo "Unknown variant: $2" >&2; exit 2 ;; esac
+            echo "Deprecated: --variant now builds the same unified bundle; select --with-ui when installing." >&2
+            shift 2 ;;
+        --variant=web|--variant=ui)
+            echo "Deprecated: --variant now builds the same unified bundle; select --with-ui when installing." >&2
+            shift ;;
+        *) echo "Usage: $0 (install with --with-ui and/or --appliance on the Pi)" >&2; exit 2 ;;
     esac
 done
-
-if [ "$VARIANT" != "web" ] && [ "$VARIANT" != "ui" ]; then
-    echo "❌ Invalid variant: '$VARIANT' (expected 'web' or 'ui')"
-    exit 1
-fi
-
-echo "=========================================="
-echo "Sketchatone - Package for Raspberry Pi"
-echo "Variant: $VARIANT"
-echo "=========================================="
-echo ""
-
-# Check if we're in the right directory
-if [ ! -f "python/pyproject.toml" ]; then
-    echo "❌ Error: Must be run from the sketchatone project root"
-    exit 1
-fi
-
-# Get version from pyproject.toml (compatible with both GNU and BSD grep)
-VERSION=$(grep '^version = ' python/pyproject.toml 2>/dev/null | head -1 | sed 's/version = "\(.*\)"/\1/' || echo "1.0.0")
-echo "📦 Version: $VERSION"
-
-# Webapp build is only needed for the web variant.
-if [ "$VARIANT" = "web" ] && [ ! -d "dist/public" ]; then
-    echo ""
-    echo "🔨 Building webapp..."
-    npm run build
-fi
-
-echo ""
-echo "📁 Setting up package structure..."
-
-# Create dist directory if needed
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' python/pyproject.toml | head -1)
+[ -n "$VERSION" ] || { echo "Missing package version" >&2; exit 1; }
 mkdir -p dist
+# Unique staging beneath the project; failed builds retain artifacts for diagnosis.
+STAGE="$SCRIPT_DIR/dist/.pi-release-${VERSION}-$$"
+mkdir "$STAGE"
+./install-scripts/create-deb.sh --output-dir "$STAGE"
+./install-scripts/create-deb-ui.sh --output-dir "$STAGE"
+BUNDLE="sketchatone-${VERSION}-pi-bundle.tar.gz"
+COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' \
+    -czf "dist/$BUNDLE" -C "$STAGE" .
+rm -rf "$STAGE"
 
-# Run the appropriate create-deb script for the chosen variant
+# A versioned header lets the script body remain literal and syntax-checkable.
+printf '#!/bin/bash\nVERSION=%q\n' "$VERSION" > dist/install-sketchatone.sh
+cat >> dist/install-sketchatone.sh << 'INSTALLEOF'
+set -eE
+WORK=""
+trap 'echo "Installation failed at line $LINENO. Bundle and installer retained; retry with the same options. Extracted files: ${WORK:-not yet extracted}" >&2' ERR
+WITH_UI=0
+APPLIANCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --with-ui) WITH_UI=1 ;;
+        --appliance) APPLIANCE=1 ;;
+        *) echo "Usage: sudo bash install-sketchatone.sh [--with-ui] [--appliance]" >&2; exit 2 ;;
+    esac
+done
+[ "$(id -u)" -eq 0 ] || { echo "Run this installer as root (sudo)." >&2; exit 1; }
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE="$SCRIPT_DIR/sketchatone-${VERSION}-pi-bundle.tar.gz"
+[ -f "$BUNDLE" ] || { echo "Missing bundle: $BUNDLE" >&2; exit 1; }
+umask 077
+WORK="$SCRIPT_DIR/.sketchatone-install-${VERSION}-$$"
+mkdir "$WORK"
+tar xzf "$BUNDLE" -C "$WORK"
+PACKAGES=()
+SELECTED=(sketchatone)
+[ "$WITH_UI" -eq 0 ] || SELECTED+=(sketchatone-ui)
+for package in "${SELECTED[@]}"; do
+    DEB="$WORK/${package}-${VERSION}.deb"
+    if [ ! -f "$DEB" ]; then
+        dpkg-deb --build "$WORK/${package}_${VERSION}_all" "$DEB"
+    fi
+    PACKAGES+=("$DEB")
+done
+# Resolve the addon and its exact-version core dependency in one transaction.
+apt install -y --allow-downgrades "${PACKAGES[@]}"
+if [ "$APPLIANCE" -eq 1 ]; then
+    sketchatone-configure --appliance
+fi
+# Delete only the extraction directory this invocation created, never inputs.
+rm -rf "$WORK"
+echo "Sketchatone installed. Bundle and installer retained for reuse."
+INSTALLEOF
+chmod +x dist/install-sketchatone.sh
+echo "Release: dist/$BUNDLE"
+echo "Installer: dist/install-sketchatone.sh"
 echo ""
-if [ "$VARIANT" = "ui" ]; then
-    ./install-scripts/create-deb-ui.sh
-    PKG_BASE="sketchatone-ui"
-    INSTALLER_SCRIPT="install-sketchatone-ui.sh"
-else
-    ./install-scripts/create-deb.sh
-    PKG_BASE="sketchatone"
-    INSTALLER_SCRIPT="install-sketchatone.sh"
-fi
-
-# Show final package info based on what was created
-DEB_FILE="dist/${PKG_BASE}-${VERSION}.deb"
-TARBALL="dist/${PKG_BASE}-${VERSION}-deb-pkg.tar.gz"
-
-if [ -f "$DEB_FILE" ]; then
-    # Direct .deb was created (Linux)
-    SIZE=$(ls -lh "$DEB_FILE" | awk '{print $5}')
-    echo ""
-    echo "=========================================="
-    echo "✅ Ready-to-install package created!"
-    echo "=========================================="
-    echo ""
-    echo "Package: $DEB_FILE"
-    echo "Size: $SIZE"
-    echo ""
-    echo "To install on Raspberry Pi / Zynthian:"
-    echo ""
-    echo "  # Copy to Pi"
-    echo "  scp $DEB_FILE sketchy@sketchatone.local:~/"
-    echo ""
-    echo "  # On the Pi (that's it!):"
-    echo "  apt install ./${PKG_BASE}-${VERSION}.deb"
-    echo ""
-elif [ -f "$TARBALL" ]; then
-    # Tarball was created (macOS)
-    SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
-    echo ""
-    echo "=========================================="
-    echo "✅ Package files created!"
-    echo "=========================================="
-    echo ""
-    echo "Package: $TARBALL ($SIZE)"
-    echo "Installer: dist/${INSTALLER_SCRIPT}"
-    echo ""
-    echo "To install on Raspberry Pi / Zynthian:"
-    echo ""
-    echo "  # Copy files to Pi"
-    echo "  scp $TARBALL dist/${INSTALLER_SCRIPT} sketchy@sketchatone.local:~/"
-    echo ""
-    echo "  # On the Pi:"
-    echo "  ./${INSTALLER_SCRIPT}"
-    echo ""
-fi
+echo "Copy to the Pi (replace sketchy@sketchatone.local if your SSH user or hostname differs):"
+echo "  scp dist/$BUNDLE dist/install-sketchatone.sh sketchy@sketchatone.local:~/"
+echo "Copy both files to the Pi, then: sudo bash install-sketchatone.sh [--with-ui] [--appliance]"

@@ -56,6 +56,10 @@ import { KeyboardListener } from '../utils/keyboard-listener.js';
 import { generateSelfSignedCert, loadSSLCert, getSSLCertPaths } from '../utils/ssl-cert.js';
 import { configValidationTemplate, configFingerprint, validateCompleteConfig, normalizeCompleteConfig } from '../utils/config-validation.js';
 import type { ApplyConfigMessage, ApplyConfigResult } from '../types/tablet-events.js';
+import {
+  NETWORK_UNSUPPORTED_REASON,
+  type NetworkServerMessage,
+} from '../types/network-settings.js';
 
 /**
  * WebSocket tablet event envelope
@@ -1165,6 +1169,44 @@ class StrummerWebSocketServer {
     } catch (e) {
       console.error(chalk.red(`Failed to update config: ${path}`), e);
     }
+  }
+
+  /**
+   * Device network management (Wi-Fi / hotspot / USB tethering) is only
+   * implemented by the Python server on Linux. The Node server answers the
+   * protocol explicitly so clients can show why the controls are unavailable.
+   * Returns true when the message was a network message.
+   */
+  private handleNetworkMessage(client: WebSocket, message: { type?: unknown; requestId?: unknown }): boolean {
+    if (!message || typeof message !== 'object') return false;
+    let reply: NetworkServerMessage;
+    if (message.type === 'get-network-settings') {
+      reply = {
+        type: 'network-settings',
+        data: { settings: null, revision: '', supported: false, reason: NETWORK_UNSUPPORTED_REASON },
+      };
+    } else if (message.type === 'get-network-status') {
+      reply = {
+        type: 'network-status',
+        data: { supported: false, mode: 'unsupported', message: NETWORK_UNSUPPORTED_REASON },
+      };
+    } else if (message.type === 'apply-network-settings') {
+      // Never echo or log the submitted settings: they may contain passwords.
+      reply = {
+        type: 'network-settings-result',
+        data: {
+          requestId: typeof message.requestId === 'string' ? message.requestId : '',
+          success: false,
+          error: NETWORK_UNSUPPORTED_REASON,
+        },
+      };
+    } else {
+      return false;
+    }
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(reply));
+    }
+    return true;
   }
 
   private async handleApplyConfig(client: WebSocket, message: ApplyConfigMessage): Promise<void> {
@@ -2481,6 +2523,7 @@ class StrummerWebSocketServer {
       ws.on('message', (message) => {
         try {
           const parsed = JSON.parse(message.toString());
+          if (this.handleNetworkMessage(ws, parsed)) return;
           if (this.applyingConfig && parsed.type !== 'apply-config') return;
           if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
             this.setThrottle(parsed.throttleMs);
@@ -2572,6 +2615,7 @@ class StrummerWebSocketServer {
           ws.on('message', (message) => {
             try {
               const parsed = JSON.parse(message.toString());
+              if (this.handleNetworkMessage(ws, parsed)) return;
               if (this.applyingConfig && parsed.type !== 'apply-config') return;
               if (parsed.type === 'set-throttle' && typeof parsed.throttleMs === 'number') {
                 this.setThrottle(parsed.throttleMs);

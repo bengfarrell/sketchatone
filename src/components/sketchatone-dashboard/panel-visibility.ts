@@ -20,7 +20,8 @@ export type PanelId =
   | 'deviceButtons'
   | 'chordProgressions'
   | 'chordModePerformance'
-  | 'serverSettings';
+  | 'serverSettings'
+  | 'networkSettings';
 
 export interface PanelInfo {
   id: PanelId;
@@ -47,6 +48,7 @@ export const PANELS: PanelInfo[] = [
   { id: 'chordProgressions', label: 'Chord Progressions', icon: '🎼' },
   { id: 'chordModePerformance', label: 'Chord Mode', icon: '🎹' },
   { id: 'serverSettings', label: 'Server', icon: '⚙️' },
+  { id: 'networkSettings', label: 'Network', icon: '📶' },
 ];
 
 export type PanelVisibility = Record<PanelId, boolean>;
@@ -72,6 +74,7 @@ const DEFAULT_VISIBILITY: PanelVisibility = {
   chordProgressions: true,
   chordModePerformance: true,
   serverSettings: true,
+  networkSettings: true,
 };
 
 export function loadPanelVisibility(): PanelVisibility {

@@ -90,52 +90,86 @@ def _resolve_config(path: str | None) -> str | None:
     sys.exit(1)
 
 
+class _BackendOption(argparse.Action):
+    """Remember explicitly supplied backend options, including default values."""
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, self.const if self.nargs == 0 else values)
+        options = getattr(namespace, '_backend_options', [])
+        namespace._backend_options = [*options, option_string]
+
+
+class _UIArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        result = super().parse_args(args, namespace)
+        conflicts = getattr(result, '_backend_options', [])
+        if result.connect is not None and conflicts:
+            self.error('--connect cannot be combined with backend-start options: '
+                       + ', '.join(conflicts))
+        return result
+
+
+def _connect_url(value: str) -> str:
+    from sketchatone.ui.bridge import validate_connect_url
+    try:
+        return validate_connect_url(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _UIArgumentParser(
         description='Sketchatone native (Kivy) UI',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Launches a minimal Kivy window sized to the 800x480 kiosk display. The
-dashboard widgets are not implemented yet; this bootstrap exists to
-validate packaging and the deployment pipeline.
+Launches the native dashboard. By default it owns a standalone backend
+subprocess. Use --connect ws://127.0.0.1:8081 to attach to an existing
+service without starting or stopping the backend.
 """
+    )
+    parser.add_argument(
+        '--connect', type=_connect_url, metavar='URL',
+        help='Attach to an existing ws:// or wss:// backend; retry disconnects. '
+             'Incompatible with backend-start options (-c, --dev, --enable-ws, '
+             '--ws-port, --throttle, --poll).'
     )
     parser.add_argument(
         '-c', '--config',
         dest='config',
+        action=_BackendOption,
         metavar='PATH',
-        help='Combined config file path (strummer, MIDI, and server settings). '
-             'The UI reads the strummer/actions/slide sections; MIDI and '
-             'server sections are ignored. Defaults to '
-             'dist/public/configs/default.json when not specified.'
+        help='Combined config file path for the standalone backend. '
+             'Cannot be used with --connect.'
     )
     parser.add_argument(
         '--enable-ws',
-        action='store_true',
-        help='Also start the WebSocket server (default: off, in-process only)'
+        action=_BackendOption, nargs=0, const=True, default=False,
+        help='Expose the standalone backend WebSocket port (legacy option)'
     )
     parser.add_argument(
         '--ws-port',
         type=int,
+        action=_BackendOption,
         default=8081,
         help='WebSocket port when --enable-ws is set (default: 8081)'
     )
     parser.add_argument(
         '--throttle',
         type=int,
+        action=_BackendOption,
         default=150,
         help='Event bus throttle interval in milliseconds (default: 150)'
     )
     parser.add_argument(
         '--poll',
         type=int,
+        action=_BackendOption,
         default=2000,
         metavar='MS',
         help='Device poll interval in milliseconds; waits for tablet if not present (default: 2000)'
     )
     parser.add_argument(
         '--dev',
-        action='store_true',
+        action=_BackendOption, nargs=0, const=True, default=False,
         help='Dev mode: skip tablet detection entirely (no HID reader)'
     )
     parser.add_argument(
@@ -157,7 +191,7 @@ validate packaging and the deployment pipeline.
     parser.add_argument(
         '--shell',
         action='store_true',
-        help='Debug: run a blank 1fps Kivy window with the server subprocess active but no UI panels'
+        help='Debug: run a blank 1fps Kivy window with the bridge but no UI panels'
     )
     parser.add_argument(
         '--fps',
@@ -179,6 +213,7 @@ def run_app(
     hot_reload: bool = False,
     shell: bool = False,
     fps: int = 15,
+    connect: str | None = None,
 ) -> int:
     """Boot the Kivy app. Kivy (and the ui package that imports it) is
     loaded lazily so this CLI remains importable — and `--help` /
@@ -249,7 +284,8 @@ def run_app(
     if shell:
         # Set maxfps before Window initialises (which happens on first import of kivy.app).
         KivyConfig.set('graphics', 'maxfps', '1')
-        return _run_shell_app(ws_port, throttle_ms, strummer_config, poll_ms, dev_mode)
+        return _run_shell_app(
+            ws_port, throttle_ms, strummer_config, poll_ms, dev_mode, connect=connect)
 
     # Import ui.app (which pulls in all panel widgets) only in normal mode so
     # shell mode never registers any kv rules with Kivy's global Builder.
@@ -269,6 +305,7 @@ def run_app(
         dev_mode=dev_mode,
         strummer_config=strummer_config,
         hot_reload=hot_reload,
+        connect=connect,
     )
 
 
@@ -278,8 +315,9 @@ def _run_shell_app(
     strummer_config: str | None,
     poll_ms: int | None,
     dev_mode: bool,
+    connect: str | None = None,
 ) -> int:
-    """Start the server subprocess via the bridge then run a blank 1fps Kivy window.
+    """Start or attach the bridge, then run a blank 1fps Kivy window.
 
     Used for isolating whether Kivy panel rendering costs CPU that starves the
     server subprocess's HID reader thread.  The window is intentionally empty
@@ -296,6 +334,7 @@ def _run_shell_app(
         ws_port=ws_port,
         poll_ms=poll_ms,
         dev_mode=dev_mode,
+        connect=connect,
     )
     try:
         bridge.start()
@@ -311,23 +350,23 @@ def _run_shell_app(
         def on_stop(self):
             bridge.stop()
 
-    print(colored('Shell mode: blank 1fps Kivy window, server subprocess running', Colors.YELLOW))
-    _ShellApp().run()
+    backend = f'attached to {connect}' if connect else 'server subprocess running'
+    print(colored(f'Shell mode: blank 1fps Kivy window, {backend}', Colors.YELLOW))
+    try:
+        _ShellApp().run()
+    finally:
+        bridge.stop()
     return 0
 
 
 def main() -> None:
-    import faulthandler
-    _dump_log = open('/tmp/sketchatone-threads.log', 'w')
-    faulthandler.enable(file=_dump_log, all_threads=True)
-    faulthandler.register(signal.SIGUSR2, file=_dump_log, all_threads=True, chain=False)
-
     args = build_arg_parser().parse_args()
     effective_ws_port = args.ws_port if args.enable_ws else None
 
     if args.dry_run:
         print(colored('sketchatone-ui: dry run', Colors.YELLOW, bold=True))
         print(colored(f'  config           = {args.config!r}', Colors.GRAY))
+        print(colored(f'  connect          = {args.connect!r}', Colors.GRAY))
         print(colored(f'  enable-ws        = {args.enable_ws}', Colors.GRAY))
         print(colored(f'  ws-port          = {effective_ws_port}', Colors.GRAY))
         print(colored(f'  throttle         = {args.throttle}', Colors.GRAY))
@@ -336,6 +375,11 @@ def main() -> None:
         print(colored(f'  fullscreen       = {args.fullscreen}', Colors.GRAY))
         print(colored(f'  hot-reload       = {args.hot_reload}', Colors.GRAY))
         sys.exit(0)
+
+    import faulthandler
+    faulthandler.enable(all_threads=True)
+    if hasattr(signal, 'SIGUSR2'):
+        faulthandler.register(signal.SIGUSR2, all_threads=True, chain=False)
 
     config_path = _resolve_config(args.config)
 
@@ -346,6 +390,7 @@ def main() -> None:
         hot_reload=args.hot_reload,
         shell=args.shell,
         fps=args.fps,
+        connect=args.connect,
     ))
 
 

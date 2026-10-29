@@ -10,6 +10,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 cd "$PROJECT_ROOT"
 
+OUTPUT_DIR="$PROJECT_ROOT/dist"
+TREE_ONLY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --output-dir) OUTPUT_DIR="${2:?Missing output directory}"; shift 2 ;;
+        --tree-only) TREE_ONLY=1; shift ;;
+        *) echo "Usage: $0 [--tree-only] [--output-dir DIRECTORY]" >&2; exit 2 ;;
+    esac
+done
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+
 echo "=========================================="
 echo "Sketchatone - Debian Package Creator"
 echo "=========================================="
@@ -21,6 +33,18 @@ if [ ! -d "python/sketchatone" ]; then
     exit 1
 fi
 
+# This is the canonical web build step, including direct package creation.
+# Never package an old dist/public tree after a failed or skipped build.
+echo "🌐 Building the latest web dashboard..."
+if ! npm run build; then
+    echo "❌ Web build failed; package creation stopped. Fix the build errors and retry." >&2
+    exit 1
+fi
+if [ ! -f "dist/public/index.html" ]; then
+    echo "❌ Web build did not produce dist/public/index.html; package creation stopped." >&2
+    exit 1
+fi
+
 # Get version from pyproject.toml or use default (compatible with both GNU and BSD grep)
 VERSION=$(grep '^version = ' python/pyproject.toml 2>/dev/null | head -1 | sed 's/version = "\(.*\)"/\1/' || echo "1.0.0")
 
@@ -29,7 +53,7 @@ ARCH="all"
 
 # Create package directory structure
 PKG_NAME="sketchatone_${VERSION}_${ARCH}"
-PKG_DIR="dist/$PKG_NAME"
+PKG_DIR="$OUTPUT_DIR/$PKG_NAME"
 
 echo "📦 Package: sketchatone"
 echo "📦 Version: $VERSION"
@@ -61,6 +85,10 @@ if [ -d "public/configs" ]; then
     echo "  → Config files included:"
     ls -la "$PKG_DIR/opt/sketchatone/configs/" 2>/dev/null || echo "    (none)"
 fi
+
+# Let dpkg preserve locally edited presets across upgrades and removal.
+find "$PKG_DIR/opt/sketchatone/configs" -type f | sed "s|^$PKG_DIR||" \
+    > "$PKG_DIR/DEBIAN/conffiles"
 
 # Copy built webapp if it exists
 # Server expects files at dist/public relative to the python directory
@@ -105,12 +133,15 @@ cat > "$PKG_DIR/usr/bin/sketchatone" << 'BINEOF'
 # Sketchatone launcher - runs Python module directly with runtime JACK detection
 export PYTHONPATH="/opt/sketchatone/python:$PYTHONPATH"
 
-# Auto-detect Zynthian environment and add venv to PYTHONPATH if available
-if [ -d "/zynthian/venv/lib/python3.11/site-packages" ]; then
-    export PYTHONPATH="$PYTHONPATH:/zynthian/venv/lib/python3.11/site-packages"
+# Use only matching Python packages from Zynthian for optional JACK support.
+PYTHON=/opt/sketchatone/venv/bin/python
+PYTHON_VERSION="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+ZYNTHIAN_PACKAGES="/zynthian/venv/lib/python${PYTHON_VERSION}/site-packages"
+if [ -d "$ZYNTHIAN_PACKAGES" ]; then
+    export PYTHONPATH="$PYTHONPATH:$ZYNTHIAN_PACKAGES"
 fi
 
-exec python3 -m sketchatone.cli.server "$@"
+exec "$PYTHON" -m sketchatone.cli.server "$@"
 BINEOF
 chmod +x "$PKG_DIR/usr/bin/sketchatone"
 
@@ -126,15 +157,13 @@ Wants=jack2.service
 Type=simple
 User=root
 WorkingDirectory=/opt/sketchatone
-# Include Zynthian venv for JACK-Client package (safe to include even on non-Zynthian systems)
-Environment="PYTHONPATH=/opt/sketchatone/python:/zynthian/venv/lib/python3.11/site-packages:/usr/lib/python3/dist-packages"
 Environment="DISPLAY=:0"
 # Delay startup to ensure JACK is fully ready if present (helps with Zynthian boot)
 ExecStartPre=/bin/sleep 3
 # --poll 2000: keep the server running while waiting for a tablet to be plugged in,
 # instead of exiting (which would loop indefinitely under Restart=on-failure and prevent
 # the web UI from ever being reachable on always-on setups).
-ExecStart=/usr/bin/python3 -m sketchatone.cli.server -c /opt/sketchatone/configs/config.json --poll 2000
+ExecStart=/usr/bin/sketchatone -c /opt/sketchatone/configs/config.json --poll 2000 --network-config /etc/sketchatone/network.json
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=5
@@ -152,8 +181,7 @@ Version: $VERSION
 Section: sound
 Priority: optional
 Architecture: $ARCH
-Depends: python3 (>= 3.8), python3-pip, libhidapi-hidraw0, libhidapi-dev, libasound2, python3-dev, build-essential
-Recommends: libjack0 | libjack-jackd2-0, python3-rtmidi
+Depends: python3 (>= 3.11), python3-venv, python3-rtmidi, python3-evdev, libhidapi-hidraw0, libhidapi-dev, libusb-1.0-0-dev, libudev-dev, pkg-config, libasound2, libasound2-dev, python3-dev, build-essential
 Maintainer: Sketchatone Project
 Description: MIDI Strummer for Drawing Tablets
  Sketchatone converts drawing tablet input into expressive MIDI output,
@@ -172,7 +200,8 @@ CONTROLEOF
 # Create postinst script (runs after installation)
 cat > "$PKG_DIR/DEBIAN/postinst" << 'POSTINSTEOF'
 #!/bin/bash
-set -e
+set -eE
+trap 'echo "ERROR: Sketchatone installation failed at line $LINENO. Fix the error above and run sudo dpkg --configure sketchatone." >&2' ERR
 
 echo ""
 echo "=========================================="
@@ -192,71 +221,25 @@ echo "Note: MIDI backend (ALSA/JACK) can be configured"
 echo "      in the web UI after installation."
 echo ""
 
-# Install the systemd service
-cp /opt/sketchatone/sketchatone.service /etc/systemd/system/sketchatone.service
-
-# Install Python dependencies
+# Use the distribution interpreter, never system pip or a downloaded Python.
 echo ""
 echo "📦 Installing Python dependencies..."
+/usr/bin/python3 -c 'import sys; sys.exit("Sketchatone requires stock Python 3.11 or newer (Raspberry Pi OS Bookworm+).") if sys.version_info < (3, 11) else None'
+# Re-running venv refreshes its interpreter/config without deleting installed
+# packages. System site packages expose apt's native rtmidi and evdev builds.
+/usr/bin/python3 -m venv --system-site-packages /opt/sketchatone/venv
+PYTHON=/opt/sketchatone/venv/bin/python
+"$PYTHON" -m pip install --upgrade pip setuptools wheel Cython
+# hidapi's ordinary wheel uses libusb rather than the tablet hidraw backend.
+HIDAPI_WITH_HIDRAW=1 "$PYTHON" -m pip install \
+    --no-binary hidapi --force-reinstall --no-cache-dir \
+    --no-build-isolation 'hidapi>=0.14.0'
+# Resolve every required dependency (including pyusb) from the manifest.
+"$PYTHON" -m pip install --upgrade -e /opt/sketchatone/python
+"$PYTHON" -c 'import websockets, hid, inquirer, colorama, cryptography, rtmidi, evdev, usb.core'
 
-# Function to install a package with fallback methods
-install_package() {
-    local package="$1"
-
-    # Try with --break-system-packages first (Debian 12+)
-    if pip3 install --break-system-packages "$package" 2>/dev/null; then
-        return 0
-    fi
-
-    # Try without flag (older systems)
-    if pip3 install "$package" 2>/dev/null; then
-        return 0
-    fi
-
-    # Try with apt if available (for common packages)
-    local apt_name=$(echo "$package" | sed 's/>=.*//' | sed 's/-/_/g')
-    if apt-cache show "python3-$apt_name" >/dev/null 2>&1; then
-        echo "  → Installing $apt_name via apt..."
-        apt install -y --allow-downgrades "python3-$apt_name" 2>/dev/null && return 0
-    fi
-
-    return 1
-}
-
-# Install common dependencies
-install_package "websockets>=11.0.0" || echo "⚠️  Warning: websockets install failed"
-install_package "hidapi>=0.14.0" || echo "⚠️  Warning: hidapi install failed"
-install_package "inquirer>=3.1.0" || echo "⚠️  Warning: inquirer install failed"
-install_package "colorama>=0.4.6" || echo "⚠️  Warning: colorama install failed"
-install_package "cryptography>=41.0.0" || echo "⚠️  Warning: cryptography install failed"
-install_package "evdev>=1.6.0" || echo "⚠️  Warning: evdev install failed"
-install_package "typing-extensions>=4.0.0" || true  # only needed on Python <3.10
-
-# Install python-rtmidi for ALSA support - first try apt, then pip
-echo "📦 Installing python-rtmidi (ALSA backend)..."
-if apt-cache show python3-rtmidi >/dev/null 2>&1; then
-    echo "  → Installing from apt (python3-rtmidi)..."
-    apt-get install -y python3-rtmidi && echo "  ✓ Installed from apt" || {
-        echo "  ⚠️  apt install failed, trying pip..."
-        install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
-    }
-else
-    echo "  → python3-rtmidi not available in apt, using pip..."
-    install_package "python-rtmidi>=1.5.0" || echo "  ⚠️  Warning: python-rtmidi install failed"
-fi
-
-# JACK support is available via Zynthian venv if present (auto-detected at runtime)
-
-# Install sketchatone package itself (creates package metadata with version info)
-# --no-deps: deps were already installed explicitly above, so skip pip resolution.
-echo "📦 Installing sketchatone package (no-deps; deps installed above)..."
-cd /opt/sketchatone/python
-pip3 install --break-system-packages --no-deps -e . 2>/dev/null \
-    || pip3 install --no-deps -e . 2>/dev/null \
-    || {
-        echo "⚠️  Warning: sketchatone package install failed, version may show as 0.0.0-dev"
-    }
-cd - >/dev/null
+# Install the service only after all required dependencies are ready.
+cp /opt/sketchatone/sketchatone.service /etc/systemd/system/sketchatone.service
 
 # Set correct permissions
 chmod +x /usr/bin/sketchatone
@@ -274,6 +257,12 @@ if [ ! -f /opt/sketchatone/configs/config.json ]; then
 fi
 
 # Reload systemd daemon to recognize new service
+# Device networking is separate from presets and disabled until explicitly configured.
+# Do not overwrite existing credentials or install/activate NetworkManager on upgrades.
+install -d -m 700 /etc/sketchatone
+if [ -f /etc/sketchatone/network.json ]; then
+    chmod 600 /etc/sketchatone/network.json
+fi
 systemctl daemon-reload
 
 # Detect the currently-configured mode so upgrades don't clobber user choice.
@@ -380,7 +369,7 @@ set -e
 systemctl daemon-reload
 
 echo "Sketchatone has been uninstalled."
-echo "Note: Python dependencies were not removed."
+echo "Note: The private virtual environment and user configuration were retained."
 
 exit 0
 POSTRMEOF
@@ -390,92 +379,11 @@ chmod +x "$PKG_DIR/DEBIAN/postrm"
 # binary "._*" files on the Pi (finddevice.py crashes on those).
 find "$PKG_DIR" \( -name '._*' -o -name '.DS_Store' \) -delete 2>/dev/null || true
 
-# Build the package
-echo ""
-echo "💿 Building Debian package..."
-
-# Check if dpkg-deb is available (Linux) or not (macOS)
-if command -v dpkg-deb &> /dev/null; then
-    # Build directly on Linux
-    dpkg-deb --build "$PKG_DIR"
-    mv "${PKG_DIR}.deb" "dist/sketchatone-${VERSION}.deb"
-
-    # Clean up
-    echo "🧹 Cleaning up..."
+# Generators own only their package artifacts, never the shared bundle helper.
+if [ "$TREE_ONLY" -eq 0 ] && command -v dpkg-deb >/dev/null 2>&1; then
+    dpkg-deb --build "$PKG_DIR" "$OUTPUT_DIR/sketchatone-${VERSION}.deb"
     rm -rf "$PKG_DIR"
-
-    echo ""
-    echo "=========================================="
-    echo "✅ Debian package created successfully!"
-    echo "=========================================="
-    echo ""
-    echo "Package: dist/sketchatone-${VERSION}.deb"
-    echo ""
-    echo "To install:"
-    echo "  sudo apt install ./dist/sketchatone-${VERSION}.deb"
-    echo ""
 else
-    # On macOS, create a tarball of the package structure
-    echo "  (dpkg-deb not available - creating package structure tarball)"
-
-    # Create tarball of the package directory.
-    # COPYFILE_DISABLE / --no-mac-metadata prevent BSD tar from embedding AppleDouble
-    # ("._*") entries from xattrs, which GNU tar on the Pi would otherwise extract as
-    # literal binary sidecar files.
-    TARBALL="dist/sketchatone-${VERSION}-deb-pkg.tar.gz"
-    cd dist
-    COPYFILE_DISABLE=1 tar --no-mac-metadata --exclude='._*' --exclude='.DS_Store' \
-        -czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME" 2>/dev/null \
-        || COPYFILE_DISABLE=1 tar --exclude='._*' --exclude='.DS_Store' \
-            -czf "sketchatone-${VERSION}-deb-pkg.tar.gz" "$PKG_NAME"
-    cd ..
-
-    # Create a helper script to build the deb on the Pi (before cleanup)
-    cat > "dist/install-sketchatone.sh" << INSTALLEOF
-#!/bin/bash
-# Install Sketchatone on Raspberry Pi
-set -e
-
-echo "Installing Sketchatone ${VERSION}..."
-
-# Extract package structure
-tar xzf sketchatone-${VERSION}-deb-pkg.tar.gz
-
-# Build the .deb
-dpkg-deb --build sketchatone_${VERSION}_all
-
-# Install it
-apt install -y --allow-downgrades ./sketchatone_${VERSION}_all.deb
-
-# Clean up
-rm -rf sketchatone_${VERSION}_all sketchatone-${VERSION}-deb-pkg.tar.gz install-sketchatone.sh
-
-echo ""
-echo "✅ Sketchatone installed successfully!"
-echo ""
-echo "Run: sketchatone -c /opt/sketchatone/configs/config.json"
-INSTALLEOF
-    chmod +x "dist/install-sketchatone.sh"
-
-    # Clean up
-    echo "🧹 Cleaning up..."
-    rm -rf "$PKG_DIR"
-
-    echo ""
-    echo "=========================================="
-    echo "✅ Package structure created successfully!"
-    echo "=========================================="
-    echo ""
-    echo "Files created:"
-    echo "  - $TARBALL"
-    echo "  - dist/install-sketchatone.sh"
-    echo ""
-    echo "To install on Raspberry Pi / Zynthian:"
-    echo ""
-    echo "  # Copy files to Pi"
-    echo "  scp dist/sketchatone-${VERSION}-deb-pkg.tar.gz dist/install-sketchatone.sh sketchy@sketchatone.local:~/"
-    echo ""
-    echo "  # On the Pi:"
-    echo "  ./install-sketchatone.sh"
-    echo ""
+    echo "Package tree: $PKG_DIR"
+    echo "Use ./package-for-pi.sh for the unified release bundle and installer."
 fi

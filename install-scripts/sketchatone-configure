@@ -109,6 +109,33 @@ HDR
     pause
 }
 
+network_menu() {
+    clear
+    cat << 'HDR'
+==========================================
+ Device networking (optional)
+==========================================
+The web dashboard's Network panel manages an ordered Wi-Fi list, a fallback
+hotspot, and optional phone USB tethering. Settings are stored separately
+in /etc/sketchatone/network.json and are OFF by default.
+
+Requires an existing, running NetworkManager installation. This menu does
+not replace the OS network stack or enable network management.
+
+For access without a tablet plugged in, choose always-on in Autostart mode.
+USB tethering requires a data cable and enabling tethering on the phone.
+iPhone tethering also requires Linux ipheth, usbmuxd and libimobiledevice.
+HDR
+    echo ""
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli general status
+    else
+        print_warning "NetworkManager (nmcli) is not installed."
+        print_info "Configure NetworkManager through your OS before enabling this feature."
+    fi
+    pause
+}
+
 main_menu() {
     while true; do
         clear
@@ -119,15 +146,26 @@ main_menu() {
   1) Autostart mode      (usb-trigger / always-on / manual)
   2) USB MIDI Gadget     (Pi as a USB MIDI device)
   3) Boot-time trimming  (faster boot on Pi OS Lite)
+  4) Device networking  (Wi-Fi fallback and USB tethering information)
+  5) Native display UI  (optional add-on configuration)
   s) Show current status
   q) Quit
 HDR
         echo ""
-        read -r -p "Choose [1-3, s, q]: " choice
+        read -r -p "Choose [1-5, s, q]: " choice
         case "$choice" in
             1) autostart_menu ;;
             2) usb_gadget_menu ;;
             3) boot_trim_menu ;;
+            4) network_menu ;;
+            5)
+                if [ -x /usr/bin/sketchatone-ui-configure ]; then
+                    sketchatone-ui-configure
+                else
+                    print_info "Install the UI add-on using the release installer with --with-ui."
+                    pause
+                fi
+                ;;
             s|S) clear; sketchatone-setup --status; pause ;;
             q|Q|"") echo ""; exit 0 ;;
             *) print_error "Invalid choice: $choice"; sleep 1 ;;
@@ -136,4 +174,15 @@ HDR
 }
 
 check_root
-main_menu
+case "${1:-}" in
+    --appliance)
+        exec /opt/sketchatone/venv/bin/python -m sketchatone.cli.appliance_setup
+        ;;
+    "")
+        main_menu
+        ;;
+    *)
+        print_error "Usage: sketchatone-configure [--appliance]"
+        exit 1
+        ;;
+esac

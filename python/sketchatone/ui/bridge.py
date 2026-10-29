@@ -1,24 +1,30 @@
 """
-Subprocess bridge between the Kivy UI and the Sketchatone backend.
+WebSocket bridge between the Kivy UI and the Sketchatone backend.
 
 The backend (StrummerWebSocketServer) runs in a child Python process with
-its own GIL, eliminating contention between Kivy's render loop and the HID
-reader / strummer threads. The bridge connects to the child as a WebSocket
+its own GIL in standalone mode, eliminating contention between Kivy's render
+loop and the HID reader / strummer threads. The bridge connects as a WebSocket
 client and forwards events to Kivy widgets via the same subscribe/emit API
 as before, so no panel widget code needs to change.
+With ``connect=URL`` the bridge instead attaches to a separately managed
+service and never starts or terminates a backend process.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import subprocess
 import sys
 import threading
 import types
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+
+_logger = logging.getLogger(__name__)
 
 # Packaged fallback config used when the config pool is empty (all
 # user configs deleted). Shipped via ``[tool.setuptools.package-data]``
@@ -51,6 +57,23 @@ Listener = Callable[[Any], None]
 
 # Default internal WS port used when the caller does not specify one.
 _DEFAULT_WS_PORT = 8081
+_RECONNECT_INITIAL_DELAY = 0.25
+_RECONNECT_MAX_DELAY = 5.0
+_RECONNECT_STABLE_SECONDS = 10.0
+
+
+def validate_connect_url(value: str) -> str:
+    """Validate an existing backend endpoint without requiring Kivy."""
+    try:
+        parsed = urlsplit(value)
+        valid = (parsed.scheme in ('ws', 'wss') and parsed.hostname
+                 and not parsed.fragment and not any(c.isspace() for c in value))
+        parsed.port  # Validate malformed or out-of-range ports too.
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError('--connect requires a ws:// or wss:// URL with a host')
+    return value
 
 
 def _schedule_on_kivy_main(func: Callable[..., None], *args: Any) -> None:
@@ -117,7 +140,7 @@ def _adapt_strum_ns(strum_dict: dict) -> types.SimpleNamespace:
 
 
 class UIBridge:
-    """Owns the backend subprocess, exposes a subscribe/emit API for the Kivy UI."""
+    """Attach to a backend, or own a subprocess for standalone development."""
 
     def __init__(
         self,
@@ -127,7 +150,14 @@ class UIBridge:
         ws_port: Optional[int] = None,
         poll_ms: Optional[int] = 2000,
         dev_mode: bool = False,
+        connect: Optional[str] = None,
     ) -> None:
+        if connect is not None:
+            validate_connect_url(connect)
+            if (strummer_config_path is not None or dev_mode or ws_port is not None
+                    or throttle_ms != 150 or poll_ms != 2000):
+                raise ValueError('--connect cannot configure or start the backend')
+        self._connect = connect
         self._strummer_config_path = strummer_config_path
         self._throttle_ms = throttle_ms
         self._ws_port = ws_port or _DEFAULT_WS_PORT
@@ -142,6 +172,7 @@ class UIBridge:
         self._run_task: Optional[asyncio.Task] = None
         self._send_queue: Optional[asyncio.Queue] = None
         self._ready = threading.Event()
+        self._stopping = threading.Event()
         self._start_error: Optional[BaseException] = None
 
         # Cached payloads replayed to late subscribers (same as before).
@@ -195,14 +226,19 @@ class UIBridge:
     # ---- Lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
-        """Spawn the backend subprocess and connect as a WebSocket client.
+        """Start a WebSocket client, spawning a backend only in standalone mode.
 
         Blocks until the connection is established (up to ~12 s) then returns.
         Re-raises any startup exception so callers can show a user-friendly
         message instead of falling through into a half-initialised Kivy app.
+        Attach mode returns immediately and retries in the background, allowing
+        the UI to start before the system service is available.
         """
         if self._thread is not None:
             return
+        self._ready.clear()
+        self._stopping.clear()
+        self._start_error = None
         self._thread = threading.Thread(
             target=self._thread_main, name='sketchatone-bridge', daemon=True)
         self._thread.start()
@@ -212,9 +248,13 @@ class UIBridge:
 
     def stop(self) -> None:
         """Cancel the asyncio task, join the worker thread, and kill the subprocess."""
+        self._stopping.set()
         loop = self._loop
         if loop is not None and self._run_task is not None:
-            loop.call_soon_threadsafe(self._run_task.cancel)
+            try:
+                loop.call_soon_threadsafe(self._run_task.cancel)
+            except RuntimeError:
+                pass  # The worker may already have closed its event loop.
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None
@@ -222,6 +262,8 @@ class UIBridge:
         self._kill_process()
 
     def _kill_process(self) -> None:
+        if self._connect is not None:
+            return
         proc = self._process
         if proc is None or proc.poll() is not None:
             return
@@ -250,33 +292,66 @@ class UIBridge:
     # ---- Worker thread (asyncio loop) --------------------------------------
 
     def _thread_main(self) -> None:
-        try:
-            cmd = self._build_server_cmd()
-            self._process = subprocess.Popen(cmd)
-        except Exception as exc:
-            self._start_error = exc
-            self._ready.set()
-            return
+        if self._connect is None:
+            try:
+                cmd = self._build_server_cmd()
+                self._process = subprocess.Popen(cmd)
+            except Exception as exc:
+                self._start_error = exc
+                self._ready.set()
+                return
 
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
-        self._send_queue = asyncio.Queue()
         try:
             self._run_task = loop.create_task(self._run())
+            if self._connect is not None:
+                self._ready.set()
+            if self._stopping.is_set():
+                self._run_task.cancel()
             loop.run_until_complete(self._run_task)
         except asyncio.CancelledError:
             pass
         finally:
-            try:
-                loop.close()
-            except Exception:
-                pass
+            loop.close()
             self._kill_process()
 
     async def _run(self) -> None:
-        """Connect to the server subprocess and forward messages indefinitely."""
+        """Connect to an existing service or the standalone subprocess."""
         import websockets
+        from websockets.exceptions import ConnectionClosed, InvalidHandshake
+
+        if self._connect is not None:
+            delay = _RECONNECT_INITIAL_DELAY
+            outage_reported = False
+            while not self._stopping.is_set():
+                connected_at = None
+                try:
+                    ws = await websockets.connect(
+                        self._connect, open_timeout=2.0, close_timeout=1.0)
+                    connected_at = asyncio.get_running_loop().time()
+                    if outage_reported:
+                        _logger.info('Backend WebSocket connection restored')
+                    outage_reported = False
+                    await self._serve_connection(ws)
+                    _logger.info('Backend WebSocket disconnected; reconnecting')
+                except asyncio.CancelledError:
+                    raise
+                except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake) as exc:
+                    log = _logger.debug if outage_reported else _logger.warning
+                    log('Backend WebSocket unavailable (%s); retrying', exc)
+                    outage_reported = True
+                if (connected_at is not None
+                        and asyncio.get_running_loop().time() - connected_at
+                        >= _RECONNECT_STABLE_SECONDS):
+                    delay = _RECONNECT_INITIAL_DELAY
+                self._mark_disconnected()
+                if self._stopping.is_set():
+                    break
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, _RECONNECT_MAX_DELAY)
+            return
 
         url = f'ws://127.0.0.1:{self._ws_port}'
 
@@ -284,9 +359,10 @@ class UIBridge:
         ws = None
         for _ in range(60):  # up to ~12 s at 200 ms intervals
             try:
-                ws = await websockets.connect(url)
+                ws = await websockets.connect(url, open_timeout=2.0, close_timeout=1.0)
                 break
-            except Exception:
+            except (OSError, asyncio.TimeoutError, ConnectionClosed, InvalidHandshake) as exc:
+                _logger.debug('Waiting for standalone backend WebSocket: %s', exc)
                 await asyncio.sleep(0.2)
 
         if ws is None:
@@ -295,36 +371,67 @@ class UIBridge:
             self._ready.set()
             return
 
-        self._ws = ws
         self._ready.set()
-
-        send_task = asyncio.ensure_future(self._send_loop())
         try:
-            async for raw in ws:
-                try:
-                    self._dispatch_message(json.loads(raw))
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            await self._serve_connection(ws)
+        except (OSError, asyncio.TimeoutError, ConnectionClosed) as exc:
+            _logger.warning('Standalone backend WebSocket disconnected: %s', exc)
+
+    async def _serve_connection(self, ws: Any) -> None:
+        """Use a fresh outbox per connection; never replay disconnected edits."""
+        from websockets.exceptions import ConnectionClosed
+
+        self._ws = ws
+        self._send_queue = asyncio.Queue()
+        send_task = asyncio.create_task(self._send_loop())
+        receive_task = asyncio.create_task(self._receive_loop(ws))
+        try:
+            done, _ = await asyncio.wait(
+                (send_task, receive_task), return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
         finally:
-            # Signal the send loop to stop.
-            if self._send_queue is not None:
-                await self._send_queue.put(None)
-            await send_task
+            self._ws = None
+            self._send_queue = None
+            for task in (send_task, receive_task):
+                task.cancel()
+            await asyncio.gather(send_task, receive_task, return_exceptions=True)
+            try:
+                await asyncio.wait_for(ws.close(), timeout=1.0)
+            except (OSError, asyncio.TimeoutError, ConnectionClosed) as exc:
+                _logger.debug('Error closing backend WebSocket: %s', exc)
+
+    async def _receive_loop(self, ws: Any) -> None:
+        async for raw in ws:
+            try:
+                message = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                _logger.warning('Ignoring malformed backend WebSocket JSON: %s', exc)
+                continue
+            if not isinstance(message, dict) or not isinstance(message.get('type'), str):
+                _logger.warning('Ignoring backend WebSocket message without a string type')
+                continue
+            self._dispatch_message(message)
+
+    def _mark_disconnected(self) -> None:
+        self._last_config = None
+        self._last_midi_input = None
+        self._last_button_detection = False
+        self._last_status = {'connected': False, 'deviceName': None}
+        self._emit('device-status', dict(self._last_status))
+        self._emit('midi-input', {'type': 'midi-input', 'connected': False})
+        self._emit('button-detection-state', {'enabled': False})
 
     async def _send_loop(self) -> None:
         """Drain the outgoing queue and write frames to the WebSocket."""
         ws = self._ws
+        queue = self._send_queue
         while True:
-            msg = await self._send_queue.get()
+            msg = await queue.get()
             if msg is None:
                 break
             if ws is not None:
-                try:
-                    await ws.send(msg)
-                except Exception:
-                    pass
+                await ws.send(msg)
 
     # ---- Message dispatch --------------------------------------------------
 
@@ -378,10 +485,18 @@ class UIBridge:
         """Thread-safe: enqueue a JSON message for the send loop."""
         loop = self._loop
         queue = self._send_queue
-        if loop is None or queue is None:
+        ws = self._ws
+        if loop is None or queue is None or ws is None or self._stopping.is_set():
             return
+
+        def enqueue() -> None:
+            # A disconnect can happen after call_soon_threadsafe but before
+            # this callback runs. Do not enqueue into a replacement session.
+            if self._ws is ws and self._send_queue is queue:
+                queue.put_nowait(json.dumps(msg))
+
         try:
-            loop.call_soon_threadsafe(queue.put_nowait, json.dumps(msg))
+            loop.call_soon_threadsafe(enqueue)
         except Exception:
             pass
 

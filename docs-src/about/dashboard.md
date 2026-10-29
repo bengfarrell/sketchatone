@@ -5,7 +5,7 @@ description: Configure and monitor Sketchatone in real-time with the web interfa
 
 # Web Dashboard
 
-The Sketchatone web dashboard provides a visual interface for configuring and monitoring your tablet in real-time. Changes made in the dashboard take effect immediately without restarting the application.
+The Sketchatone web dashboard provides a visual interface for configuring and monitoring your tablet in real-time. Musical settings generally take effect immediately. Server ports require a restart, and device networking uses a separate explicit Apply action.
 
 ## Accessing the Dashboard
 
@@ -20,10 +20,6 @@ The macOS app automatically opens the dashboard in your browser when launched.
 Start the server:
 
 ```bash
-# Node.js
-npm run server
-
-# Python
 python -m sketchatone.cli.server
 ```
 
@@ -49,6 +45,33 @@ Access from another device on your network: `http://<pi-hostname>` (or `http://<
 ---
 
 ## Dashboard Features
+
+### Device Networking
+
+The **Network** panel is independent of musical presets. With the Python server
+started using `--network-config PATH`, it exposes device-level JSON and form
+controls for opt-in NetworkManager management:
+
+- Add, remove, and reorder Wi-Fi networks. The first successful connection wins;
+  internet access is not required.
+- Configure the fallback hotspot and its address/password.
+- Enable independent phone USB tethering.
+- View management status and assigned interface addresses.
+
+Edits stay in a local draft until **Apply networking** is confirmed. Switching
+networks may disconnect the browser; join the new network or fallback hotspot
+and reconnect to the Pi. A successful apply response means settings were saved
+and the transition was accepted, not that a network connection has succeeded.
+Reapplying retries the Wi-Fi list when currently in fallback hotspot mode.
+
+Saved passwords are never returned to the browser. Leaving a password unchanged
+preserves it; enter a replacement to change it. Network settings are not part of
+config/preset import or export. The JSON view uses the same redacted draft.
+
+Management is disabled by default. Unsupported platforms, a missing
+NetworkManager installation, or a server without `--network-config` show an
+availability explanation rather than modifying OS networking. These controls
+require a trusted network; there is no separate dashboard login.
 
 ### 1. Live Tablet Monitoring
 
@@ -168,10 +191,6 @@ After connecting or disconnecting MIDI devices:
 
 2. **Via command-line arguments:**
    ```bash
-   # Node.js
-   npm run server -- --midi-port 2
-
-   # Python
    python -m sketchatone.cli.server --midi-port 2
    ```
 
@@ -299,5 +318,4 @@ This minimizes resource usage. All configuration must be done via JSON files.
 - **[Configuration](/about/configuration-settings/)** - Complete JSON configuration reference
 - **[Action Rules](/about/action-rules/)** - Button configuration details
 - **[Troubleshooting](/about/troubleshooting/)** - Common issues and solutions
-- **[Node.js CLI](/about/node-cli/)** - Server command-line options
 - **[Python CLI](/about/python-cli/)** - Server command-line options

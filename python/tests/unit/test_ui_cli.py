@@ -79,6 +79,32 @@ class TestUICliArgParser:
         args = ui_cli.build_arg_parser().parse_args(['--hot-reload'])
         assert args.hot_reload is True
 
+    def test_connect_and_presentation_options(self):
+        args = ui_cli.build_arg_parser().parse_args([
+            '--connect', 'ws://127.0.0.1:8081', '--fullscreen', '--shell',
+            '--fps', '10', '--hot-reload',
+        ])
+        assert args.connect == 'ws://127.0.0.1:8081'
+        assert args.fullscreen and args.shell and args.hot_reload
+
+    @pytest.mark.parametrize('options', [
+        ['-c', 'config.json'], ['-cconfig.json'], ['--config=config.json'],
+        ['--dev'], ['--enable-ws'], ['--ws-port', '8081'],
+        ['--ws-port=8081'], ['--poll', '2000'], ['--throttle', '150'],
+        ['--po', '2000'], ['--de'],
+    ])
+    def test_connect_rejects_explicit_backend_options(self, options):
+        with pytest.raises(SystemExit) as exc:
+            ui_cli.build_arg_parser().parse_args(
+                ['--connect', 'ws://localhost:8081', *options])
+        assert exc.value.code == 2
+
+    @pytest.mark.parametrize('url', ['http://localhost', 'ws://', 'ws://host:bad'])
+    def test_connect_rejects_invalid_urls(self, url):
+        with pytest.raises(SystemExit) as exc:
+            ui_cli.build_arg_parser().parse_args(['--connect', url])
+        assert exc.value.code == 2
+
 
 class TestResolveConfig:
     """`-c` resolves relative paths against cwd, then the repo root."""
@@ -134,6 +160,71 @@ class TestUICliDryRun:
         )
         assert result.returncode == 0
         assert 'Sketchatone' in result.stdout
+
+    def test_connect_dry_run(self, capsys, monkeypatch):
+        monkeypatch.setattr(sys, 'argv', [
+            'ui', '--connect', 'ws://127.0.0.1:8081', '--dry-run',
+        ])
+        with pytest.raises(SystemExit) as exc:
+            ui_cli.main()
+        assert exc.value.code == 0
+        assert 'ws://127.0.0.1:8081' in capsys.readouterr().out
+
+    def test_main_forwards_connect_without_resolving_local_config(self, monkeypatch):
+        import faulthandler
+        received = {}
+        monkeypatch.setattr(faulthandler, 'enable', lambda **kwargs: None)
+        monkeypatch.setattr(faulthandler, 'register', lambda *args, **kwargs: None)
+        monkeypatch.setattr(sys, 'argv', [
+            'ui', '--connect', 'ws://127.0.0.1:8081', '--shell',
+        ])
+        monkeypatch.setattr(ui_cli, 'run_app',
+                            lambda *args, **kwargs: received.update(kwargs) or 0)
+        with pytest.raises(SystemExit) as exc:
+            ui_cli.main()
+        assert exc.value.code == 0
+        assert received['connect'] == 'ws://127.0.0.1:8081'
+        assert received['strummer_config'] is None
+        assert received['shell'] is True
+
+
+class TestAttachForwarding:
+    @pytest.mark.parametrize('shell', [False, True])
+    def test_run_app_forwards_endpoint_to_dashboard_or_shell(self, monkeypatch, shell):
+        pytest.importorskip('kivy')
+        from sketchatone.ui import app as app_mod
+        received = {}
+        target = ui_cli if shell else app_mod
+        name = '_run_shell_app' if shell else 'run_app'
+        monkeypatch.setattr(target, name,
+                            lambda *args, **kwargs: received.update(kwargs) or 0)
+        assert ui_cli.run_app(
+            None, 150, False, shell=shell, connect='ws://localhost:8081') == 0
+        assert received['connect'] == 'ws://localhost:8081'
+
+    def test_shell_passes_connect_to_bridge_and_cleans_up(self, monkeypatch):
+        pytest.importorskip('kivy')
+        from kivy.app import App
+        from sketchatone.ui import bridge as bridge_mod
+        received = {}
+        lifecycle = []
+
+        class Bridge:
+            def __init__(self, **kwargs):
+                received.update(kwargs)
+
+            def start(self):
+                lifecycle.append('start')
+
+            def stop(self):
+                lifecycle.append('stop')
+
+        monkeypatch.setattr(bridge_mod, 'UIBridge', Bridge)
+        monkeypatch.setattr(App, 'run', lambda self: None)
+        assert ui_cli._run_shell_app(
+            None, 150, None, 2000, False, connect='ws://localhost:8081') == 0
+        assert received['connect'] == 'ws://localhost:8081'
+        assert lifecycle == ['start', 'stop']
 
 
 class TestUICliRunAppWithoutKivy:

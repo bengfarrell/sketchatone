@@ -45,3 +45,37 @@ class TestWsHost:
         monkeypatch.setattr(app_mod.socket, 'gethostname', _boom)
         monkeypatch.setattr(app_mod.sys, 'platform', 'linux')
         assert _ws_host() == 'localhost'
+
+
+class TestAttachApp:
+    def test_run_app_passes_endpoint_to_bridge_and_app(self, monkeypatch):
+        received = {}
+        lifecycle = []
+
+        class Bridge:
+            def __init__(self, **kwargs):
+                received['bridge'] = kwargs
+
+            def start(self):
+                lifecycle.append('start')
+
+            def stop(self):
+                lifecycle.append('stop')
+
+        class App:
+            def __init__(self, **kwargs):
+                received['app'] = kwargs
+
+            def run(self):
+                lifecycle.append('run')
+
+        monkeypatch.setattr(app_mod, 'UIBridge', Bridge)
+        monkeypatch.setattr(app_mod, 'SketchatoneUIApp', App)
+        endpoint = 'ws://127.0.0.1:8081'
+        assert app_mod.run_app(
+            ws_port=None, fullscreen=False, connect=endpoint) == 0
+        assert received['bridge']['connect'] == endpoint
+        assert received['bridge']['strummer_config_path'] is None
+        assert received['app']['connect'] == endpoint
+        assert received['app']['config_path'] is None
+        assert lifecycle == ['start', 'run', 'stop']

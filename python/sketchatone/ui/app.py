@@ -407,7 +407,7 @@ class _TapLabel(ButtonBehavior, Label):
 class StatusBar(BoxLayout):
     def __init__(self, ws_port: Optional[int], config: Optional[str],
                  bridge: Optional[UIBridge] = None,
-                 on_show_welcome=None, **kwargs) -> None:
+                 on_show_welcome=None, connect: Optional[str] = None, **kwargs) -> None:
         super().__init__(
             orientation='horizontal',
             size_hint_y=None,
@@ -420,7 +420,8 @@ class StatusBar(BoxLayout):
 
         self._bridge = bridge
 
-        left_text = f'ws://{_ws_host()}:{ws_port}' if ws_port else 'in-process (no WS)'
+        left_text = connect or (
+            f'ws://{_ws_host()}:{ws_port}' if ws_port else 'in-process (no WS)')
         left = Label(
             text=left_text,
             color=theme.TEXT_SECONDARY,
@@ -545,6 +546,7 @@ class DashboardRoot(BoxLayout):
         active_id: str = DEFAULT_PANEL_ID,
         on_toggle_theme=None,
         on_show_welcome=None,
+        connect: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__(orientation='vertical', spacing=0, **kwargs)
@@ -560,7 +562,7 @@ class DashboardRoot(BoxLayout):
         self._header = HeaderArea(self._topbar, self._tabbar,
                                   on_show_welcome=on_show_welcome)
         self._statusbar = StatusBar(ws_port=ws_port, config=config, bridge=bridge,
-                                    on_show_welcome=on_show_welcome)
+                                    on_show_welcome=on_show_welcome, connect=connect)
 
         self.add_widget(self._header)
         self.add_widget(self._panel_area)
@@ -817,12 +819,14 @@ class SketchatoneUIApp(App):
         config_path: Optional[str],
         ws_port: Optional[int],
         bridge: Optional[UIBridge] = None,
+        connect: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._config_path = config_path
         self._ws_port = ws_port
         self._bridge = bridge
+        self._connect = connect
 
     def _apply_kiosk_size(self, kw: dict) -> None:
         # Scatter doesn't lay out its children, so we pin the size on
@@ -838,6 +842,7 @@ class SketchatoneUIApp(App):
             ws_port=self._ws_port,
             config=self._config_path,
             bridge=self._bridge,
+            connect=self._connect,
             active_id=active_id,
             on_toggle_theme=self.toggle_theme,
             on_show_welcome=self.show_welcome,
@@ -961,8 +966,9 @@ def run_app(
     dev_mode: bool = False,
     strummer_config: Optional[str] = None,
     hot_reload: bool = False,
+    connect: Optional[str] = None,
 ) -> int:
-    """Start the in-process bridge and run the app. Kivy graphics/input
+    """Start the WebSocket bridge and run the app. Kivy graphics/input
     config is pinned by the CLI entry point (``sketchatone.cli.ui``) so it
     takes effect before this module's top-level kivy imports trigger
     Window initialisation."""
@@ -972,6 +978,7 @@ def run_app(
         ws_port=ws_port,
         poll_ms=poll_ms,
         dev_mode=dev_mode,
+        connect=connect,
     )
     try:
         bridge.start()
@@ -998,6 +1005,7 @@ def run_app(
             config_path=strummer_config,
             ws_port=ws_port,
             bridge=bridge,
+            connect=connect,
         ).run()
     finally:
         bridge.stop()

@@ -1,17 +1,40 @@
 ---
 title: Node.js CLI
-description: Command-line tools for the Node.js/TypeScript implementation
+description: Manually launched Node.js tools for core musical behavior and diagnostics
 ---
 
 # Node.js CLI Tools
 
-This document describes the command-line tools available in the Sketchatone Node.js/TypeScript package.
+The Node.js/TypeScript implementation is a limited, manually launched alternative
+for core musical use and diagnostics. Python is the primary backend for packaged
+desktop installations and Raspberry Pi appliances.
+
+### Scope and maintenance
+
+Keep shared musical behavior synchronized with Python: tablet-to-strum processing,
+chord changes and progressions, note mapping, velocity, pitch bend, action rules,
+and common configuration semantics. Shared musical changes and bug fixes should
+include corresponding updates and regression coverage in both implementations.
+Node.js remains an alternate utility, not a frozen or deprecated reference.
+
+Appliance features do not need Node.js equivalents. Managed Wi-Fi, fallback
+hotspots, USB tethering management, guided appliance setup, system-service
+integration, and the native Pi UI belong to the Python appliance. Node's server
+can still serve the browser dashboard over networking managed by the OS; its
+Network panel reports device networking management as unsupported. JACK MIDI
+is also Python-only; Node uses rtmidi.
+
+Use the existing npm CLI commands below when you want to run Node manually.
+The release installers do not select it as a backend. See the
+[Python CLI](/about/python-cli/) for the primary runtime and
+[CLI Flags](/about/cli-flags/) for per-tool differences.
 
 ## Installation
 
-Build the CLI tools first:
+From the repository root, install dependencies and build the CLI tools:
 
 ```bash
+npm install
 npm run build:cli
 ```
 
@@ -26,7 +49,7 @@ npm run midi-strummer
 
 ## midi-strummer
 
-Converts tablet input to MIDI output. This is the main tool for using a graphics tablet as a musical strumming controller.
+Converts tablet input to MIDI output without the web server.
 
 ### Usage
 
@@ -94,8 +117,11 @@ WebSocket and HTTP server for streaming tablet/strummer events to web clients.
 
 ```bash
 npm run server [-- options]
-npm run dev-server [-- options]  # With automatic rebuild
+npm run dev-server [-- options]  # Rebuild once before launching
 ```
+
+Run `npm run build` instead of just `build:cli` when you also need to build the
+web dashboard assets.
 
 ### Optional Arguments
 

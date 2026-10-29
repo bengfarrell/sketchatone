@@ -11,8 +11,7 @@ When I was thinking of ways to make this work, the ordinary drawing tablet poppe
 now and they're really inexpensive!
 
 Anyway, I wanted to add a personal note here because this project is largely built with AI coding tools, as well as the rest of the documentation.
-There are almost too many configuration options and features to document and test, so AI was a big help - especially getting this working in Python which I'm not 
-as familiar with as Node.js, the other language I started with and continue to support in this project.
+There are almost too many configuration options and features to document and test, so AI was a big help - especially getting this working in Python, which I'm less familiar with.
 
 Perhaps as I use it more, I might pare down some of the features that I find I don't use, but for now though, its seems pretty fun to play with. 
 
@@ -80,16 +79,11 @@ The musical layer on top adds:
 - Parameter mappings (pressure → velocity, tilt → pitch bend, etc.)
 - Note repeater and transpose features
 
-## Implementations
+## Runtime
 
-Sketchatone is available in two implementations:
-
-| Implementation | Best For |
-|----------------|----------|
-| **Node.js/TypeScript** | macOS, web integration |
-| **Python** | Linux, Zynthian, JACK MIDI |
-
-Both implementations share the same configuration format and feature set, with Python additionally supporting JACK MIDI for professional Linux audio systems.
+Sketchatone uses a Python backend for desktop and Raspberry Pi installations,
+with a browser-based dashboard and an optional native Pi display. The backend
+also supports JACK MIDI for Linux audio systems such as Zynthian.
 
 ## Getting Started
 
@@ -102,5 +96,5 @@ Ready to turn your tablet into a musical instrument?
 ## Requirements
 
 - A graphics tablet with HID support (Wacom, XP-Pen, Huion, etc.)
-- Node.js 18+ (for TypeScript version) or Python 3.10+ (for Python version)
+- A Sketchatone installer for your platform, or a Python source installation (see [Builds & Installers](/about/builds/))
 - A MIDI-capable application (DAW, synthesizer, etc.)

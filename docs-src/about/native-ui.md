@@ -13,12 +13,15 @@ It covers the same ground as the [Web Dashboard](/about/dashboard/) but is desig
 
 ## Accessing the UI
 
-On a configured Pi the UI starts automatically when the tablet is plugged in and the Pi boots. If you've set up autostart via `sudo sketchatone-ui-configure`, the dashboard appears on the DSI display within a few seconds of login.
+Install the optional UI add-on from the unified Pi release using
+`sudo ./install-sketchatone.sh --with-ui`. If you've set up autostart via
+`sudo sketchatone-ui-configure`, the dashboard appears on the DSI display after
+console login. The backend runs as the shared always-on service.
 
 To start it manually (e.g. during development):
 
 ```bash
-sudo sketchatone-ui --fullscreen -c /opt/sketchatone-ui/configs/config.json
+sketchatone-ui --fullscreen
 ```
 
 See **[Python CLI](/about/python-cli/#ui)** for the full list of flags.
@@ -113,14 +116,21 @@ Manage named chord progressions. Each progression is a sequence of chords you ca
 
 ## Connecting from a browser
 
-The native UI and the web dashboard are complementary — you can run both at once. Start the UI with `--enable-ws` to also expose the WebSocket server on your local network:
+The native UI and web dashboard connect to the same backend service, so both
+can run at once. The packaged launcher attaches to the local service and never
+starts a competing tablet/MIDI engine:
 
 ```bash
-sudo sketchatone-ui --fullscreen --enable-ws \
-    -c /opt/sketchatone-ui/configs/config.json
+sketchatone-ui --fullscreen
 ```
 
 Then open a browser on another device to `http://<pi-hostname>.local` (if HTTP is enabled in the config) or connect a WebSocket client to `ws://<pi-hostname>:8081`. Changes made in either the native UI or the browser dashboard are reflected in both.
+
+Presets are stored in `/opt/sketchatone/configs`, and both packages use
+`/opt/sketchatone/venv`. For source development, use
+`python -m sketchatone.cli.ui --connect ws://127.0.0.1:8081` to attach explicitly.
+Without `--connect`, the source CLI retains its standalone child-backend mode.
+Closing an attached UI does not stop the service or web dashboard.
 
 ---
 
@@ -148,11 +158,14 @@ From the Server Settings panel (accessible via the status bar), enter a name and
 cat ~/.local/share/sketchatone-ui.log
 ```
 
-**Tablet not detected** — The UI will wait for a tablet if `--poll` is set. If the tablet was plugged in after boot, the udev rules should trigger detection automatically. Check the log for `[Tablet] connected` or error messages.
+**Tablet not detected** — The shared service polls for the tablet. Check
+`journalctl -u sketchatone` for connection messages. The UI itself does not own
+the tablet or install separate tablet permissions.
 
 **Dashboard feels sluggish** — The UI runs at 15 fps by default, which is appropriate for a settings dashboard. If you need smoother response, see **[Performance](/about/performance/)** for tuning options.
 
-**Can't connect from a browser** — Make sure `--enable-ws` is set and the WebSocket port (default 8081) is reachable. The status bar at the bottom of the native UI shows the WebSocket address.
+**Can't connect from a browser** — Check that `sketchatone.service` is running
+and that HTTP/WebSocket ports are enabled in its configuration and reachable.
 
 ---
 

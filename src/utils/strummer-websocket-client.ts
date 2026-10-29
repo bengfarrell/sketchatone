@@ -18,6 +18,19 @@ import type {
   ApplyConfigResult,
 } from '../types/tablet-events.js';
 import type { MidiPassthroughConnection } from '../models/midi-strummer-config.js';
+import type {
+  NetworkSettingsData,
+  NetworkStatusData,
+  NetworkSettingsResult,
+  SubmittedNetworkConfig,
+} from '../types/network-settings.js';
+
+/**
+ * How long the client keeps retrying (ignoring maxReconnectAttempts) after the
+ * server accepts network settings, since the device may drop off the network
+ * while it switches Wi-Fi / hotspot modes.
+ */
+export const NETWORK_APPLY_RECONNECT_WINDOW_MS = 3 * 60 * 1000;
 
 /** MIDI input port info from server */
 export interface ServerMidiInputPort {
@@ -92,6 +105,9 @@ export interface StrummerWebSocketClientEvents {
   'midi-input-status': ServerMidiInputStatus;
   'midi-devices': ServerMidiDevices;
   'action-event': ServerActionEvent;
+  'network-settings': NetworkSettingsData;
+  'network-status': NetworkStatusData;
+  'network-settings-result': NetworkSettingsResult;
   'error': Error;
 }
 
@@ -123,6 +139,10 @@ export class StrummerWebSocketClient extends EventEmitter {
   private _connectionState: ConnectionState = 'disconnected';
   private _deviceStatus: DeviceStatusData | null = null;
   private _config: ServerConfigData | null = null;
+  private _networkSettings: NetworkSettingsData | null = null;
+  private _networkStatus: NetworkStatusData | null = null;
+  private pendingNetworkRequests = new Set<string>();
+  private extendedReconnectUntil = 0;
   private _lastTabletData: TabletVisualizerData = {
     x: 0,
     y: 0,
@@ -154,6 +174,16 @@ export class StrummerWebSocketClient extends EventEmitter {
    */
   get config(): ServerConfigData | null {
     return this._config;
+  }
+
+  /** Last device network settings received from the server (passwords redacted). */
+  get networkSettings(): NetworkSettingsData | null {
+    return this._networkSettings;
+  }
+
+  /** Last device network status received from the server. */
+  get networkStatus(): NetworkStatusData | null {
+    return this._networkStatus;
   }
 
   /**
@@ -215,6 +245,11 @@ export class StrummerWebSocketClient extends EventEmitter {
       };
 
       this.ws.onclose = () => {
+        if (this.pendingNetworkRequests.size > 0) {
+          // A network apply may have been accepted just before the link dropped.
+          this.pendingNetworkRequests.clear();
+          this.extendReconnectWindow();
+        }
         this.setConnectionState('disconnected');
         this.scheduleReconnect();
       };
@@ -279,6 +314,46 @@ export class StrummerWebSocketClient extends EventEmitter {
       return;
     }
     this.send({ type: 'apply-config', config, configName, baseConfig, requestId });
+  }
+
+  /** Request device-level network settings (separate from musical config). */
+  requestNetworkSettings(): void {
+    this.send({ type: 'get-network-settings' });
+  }
+
+  /** Request the current device network status. */
+  requestNetworkStatus(): void {
+    this.send({ type: 'get-network-status' });
+  }
+
+  /**
+   * Submit device network settings. The server replies with a correlated
+   * 'network-settings-result'. Success means the settings were accepted and
+   * saved; the network transition happens afterwards and may drop this
+   * connection, so the reconnect window is extended automatically.
+   */
+  applyNetworkSettings(settings: SubmittedNetworkConfig, revision: string, requestId: string): void {
+    if (!this.isConnected) {
+      this.emit<NetworkSettingsResult>('network-settings-result', {
+        requestId, success: false, error: 'Not connected to the server.',
+      });
+      return;
+    }
+    this.pendingNetworkRequests.add(requestId);
+    this.send({ type: 'apply-network-settings', requestId, revision, settings });
+  }
+
+  /**
+   * Keep reconnecting for `durationMs` regardless of maxReconnectAttempts.
+   * Used only after an accepted network change; it expires on its own.
+   */
+  extendReconnectWindow(durationMs: number = NETWORK_APPLY_RECONNECT_WINDOW_MS): void {
+    this.extendedReconnectUntil = Math.max(this.extendedReconnectUntil, Date.now() + durationMs);
+  }
+
+  /** Whether an extended post-network-change reconnect window is active. */
+  get isReconnectWindowExtended(): boolean {
+    return Date.now() < this.extendedReconnectUntil;
   }
 
   /**
@@ -438,6 +513,21 @@ export class StrummerWebSocketClient extends EventEmitter {
     return () => this.off('action-event', callback as any);
   }
 
+  onNetworkSettings(callback: (data: NetworkSettingsData) => void): () => void {
+    this.on<NetworkSettingsData>('network-settings', callback);
+    return () => this.off('network-settings', callback as any);
+  }
+
+  onNetworkStatus(callback: (data: NetworkStatusData) => void): () => void {
+    this.on<NetworkStatusData>('network-status', callback);
+    return () => this.off('network-status', callback as any);
+  }
+
+  onNetworkSettingsResult(callback: (result: NetworkSettingsResult) => void): () => void {
+    this.on<NetworkSettingsResult>('network-settings-result', callback);
+    return () => this.off('network-settings-result', callback as any);
+  }
+
   /**
    * Request MIDI devices list from server
    */
@@ -445,7 +535,7 @@ export class StrummerWebSocketClient extends EventEmitter {
     this.send({ type: 'get-midi-devices' });
   }
 
-  private setConnectionState(state: ConnectionState): void {
+  protected setConnectionState(state: ConnectionState): void {
     if (this._connectionState !== state) {
       this._connectionState = state;
       this.emit<ConnectionState>('connection-state', state);
@@ -545,6 +635,31 @@ export class StrummerWebSocketClient extends EventEmitter {
             isStartup: message.isStartup,
           });
           break;
+        case 'network-settings':
+          if (message.data && typeof message.data === 'object') {
+            this._networkSettings = {
+              settings: message.data.settings ?? null,
+              revision: typeof message.data.revision === 'string' ? message.data.revision : '',
+              supported: message.data.supported === true,
+              reason: typeof message.data.reason === 'string' ? message.data.reason : undefined,
+            };
+            this.emit<NetworkSettingsData>('network-settings', this._networkSettings);
+          }
+          break;
+        case 'network-status':
+          if (message.data && typeof message.data === 'object') {
+            this._networkStatus = message.data;
+            this.emit<NetworkStatusData>('network-status', message.data);
+          }
+          break;
+        case 'network-settings-result':
+          if (message.data && typeof message.data.requestId === 'string') {
+            const result = message.data as NetworkSettingsResult;
+            const ours = this.pendingNetworkRequests.delete(result.requestId);
+            if (ours && result.success) this.extendReconnectWindow();
+            this.emit<NetworkSettingsResult>('network-settings-result', result);
+          }
+          break;
         case 'apply-config-result':
           this.emit('apply-config-result', message.data);
           break;
@@ -614,7 +729,8 @@ export class StrummerWebSocketClient extends EventEmitter {
 
   private scheduleReconnect(): void {
     if (!this.autoReconnect) return;
-    if (this.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.maxReconnectAttempts) {
+    if (!this.isReconnectWindowExtended && this.maxReconnectAttempts > 0 &&
+        this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.warn('Max reconnect attempts reached');
       return;
     }

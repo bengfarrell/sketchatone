@@ -5,6 +5,16 @@
 
 set -e
 
+NO_REBOOT=false
+ASSUME_YES=false
+for argument in "$@"; do
+    case "$argument" in
+        --no-reboot) NO_REBOOT=true ;;
+        --yes) ASSUME_YES=true ;;
+        *) echo "Usage: $0 [--no-reboot] [--yes]" >&2; exit 1 ;;
+    esac
+done
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -37,6 +47,10 @@ check_raspberry_pi() {
     
     # Warn if not Pi 4 or 5 (USB gadget mode works best on Pi 4/5)
     if ! echo "$model" | grep -qE "Raspberry Pi (4|5)"; then
+        if [ "$ASSUME_YES" = true ]; then
+            print_error "Unattended USB MIDI setup requires a supported Pi 4 or 5."
+            exit 1
+        fi
         print_warning "USB gadget mode is recommended for Raspberry Pi 4 or 5"
         echo "Your model: $model"
         read -p "Continue anyway? (y/N) " -n 1 -r
@@ -120,8 +134,11 @@ update_sketchatone_config() {
     
     print_info "Would you like to update Sketchatone config to use USB MIDI gadget?"
     echo "This will set midi_output_id to 'f_midi' and midi_output_backend to 'rtmidi'"
-    read -p "Update config? (Y/n) " -n 1 -r
-    echo
+    REPLY=y
+    if [ "$ASSUME_YES" != true ]; then
+        read -p "Update config? (Y/n) " -n 1 -r
+        echo
+    fi
     
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         # Backup config
@@ -136,8 +153,10 @@ with open("$config_file", "r") as f:
 if "midi" not in config:
     config["midi"] = {}
 
-config["midi"]["midi_output_backend"] = "rtmidi"
-config["midi"]["midi_output_id"] = "f_midi"
+config["midi"].pop("midi_output_backend", None)
+config["midi"].pop("midi_output_id", None)
+config["midi"]["midiOutputBackend"] = "rtmidi"
+config["midi"]["midiOutputId"] = "f_midi"
 
 with open("$config_file", "w") as f:
     json.dump(config, f, indent=2)
@@ -206,8 +225,11 @@ main() {
     echo "  • MIDI hardware with USB host port"
     echo ""
     print_warning "This will modify boot config and kernel modules"
-    read -p "Continue with setup? (y/N) " -n 1 -r
-    echo
+    REPLY=y
+    if [ "$ASSUME_YES" != true ]; then
+        read -p "Continue with setup? (y/N) " -n 1 -r
+        echo
+    fi
     
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "Setup cancelled."
@@ -221,6 +243,10 @@ main() {
     setup_kernel_modules
     update_sketchatone_config
     show_verification
+
+    if [ "$NO_REBOOT" = true ]; then
+        return
+    fi
     
     echo ""
     read -p "Reboot now to apply changes? (y/N) " -n 1 -r

@@ -130,7 +130,7 @@ The action parameters are:
 
 ## MIDI Input Mode
 
-When a MIDI keyboard is connected, the **MIDI Input Mode** selector controls how the notes you hold are translated into the strummer's strings. The selector lives on the **MIDI Input** panel in both the dashboard and the standalone webapp, and is also available headlessly as `midi.inputMode` in the config. It works in the browser webapp, the Node.js CLI server, and the Python CLI server.
+When a MIDI keyboard is connected, the **MIDI Input Mode** selector controls how the notes you hold are translated into the strummer's strings. The selector lives on the **MIDI Input** panel in both the dashboard and the standalone webapp, and is also available headlessly as `midi.inputMode` in the config. It works in the browser webapp and the Python backend.
 
 In every mode, the resulting base notes are then expanded by your `upperNoteSpread` / `lowerNoteSpread` settings, the same as chord notes are.
 
@@ -162,7 +162,7 @@ In every mode, the resulting base notes are then expanded by your `upperNoteSpre
 2. Open the **MIDI Input** panel.
 3. Use the **Input Mode** picker to choose `Direct`, `Major Scale`, `Minor Scale`, or `Auto Scale`.
 
-**In a configuration file (TypeScript / browser / Node):**
+**In a browser configuration file:**
 
 ```json
 {

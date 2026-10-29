@@ -19,9 +19,10 @@ print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 # Default paths
 INSTALL_DIR="/opt/sketchatone"
 CONFIG_DIR="$INSTALL_DIR/configs"
-DEVICES_DIR="$CONFIG_DIR/devices"
+DEVICES_DIR="$INSTALL_DIR/python/sketchatone/tablet/otd/configs"
 UDEV_RULES_FILE="/etc/udev/rules.d/99-sketchatone.rules"
 SERVICE_FILE="/etc/systemd/system/sketchatone.service"
+UI_AUTOSTART_MARKER="/etc/sketchatone/ui-autostart-user"
 
 # Show usage
 show_usage() {
@@ -39,6 +40,10 @@ Options:
     --list-devices      List detected device configs and their vendor/product IDs
     --status            Show current configuration status
     --help              Show this help message
+
+UI autostart requires always-on mode. Before selecting usb-trigger or
+manual, disable it with:
+    sudo sketchatone-ui-setup-autostart --uninstall --user <name>
 
 Examples:
     $0 --mode usb-trigger    # Auto-start when tablet is plugged in
@@ -67,30 +72,56 @@ check_installed() {
     fi
 }
 
+check_ui_autostart_mode() {
+    if [ "$1" != "always-on" ] && [ -e "$UI_AUTOSTART_MARKER" ]; then
+        local ui_user
+        ui_user="$(cat "$UI_AUTOSTART_MARKER")"
+        print_error "UI autostart is enabled for ${ui_user:-an unknown user}; it requires always-on mode."
+        print_info "Disable UI autostart first:"
+        printf '  sudo sketchatone-ui-setup-autostart --uninstall --user %q\n' "${ui_user:-<name>}"
+        print_info "Or remove all managed UI autostart blocks with:"
+        echo "  sudo sketchatone-ui-setup-autostart --uninstall-all"
+        exit 1
+    fi
+}
+
 # Extract vendor/product IDs from device config JSON files
 # Returns lines in format: vendor_id:product_id:device_name
 get_device_ids() {
-    local devices_path="$1"
-    
-    if [ ! -d "$devices_path" ]; then
-        return
-    fi
-    
-    for config_file in "$devices_path"/*.json; do
-        if [ -f "$config_file" ]; then
-            # Extract vendorId and productId using grep/sed (works without jq)
-            local vendor_id=$(grep -oP '"vendorId"\s*:\s*"\K[^"]+' "$config_file" 2>/dev/null | head -1)
-            local product_id=$(grep -oP '"productId"\s*:\s*"\K[^"]+' "$config_file" 2>/dev/null | head -1)
-            local name=$(grep -oP '"name"\s*:\s*"\K[^"]+' "$config_file" 2>/dev/null | head -1)
-            
-            if [ -n "$vendor_id" ] && [ -n "$product_id" ]; then
-                # Remove 0x prefix if present
-                vendor_id="${vendor_id#0x}"
-                product_id="${product_id#0x}"
-                echo "$vendor_id:$product_id:$name"
-            fi
-        fi
-    done
+    PYTHONPATH="$INSTALL_DIR/python${PYTHONPATH:+:$PYTHONPATH}" python3 - "$1" "$CONFIG_DIR/devices" << 'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+from sketchatone.tablet.otd.config_loader import load_config_file
+
+root = Path(sys.argv[1])
+if not root.is_dir():
+    sys.exit(f"Tablet config directory not found: {root}")
+
+pairs = {}
+for path in sorted(root.rglob("*.json")):
+    config = load_config_file(path)
+    for identifier in config.digitizer_identifiers:
+        pairs.setdefault((identifier.vendor_id, identifier.product_id), config.name)
+
+# Preserve support for locally installed legacy device definitions.
+for path in sorted(Path(sys.argv[2]).glob("*.json")):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    vendor = data["vendorId"]
+    product = data["productId"]
+    pair = (
+        int(vendor, 16) if isinstance(vendor, str) else vendor,
+        int(product, 16) if isinstance(product, str) else product,
+    )
+    pairs.setdefault(pair, data.get("name", path.stem))
+
+if not pairs:
+    sys.exit(f"No tablet device identifiers found in {root}")
+for (vendor, product), name in sorted(pairs.items()):
+    name = " ".join(name.splitlines()).replace(":", " ")
+    print(f"{vendor:04x}:{product:04x}:{name}")
+PYEOF
 }
 
 # List available device configs
@@ -98,6 +129,8 @@ list_devices() {
     print_info "Scanning device configs in $DEVICES_DIR..."
     echo ""
     
+    local device_ids
+    device_ids="$(get_device_ids "$DEVICES_DIR")" || return $?
     local found=0
     while IFS=: read -r vendor product name; do
         if [ -n "$vendor" ]; then
@@ -107,7 +140,7 @@ list_devices() {
             echo ""
             found=$((found + 1))
         fi
-    done < <(get_device_ids "$DEVICES_DIR")
+    done <<< "$device_ids"
     
     if [ $found -eq 0 ]; then
         print_warning "No device configs found in $DEVICES_DIR"
@@ -120,6 +153,8 @@ list_devices() {
 # Generate udev rules from device configs
 generate_udev_rules() {
     print_info "Generating udev rules from device configs..."
+    local device_ids
+    device_ids="$(get_device_ids "$DEVICES_DIR")" || return $?
     
     local rules=""
     local count=0
@@ -134,8 +169,9 @@ generate_udev_rules() {
     while IFS=: read -r vendor product name; do
         if [ -n "$vendor" ]; then
             # Strip 0x prefix for PRODUCT matching
-            vendor_stripped="${vendor#0x}"
-            product_stripped="${product#0x}"
+            # PRODUCT uses unpadded hex, unlike the four-digit sysfs attributes.
+            printf -v vendor_stripped '%x' "$((16#$vendor))"
+            printf -v product_stripped '%x' "$((16#$product))"
 
             # HID permission rule (allow non-root access)
             rules+="# $name\n"
@@ -151,7 +187,7 @@ generate_udev_rules() {
 
             count=$((count + 1))
         fi
-    done < <(get_device_ids "$DEVICES_DIR")
+    done <<< "$device_ids"
     
     if [ $count -eq 0 ]; then
         print_error "No device configs found - cannot generate udev rules"
@@ -217,6 +253,8 @@ setup_always_on() {
     # Remove USB trigger rules (keep permission rules)
     if [ -f "$UDEV_RULES_FILE" ]; then
         # Generate permission-only rules
+        local device_ids
+        device_ids="$(get_device_ids "$DEVICES_DIR")" || return $?
         local rules=""
         rules+="# Sketchatone udev rules - HID permissions only\n"
         rules+="\n"
@@ -226,7 +264,7 @@ setup_always_on() {
                 rules+="# $name\n"
                 rules+="SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"$vendor\", ATTRS{idProduct}==\"$product\", MODE=\"0666\"\n"
             fi
-        done < <(get_device_ids "$DEVICES_DIR")
+        done <<< "$device_ids"
         
         echo -e "$rules" > "$UDEV_RULES_FILE"
         reload_udev
@@ -261,6 +299,8 @@ setup_manual() {
     
     # Keep permission rules but remove trigger rules
     if [ -f "$UDEV_RULES_FILE" ]; then
+        local device_ids
+        device_ids="$(get_device_ids "$DEVICES_DIR")" || return $?
         local rules=""
         rules+="# Sketchatone udev rules - HID permissions only\n"
         rules+="\n"
@@ -270,7 +310,7 @@ setup_manual() {
                 rules+="# $name\n"
                 rules+="SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"$vendor\", ATTRS{idProduct}==\"$product\", MODE=\"0666\"\n"
             fi
-        done < <(get_device_ids "$DEVICES_DIR")
+        done <<< "$device_ids"
         
         echo -e "$rules" > "$UDEV_RULES_FILE"
         reload_udev
@@ -320,10 +360,12 @@ show_status() {
     fi
 
     # Check device configs
+    local device_ids
+    device_ids="$(get_device_ids "$DEVICES_DIR")" || return $?
     local device_count=0
     while IFS=: read -r vendor product name; do
         [ -n "$vendor" ] && device_count=$((device_count + 1))
-    done < <(get_device_ids "$DEVICES_DIR")
+    done <<< "$device_ids"
 
     if [ $device_count -gt 0 ]; then
         print_success "Device configs: $device_count found"
@@ -333,6 +375,9 @@ show_status() {
 
     # Check service status
     echo ""
+    if [ -f "$UI_AUTOSTART_MARKER" ]; then
+        print_info "UI autostart: Enabled for $(cat "$UI_AUTOSTART_MARKER") (requires always-on)"
+    fi
     if systemctl is-enabled --quiet sketchatone 2>/dev/null; then
         print_info "Service: Enabled (starts on boot)"
     else
@@ -367,12 +412,14 @@ case "${1:-}" in
         check_installed
         case "${2:-}" in
             usb-trigger)
+                check_ui_autostart_mode usb-trigger
                 setup_usb_trigger
                 ;;
             always-on)
                 setup_always_on
                 ;;
             manual)
+                check_ui_autostart_mode manual
                 setup_manual
                 ;;
             *)

@@ -24,8 +24,119 @@ from sketchatone.cli.server import (
     CombinedEventData,
     StrummerWebSocketServer,
     _normalize_midi_port_name,
+    main,
 )
 from sketchatone.models import MidiStrummerConfig
+
+
+class TestServerCliPorts:
+    @pytest.mark.parametrize('options, config_port, expected', [
+        ([], None, None),
+        (['--ws-port', '8081'], None, 8081),
+        (['--config', 'config.json'], 9081, 9081),
+        (['--config', 'config.json'], None, None),
+        (['--config', 'config.json', '--ws-port', '8081'], 9081, 8081),
+    ])
+    def test_ws_port_resolution(self, options, config_port, expected):
+        config = MidiStrummerConfig()
+        config.server.ws_port = config_port
+
+        with patch('sys.argv', ['server', *options]), \
+                patch('sketchatone.cli.server.MidiStrummerConfig.from_json_file', return_value=config), \
+                patch('sketchatone.cli.server.StrummerWebSocketServer') as server_class, \
+                patch('sketchatone.cli.server.signal.signal'):
+            server_class.return_value.run_server = AsyncMock()
+            main()
+
+        assert server_class.call_args.kwargs['ws_port'] == expected
+
+    @pytest.mark.parametrize('options, config_port, expected', [
+        ([], None, 8082),
+        (['--wss-port', '9082'], None, 9082),
+        (['--config', 'config.json'], 8444, 8444),
+        (['--config', 'config.json'], None, None),
+        (['--config', 'config.json', '--wss-port', '9082'], 8444, 9082),
+    ])
+    def test_wss_port_resolution(self, options, config_port, expected):
+        config = MidiStrummerConfig()
+        config.server.wss_port = config_port
+
+        with patch('sys.argv', ['server', *options]), \
+                patch('sketchatone.cli.server.MidiStrummerConfig.from_json_file', return_value=config), \
+                patch('sketchatone.cli.server.StrummerWebSocketServer') as server_class, \
+                patch('sketchatone.cli.server.signal.signal'):
+            server_class.return_value.run_server = AsyncMock()
+            main()
+
+        assert server_class.call_args.kwargs['wss_port'] == expected
+
+    @pytest.mark.parametrize('options, config_ports, expected', [
+        ([], None, (None, 443)),
+        (['--http-port', '3000', '--https-port', '3443'], None, (3000, 3443)),
+        (['--no-http', '--no-https'], None, (None, None)),
+        ([], (8080, 8443), (8080, 8443)),
+        ([], (None, None), (None, None)),
+        (['--http-port', '3000', '--https-port', '3443'], (8080, 8443), (3000, 3443)),
+        (['--no-http', '--no-https'], (8080, 8443), (None, None)),
+    ])
+    def test_port_resolution(self, options, config_ports, expected):
+        config = MidiStrummerConfig()
+        if config_ports is not None:
+            config.server.http_port, config.server.https_port = config_ports
+            options = ['--config', 'config.json', *options]
+
+        with patch('sys.argv', ['server', *options]), \
+                patch('sketchatone.cli.server.MidiStrummerConfig.from_json_file', return_value=config), \
+                patch('sketchatone.cli.server.StrummerWebSocketServer') as server_class, \
+                patch('sketchatone.cli.server.signal.signal'):
+            server_class.return_value.run_server = AsyncMock()
+            main()
+
+        assert server_class.call_args.kwargs['http_port'] == expected[0]
+        assert server_class.call_args.kwargs['https_port'] == expected[1]
+
+
+class TestHttpRequests:
+    @pytest.mark.parametrize('path', [
+        '/generate_204', '/gen_204', '/connecttest.txt', '/success.txt',
+        '/generate_204?check=1',
+    ])
+    async def test_connectivity_checks_are_not_intercepted(self, tmp_path, path):
+        response = await self._request(tmp_path, path)
+
+        assert response.startswith(b'HTTP/1.1 404 Not Found\r\n')
+
+    @pytest.mark.parametrize('path', ['/', '/index.html', '/?version=1'])
+    async def test_dashboard_files_are_still_served(self, tmp_path, path):
+        (tmp_path / 'index.html').write_text('<html>Sketchatone</html>')
+
+        response = await self._request(tmp_path, path)
+
+        assert response.startswith(b'HTTP/1.1 200 OK\r\n')
+        assert response.endswith(b'<html>Sketchatone</html>')
+
+    async def test_connectivity_check_obeys_method_handling(self, tmp_path):
+        response = await self._request(tmp_path, '/generate_204', method='POST')
+
+        assert response.startswith(b'HTTP/1.1 405 Method Not Allowed\r\n')
+
+    @staticmethod
+    async def _request(public_dir, path, method='GET'):
+        server = StrummerWebSocketServer.__new__(StrummerWebSocketServer)
+        server.public_dir = str(public_dir)
+        reader = asyncio.StreamReader()
+        reader.feed_data(f'{method} {path} HTTP/1.1\r\nHost: localhost\r\n\r\n'.encode())
+        reader.feed_eof()
+        writer = Mock()
+        writer.get_extra_info.return_value = None
+        writer.drain = AsyncMock()
+        writer.wait_closed = AsyncMock()
+
+        await server._handle_http_request(reader, writer)
+
+        writer.close.assert_called_once()
+        writer.wait_closed.assert_awaited_once()
+        return b''.join(call.args[0] for call in writer.write.call_args_list)
 
 
 class TestCamelToSnakeConversion:

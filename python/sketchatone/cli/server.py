@@ -16,10 +16,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import errno
+import hashlib
+import hmac
 import json
 import math
 import re
 import signal
+import secrets
 import socket
 import sys
 import os
@@ -68,7 +71,7 @@ def get_local_ip() -> Optional[str]:
 def generate_self_signed_cert(cert_file: str, key_file: str) -> bool:
     """
     Generate a self-signed SSL certificate for HTTPS support.
-    Used for captive portal detection on Android 10+.
+    Used for encrypted web dashboard and WebSocket connections.
 
     Returns True if certificate was generated or already exists.
     """
@@ -530,7 +533,7 @@ class StrummerWebSocketServer:
     def __init__(
         self,
         strummer_config_path: Optional[str] = None,
-        ws_port: int = 8081,
+        ws_port: Optional[int] = 8081,
         wss_port: Optional[int] = None,
         http_port: Optional[int] = None,
         https_port: Optional[int] = None,
@@ -543,7 +546,8 @@ class StrummerWebSocketServer:
         midi_port: Optional[Union[str, int]] = None,
         note_duration: Optional[float] = None,
         jack_client_name: Optional[str] = None,
-        jack_auto_connect: Optional[str] = None
+        jack_auto_connect: Optional[str] = None,
+        network_config_path: Optional[str] = None,
     ):
         self.ws_port = ws_port
         self.wss_port = wss_port
@@ -551,6 +555,16 @@ class StrummerWebSocketServer:
         self.https_port = https_port
         self.poll_ms = poll_ms
         self.dev_mode = dev_mode
+        self._network_store = None
+        self._network_manager = None
+        self._network_apply_task = None
+        if network_config_path:
+            from ..networking import NetworkConfigStore, NetworkManager
+            self._network_store = NetworkConfigStore(network_config_path)
+            self._network_store.load()
+            self._network_manager = NetworkManager(
+                self._network_store, on_status=self._network_status_changed,
+            )
 
         # ---- Perf instrumentation ----------------------------------------
         # Initialised first so callbacks fired during the rest of __init__
@@ -1241,16 +1255,6 @@ class StrummerWebSocketServer:
                 if line == b'\r\n' or line == b'\n' or not line:
                     break
 
-            # Captive portal detection - respond to connectivity checks
-            # This prevents phones from using mobile data when connected to the hotspot
-            # Common endpoints used by Android, iOS, and other devices
-            url_path = path.split('?')[0]  # Remove query string for checking
-            if url_path in ('/generate_204', '/gen_204', '/connecttest.txt', '/success.txt'):
-                writer.write(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
-                await writer.drain()
-                writer.close()
-                return
-
             # Only handle GET requests
             if method != 'GET':
                 response = b'HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n'
@@ -1258,7 +1262,7 @@ class StrummerWebSocketServer:
                 await writer.drain()
                 return
 
-            # Parse path (already done above for captive portal check)
+            url_path = path.split('?')[0]
             if url_path == '/':
                 url_path = '/index.html'
 
@@ -1738,7 +1742,17 @@ class StrummerWebSocketServer:
             data = json.loads(message)
             msg_type = data.get('type')
             
-            if msg_type == 'set-throttle':
+            if msg_type == 'get-network-settings':
+                await websocket.send(json.dumps({
+                    'type': 'network-settings', 'data': self._network_settings_snapshot(),
+                }))
+            elif msg_type == 'get-network-status':
+                await websocket.send(json.dumps({
+                    'type': 'network-status', 'data': self._network_status_snapshot(),
+                }))
+            elif msg_type == 'apply-network-settings':
+                await self._handle_network_settings(websocket, data)
+            elif msg_type == 'set-throttle':
                 # Support both 'throttleMs' (webapp format) and 'throttle' (legacy)
                 throttle = data.get('throttleMs', data.get('throttle', 150))
                 self.event_bus.set_throttle(throttle)
@@ -1819,6 +1833,74 @@ class StrummerWebSocketServer:
 
         except json.JSONDecodeError:
             print(colored(f'Invalid JSON message received', Colors.RED))
+
+    def _network_status_snapshot(self) -> Dict[str, Any]:
+        manager = getattr(self, '_network_manager', None)
+        if manager is None:
+            return {
+                'supported': False, 'mode': 'unmanaged',
+                'message': 'Start the Python server with --network-config PATH to configure networking.',
+            }
+        return manager.status
+
+    def _network_settings_snapshot(self) -> Dict[str, Any]:
+        store = getattr(self, '_network_store', None)
+        status = self._network_status_snapshot()
+        if store is None:
+            return {'supported': False, 'reason': status['message'], 'revision': '', 'settings': None}
+        if not hasattr(self, '_network_revision_key'):
+            self._network_revision_key = secrets.token_bytes(32)
+        revision = hmac.new(
+            self._network_revision_key,
+            json.dumps(store.config, sort_keys=True, separators=(',', ':')).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            'supported': status.get('supported', False),
+            'reason': status.get('message', ''),
+            'revision': revision, 'settings': store.public_config(),
+        }
+
+    async def _network_status_changed(self, status: Dict[str, Any]) -> None:
+        await self._broadcast_to_all_clients(json.dumps({
+            'type': 'network-status', 'data': status,
+        }))
+
+    async def _handle_network_settings(self, websocket, message) -> None:
+        result = {'requestId': message.get('requestId'), 'success': False}
+        manager = getattr(self, '_network_manager', None)
+        store = getattr(self, '_network_store', None)
+        try:
+            snapshot = self._network_settings_snapshot()
+            if manager is None or store is None or not snapshot['supported']:
+                raise ValueError(snapshot.get('reason') or 'Network management is unavailable.')
+            if manager.busy or (self._network_apply_task and not self._network_apply_task.done()):
+                raise ValueError('Network settings are already being applied. Wait before retrying.')
+            if not isinstance(message.get('requestId'), str) or not message['requestId']:
+                raise ValueError('A request ID is required.')
+            # Reload external JSON edits before comparing the client's revision.
+            store.load()
+            if message.get('revision') != self._network_settings_snapshot()['revision']:
+                raise ValueError('Network settings changed. Reload them before applying.')
+            store.save(message.get('settings'))
+            saved = self._network_settings_snapshot()
+            result.update(success=True, settings=saved['settings'], revision=saved['revision'])
+        except (ValueError, OSError) as error:
+            # Filesystem errors may contain paths, but never include submitted settings.
+            result['error'] = str(error)
+            await websocket.send(json.dumps({'type': 'network-settings-result', 'data': result}))
+            return
+
+        # Once saved, apply even if the requesting browser disconnects before its acknowledgement.
+        self._network_apply_task = asyncio.create_task(self._apply_network_settings_later())
+        await websocket.send(json.dumps({'type': 'network-settings-result', 'data': result}))
+        await self._broadcast_to_all_clients(json.dumps({
+            'type': 'network-settings', 'data': saved,
+        }))
+
+    async def _apply_network_settings_later(self) -> None:
+        await asyncio.sleep(0.5)
+        await self._network_manager.apply()
     
     async def _handle_apply_config(self, websocket, message) -> None:
         result = {'requestId': message.get('requestId'), 'success': False}
@@ -3375,11 +3457,18 @@ class StrummerWebSocketServer:
 
         # Keep server running
         try:
+            if self._network_manager is not None:
+                await self._network_manager.start()
             await asyncio.Future()  # Run forever
         except asyncio.CancelledError:
             pass
         finally:
             print(colored('Cleaning up servers...', Colors.GRAY))
+            if self._network_apply_task is not None:
+                self._network_apply_task.cancel()
+                await asyncio.gather(self._network_apply_task, return_exceptions=True)
+            if self._network_manager is not None:
+                await self._network_manager.stop()
             # Stop keyboard listener
             if self.keyboard_listener:
                 self.keyboard_listener.stop()
@@ -3535,26 +3624,25 @@ def main():
     parser.add_argument(
         '--ws-port',
         type=int,
-        default=8081,
-        help='WebSocket server port (default: 8081)'
+        help='WebSocket server port (disabled without config)'
     )
 
     parser.add_argument(
         '--wss-port',
         type=int,
-        help='Secure WebSocket server port with SSL (optional)'
+        help='Secure WebSocket server port with SSL (default without config: 8082)'
     )
 
     parser.add_argument(
         '--http-port',
         type=int,
-        help='HTTP server port for serving webapps (optional)'
+        help='HTTP server port for serving webapps (disabled without config)'
     )
 
     parser.add_argument(
         '--https-port',
         type=int,
-        help='HTTPS server port for captive portal detection on Android 10+ (optional)'
+        help='HTTPS server port for serving webapps (default without config: 443)'
     )
 
     parser.add_argument(
@@ -3623,6 +3711,12 @@ def main():
     )
 
     parser.add_argument(
+        '--network-config',
+        metavar='PATH',
+        help='Separate device networking JSON file (Linux NetworkManager; disabled by default)',
+    )
+
+    parser.add_argument(
         '--no-http',
         action='store_true',
         dest='no_http',
@@ -3663,17 +3757,17 @@ def main():
         sys.exit(0)
 
     # Resolve effective server settings (CLI args take precedence over config file)
-    effective_ws_port = args.ws_port if args.ws_port != 8081 else (
-        config.ws_port if config and config.ws_port else 8081
+    effective_ws_port = args.ws_port if args.ws_port is not None else (
+        config.ws_port if config else None
     )
     effective_wss_port = args.wss_port or (
-        config.wss_port if config and hasattr(config, 'wss_port') else None
+        config.wss_port if config else 8082
     )
     effective_http_port = None if args.no_http else (
         args.http_port or (config.http_port if config else None)
     )
     effective_https_port = None if args.no_https else (
-        args.https_port or (config.https_port if config and hasattr(config, 'https_port') else None)
+        args.https_port or (config.https_port if config else 443)
     )
     effective_throttle = args.throttle if args.throttle != 150 else (
         config.ws_message_throttle if config else 150
@@ -3712,6 +3806,7 @@ def main():
         throttle_ms=effective_throttle,
         poll_ms=effective_poll,
         dev_mode=args.dev,
+        network_config_path=args.network_config,
         # MIDI options
         use_jack=args.jack if args.jack else None,
         midi_channel=args.channel - 1 if args.channel is not None else None,  # Convert 1-16 to 0-15

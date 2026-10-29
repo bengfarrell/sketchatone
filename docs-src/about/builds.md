@@ -70,7 +70,15 @@ Sketchatone provides a `.deb` package installer for Linux systems, with special 
 
 ### Production Installation (Recommended)
 
-The `.deb` package installs Sketchatone system-wide with all dependencies. **No virtual environment needed!**
+The `.deb` package installs Sketchatone and creates its private Python virtual
+environment automatically. No manual Python setup or alternate interpreter is
+needed. The initial appliance target is 64-bit Raspberry Pi OS Lite Bookworm,
+using its stock Python 3.11. The installer accepts stock Python 3.11 or newer;
+other OS releases still need hardware compatibility confirmation.
+
+Before booting, Raspberry Pi Imager can configure the username, hostname,
+initial Wi-Fi connection and SSH. Installation needs internet access to download
+dependencies. Node.js and npm are only needed on the build machine, not the Pi.
 
 #### On your development machine (Mac/Linux):
 
@@ -79,40 +87,62 @@ The `.deb` package installs Sketchatone system-wide with all dependencies. **No 
 git clone https://github.com/bengfarrell/sketchatone.git
 cd sketchatone
 
-# Install dependencies and build webapp
+# Install build dependencies
 npm install
-npm run build
 
-# Create the Pi installer package
+# Create the Pi installer package (always rebuilds the web dashboard)
 ./package-for-pi.sh
 ```
 
-This creates:
-- `dist/sketchatone-X.X.X-deb-pkg.tar.gz` - Package structure
-- `dist/install-sketchatone.sh` - Simple installer script
+This creates `dist/sketchatone-<version>-pi-bundle.tar.gz`, containing the core
+package and optional native UI add-on, plus `dist/install-sketchatone.sh`.
+Copy both files together. The same bundle supports both install choices;
+Kivy and graphics dependencies are installed only with `--with-ui`.
 
 #### On the Raspberry Pi / Zynthian:
 
 ```bash
-# Copy files to Pi
-scp dist/sketchatone-*-deb-pkg.tar.gz dist/install-sketchatone.sh pi@<pi-hostname>:~/
+# From your development machine, copy both generated release files:
+scp dist/sketchatone-*-pi-bundle.tar.gz dist/install-sketchatone.sh pi@<pi-hostname>:~/
 
 # SSH into the Pi
 ssh pi@<pi-hostname>
 
-# Run the installer (that's it!)
-sudo ./install-sketchatone.sh
+# Run the installer alongside the bundle (no manual extraction needed)
+sudo ./install-sketchatone.sh --appliance
+
+# Or install the native display UI as well:
+sudo ./install-sketchatone.sh --with-ui --appliance
 ```
 
 The installer will:
 1. Extract the package
 2. Build the `.deb` file
 3. Install to `/opt/sketchatone/`
-4. Install all Python dependencies system-wide
+4. Install all Python dependencies in `/opt/sketchatone/venv`, using the OS interpreter
 5. Configure udev rules for USB auto-start
 6. Set up the systemd service
 
-**Your tablet will work immediately when plugged in!**
+With `--appliance`, the helper then opens the guided headless setup: always-on
+startup, optional USB MIDI gadget setup, and boot trimming. It asks for confirmation
+before applying. Setup leaves the Pi's existing OS Wi-Fi configuration alone and
+does not ask for network credentials. Manage Wi-Fi, hotspot fallback, and phone
+tethering later in the dashboard's Network panel, or preconfigure
+`/etc/sketchatone/network.json`. An existing network JSON is preserved and used
+by the service; if management is enabled there, restarting may disconnect SSH.
+Any needed reboot is left to you.
+
+Without `--appliance`, the install retains USB-triggered startup and leaves network
+management disabled. For direct `.deb` installations or to rerun setup later:
+
+```bash
+sudo sketchatone-configure --appliance
+```
+
+Set your desired MIDI output in the dashboard. A supported tablet, a working
+MIDI destination and device-side phone tethering permissions are still required.
+Installation stops on required dependency errors instead of reporting a partial
+installation as successful.
 
 ### Development Installation (Optional)
 
@@ -137,33 +167,30 @@ pip install -e .
 python -m sketchatone.cli.server -c /path/to/config.json
 ```
 
-### Native Pi UI Package
+### Optional Native Pi UI Add-on
 
-The headless server `.deb` above installs the WebSocket server and web dashboard. If you have a Raspberry Pi with a DSI touchscreen and want the native Kivy dashboard, there is a separate **`sketchatone-ui` package**:
+Choose `--with-ui` using the same installer to add the native Kivy dashboard,
+including on a Pi where the core is already installed. Internally the bundle
+contains two Debian packages: `sketchatone` owns the backend, and
+`sketchatone-ui` adds display support and depends on the matching core version.
+Both share `/opt/sketchatone/venv` and `/opt/sketchatone/configs`; no duplicate
+engine or settings directory is created.
 
-#### On your development machine:
-
-```bash
-./create-deb-ui.sh
-```
-
-This creates `dist/sketchatone-ui-X.X.X-linux-armhf.deb`.
-
-#### On the Raspberry Pi:
-
-```bash
-scp dist/sketchatone-ui-*.deb pi@<pi-hostname>:~/
-ssh pi@<pi-hostname>
-sudo apt install ./sketchatone-ui-*.deb
-```
-
-Then run the interactive configuration menu to set up autostart on tty1 and boot-time trimming:
+Installing display support does not automatically enable kiosk autostart.
+The appliance wizard can offer that setup when the add-on is installed, or use:
 
 ```bash
 sudo sketchatone-ui-configure
 ```
 
-The UI package installs alongside the headless server package — you can run both. The native UI starts the server as a subprocess internally, so you don't need the headless service running at the same time when using the UI appliance mode.
+The packaged native UI attaches to `sketchatone.service`. Both the browser and
+local display can be used simultaneously. Enabling UI autostart selects always-on
+backend startup; disabling/removing UI autostart leaves the backend and its
+tablet permissions intact. Disable UI autostart before switching to USB-triggered
+or manual backend startup.
+
+Legacy `/opt/sketchatone-ui` settings are backed up during migration rather than
+silently overwriting the core's existing presets.
 
 See **[Native Pi UI](/about/native-ui/)** for usage details.
 
@@ -336,24 +363,21 @@ See **[USB MIDI Gadget Setup](/about/usb-midi-gadget/)** for complete instructio
 
 For development or platforms without installers:
 
-### Node.js
+Python is the primary backend for desktop and appliance use. Build the browser
+dashboard from the repository root, then install the backend in a virtual environment:
 
 ```bash
 git clone https://github.com/bengfarrell/sketchatone.git
 cd sketchatone
 npm install
-npm run build:cli
-npm run midi-strummer
-```
-
-### Python
-
-```bash
-git clone https://github.com/bengfarrell/sketchatone.git
-cd sketchatone/python
-python -m venv venv
+npm run build
+cd python
+python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip setuptools
 pip install -e .
-python -m sketchatone.cli.midi_strummer
+python -m sketchatone.cli.server
 ```
+
+For MIDI-only operation, use `python -m sketchatone.cli.midi_strummer`.
+See the [Python CLI reference](/about/python-cli/) for additional launch options.

@@ -5,6 +5,8 @@
  * and frontend client. These types match the sketchatone tablet-websocket-server format.
  */
 
+import type { NetworkClientMessage } from './network-settings.js';
+
 /**
  * Tablet event data - the canonical format for tablet events sent over WebSocket.
  *
@@ -184,7 +186,7 @@ export interface MidiDevicesData {
 /**
  * Client message types
  */
-export type ClientMessageType = 'set-throttle' | 'update-config' | 'apply-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service' | 'set-button-detection';
+export type ClientMessageType = 'set-throttle' | 'update-config' | 'apply-config' | 'set-mode' | 'save-config' | 'load-config' | 'create-config' | 'rename-config' | 'upload-config' | 'delete-config' | 'get-midi-devices' | 'restart-service' | 'set-button-detection' | 'get-network-settings' | 'get-network-status' | 'apply-network-settings';
 
 export interface ApplyConfigMessage {
   type: 'apply-config';
@@ -321,7 +323,7 @@ export interface MidiDevicesMessage {
 /**
  * Client message to server
  */
-export type ClientMessage = ApplyConfigMessage | SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage | SetButtonDetectionMessage;
+export type ClientMessage = NetworkClientMessage | ApplyConfigMessage | SetThrottleMessage | UpdateConfigMessage | SetModeMessage | SaveConfigMessage | LoadConfigMessage | CreateConfigMessage | RenameConfigMessage | UploadConfigMessage | DeleteConfigMessage | GetMidiDevicesMessage | RestartServiceMessage | SetButtonDetectionMessage;
 
 /**
  * Tablet data for visualization components

@@ -5,7 +5,8 @@ description: Command-line tools for the Python implementation
 
 # Python CLI Tools
 
-This document describes the command-line tools available in the Sketchatone Python package.
+Python is the primary Sketchatone backend for desktop and appliance use.
+This document describes its command-line tools.
 
 ## Installation
 
@@ -108,7 +109,9 @@ python -m sketchatone.cli.strum_event_viewer [options]
 
 ## ui
 
-Native Kivy dashboard for the Raspberry Pi appliance. Runs the strummer server as a subprocess and connects to it over a local WebSocket, keeping the HID reader and render loop in separate processes.
+Native Kivy dashboard for the Raspberry Pi appliance. The packaged launcher
+connects to the shared backend service. From source, `--connect URL` attaches
+without spawning a backend; omitting it retains standalone child-process mode.
 
 ### Usage
 
@@ -141,8 +144,9 @@ Edits under `python/sketchatone/ui/` trigger a soft rebuild. Edits to `app.py` o
 | Argument | Short | Type | Description |
 |----------|-------|------|-------------|
 | `--config` | `-c` | path | Combined config file path |
-| `--enable-ws` | | flag | Also start the WebSocket server (for browser dashboard or LAN access) |
-| `--ws-port` | | int | WebSocket port when `--enable-ws` is set (default: 8081) |
+| `--connect` | | URL | Attach to an existing backend without spawning or stopping it; backend startup options cannot be combined with this mode |
+| `--enable-ws` | | flag | Legacy standalone-mode option; the child backend uses WebSockets internally |
+| `--ws-port` | | int | Standalone child backend's WebSocket port (default: 8081) |
 | `--throttle` | | ms | Event throttle interval in milliseconds (default: 150) |
 | `--poll` | | ms | Device poll interval; waits for tablet if not present (default: 2000) |
 | `--fps` | | int | Kivy render framerate cap (default: 15) |
@@ -191,10 +195,11 @@ python -m sketchatone.cli.server -c public/configs/default.json
 | Argument | Short | Type | Description |
 |----------|-------|------|-------------|
 | `--config` | `-c` | path | Combined config file path (strummer, MIDI, and server settings). Device path is specified in the `server.device` field. |
-| `--ws-port` | | int | WebSocket server port (default: 8081) |
-| `--wss-port` | | int | Secure WebSocket server port with SSL (optional) |
-| `--http-port` | | int | HTTP server port for serving webapps (optional) |
-| `--https-port` | | int | HTTPS server port for captive portal detection on Android 10+ (optional) |
+| `--ws-port` | | int | WebSocket server port (disabled without config) |
+| `--wss-port` | | int | Secure WebSocket server port with SSL (default without config: 8082) |
+| `--http-port` | | int | HTTP server port for serving webapps (disabled without config) |
+| `--https-port` | | int | HTTPS server port for serving webapps (default without config: 443) |
+| `--network-config` | | path | Separate device networking JSON file (Linux NetworkManager; disabled by default) |
 | `--throttle` | `-t` | ms | Event throttle interval in milliseconds (default: 150) |
 | `--poll` | | ms | Poll interval in ms for waiting for a device. If not set, quit if no device found. |
 | `--dev` | | flag | Development mode: run without a tablet device (UI only, no tablet input) |
@@ -228,8 +233,16 @@ pytest tests/ --cov=sketchatone
 
 ## Differences from Node.js CLI
 
+The [limited Node.js CLI](/about/node-cli/) remains available for manual core
+musical use and diagnostics. Shared strumming and chord behavior should stay
+synchronized, but it does not provide the Python appliance lifecycle.
+
 | Feature | Python | Node.js |
 |---------|--------|---------|
+| Primary packaged backend | ✓ | — (manual CLI only) |
+| Core strumming, chords, and musical settings | Shared behavior | Shared behavior |
+| Managed Wi-Fi, hotspot fallback, USB tethering | ✓ (Linux NetworkManager, opt-in) | — |
+| Guided appliance setup and native Pi UI | ✓ | — |
 | JACK MIDI backend | ✓ (via `--jack` flag) | ✗ (rtmidi only) |
 | Auto-detect tablet | ✓ | ✓ |
 | Default config dir | `../public/configs` | `./public/configs` |

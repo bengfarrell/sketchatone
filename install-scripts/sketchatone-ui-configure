@@ -35,10 +35,11 @@ autostart_menu() {
  Autostart on tty1
 ==========================================
 Configures the Pi to log into tty1 and launch the Kivy UI fullscreen via
-SDL2's kmsdrm backend (no Wayland compositor). Also generates udev rules
-for supported tablets and adds the login user to the render/input/video/
-tty/plugdev groups so keyboard (evdev) and tablet (hidraw) capture work
-without root.
+SDL2's kmsdrm backend (no Wayland compositor). Enables the core service
+in always-on mode first; the packaged UI connects to it automatically.
+Adds the login user to render/input/video/tty for local display access.
+The core service owns device permissions and shared configuration.
+Uninstall removes UI login blocks only, leaving core service/rules intact.
 
   1) Install autostart
   2) Uninstall autostart
@@ -99,7 +100,7 @@ main_menu() {
 ==========================================
  Sketchatone UI Configuration
 ==========================================
-  1) Autostart on tty1   (kmsdrm fullscreen + udev + user groups)
+  1) Autostart on tty1   (fullscreen UI + always-on core service)
   2) Boot-time trimming  (faster boot on Pi OS Lite)
   q) Quit
 HDR

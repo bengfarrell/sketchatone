@@ -17,6 +17,13 @@ import type {
   ServerConfigData,
   StrumEventData,
 } from '../types/tablet-events.js';
+import type {
+  NetworkSettingsData,
+  NetworkSettingsResult,
+  NetworkStatusData,
+  PublicNetworkConfig,
+  SubmittedNetworkConfig,
+} from '../types/network-settings.js';
 import { configFingerprint, configValidationTemplate, validateCompleteConfig } from './config-validation.js';
 
 const MOCK_NOTES = [
@@ -76,7 +83,58 @@ function buildMockConfig(): ServerConfigData {
   };
 }
 
+interface MockStoredNetworkConfig {
+  enabled: boolean;
+  wifi: {
+    enabled: boolean;
+    interface: string;
+    connectionTimeout: number;
+    reconnectGrace: number;
+    networks: Array<{ id: string; ssid: string; hidden: boolean; password: string | null }>;
+    hotspot: { ssid: string; password: string | null; address: string };
+  };
+  usb: { enabled: boolean };
+}
+
+function buildMockNetworkConfig(): MockStoredNetworkConfig {
+  return {
+    enabled: false,
+    wifi: {
+      enabled: true,
+      interface: 'wlan0',
+      connectionTimeout: 15,
+      reconnectGrace: 10,
+      networks: [],
+      hotspot: { ssid: 'Sketchatone', password: null, address: '192.168.50.1/24' },
+    },
+    usb: { enabled: false },
+  };
+}
+
+function publicMockNetworkConfig(config: MockStoredNetworkConfig): PublicNetworkConfig {
+  return {
+    enabled: config.enabled,
+    wifi: {
+      enabled: config.wifi.enabled,
+      interface: config.wifi.interface,
+      connectionTimeout: config.wifi.connectionTimeout,
+      reconnectGrace: config.wifi.reconnectGrace,
+      networks: config.wifi.networks.map(({ id, ssid, hidden, password }) => ({
+        id, ssid, hidden, passwordSet: Boolean(password),
+      })),
+      hotspot: {
+        ssid: config.wifi.hotspot.ssid,
+        address: config.wifi.hotspot.address,
+        passwordSet: Boolean(config.wifi.hotspot.password),
+      },
+    },
+    usb: { enabled: config.usb.enabled },
+  };
+}
+
 export class MockStrummerClient extends StrummerWebSocketClient {
+  private mockNetwork: MockStoredNetworkConfig = buildMockNetworkConfig();
+  private mockNetworkRevision = 1;
   private mockConfig: ServerConfigData = buildMockConfig();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = 0;
@@ -97,6 +155,68 @@ export class MockStrummerClient extends StrummerWebSocketClient {
     this.mockConfig = { ...this.mockConfig, config: JSON.parse(JSON.stringify(config)) };
     this.emit('config', this.mockConfig);
     this.emit('apply-config-result', { requestId, success: true, message: 'Mock configuration applied (preview only; not saved to disk).' });
+  }
+
+  private mockNetworkSettings(): NetworkSettingsData {
+    return {
+      settings: publicMockNetworkConfig(this.mockNetwork),
+      revision: `mock-${this.mockNetworkRevision}`,
+      supported: true,
+      reason: 'Mock preview: settings are kept in memory only.',
+    };
+  }
+
+  private mockNetworkStatus(): NetworkStatusData {
+    return this.mockNetwork.enabled
+      ? { supported: true, mode: 'hotspot', enabled: true, connected: true,
+          interface: this.mockNetwork.wifi.interface, activeConnection: this.mockNetwork.wifi.hotspot.ssid,
+          addresses: [this.mockNetwork.wifi.hotspot.address], message: 'Mock hotspot active.' }
+      : { supported: true, mode: 'disabled', enabled: false, connected: false,
+          message: 'Network management is disabled.' };
+  }
+
+  override requestNetworkSettings(): void {
+    queueMicrotask(() => this.emit<NetworkSettingsData>('network-settings', this.mockNetworkSettings()));
+  }
+
+  override requestNetworkStatus(): void {
+    queueMicrotask(() => this.emit<NetworkStatusData>('network-status', this.mockNetworkStatus()));
+  }
+
+  override applyNetworkSettings(settings: SubmittedNetworkConfig, revision: string, requestId: string): void {
+    const fail = (error: string) => this.emit<NetworkSettingsResult>('network-settings-result', { requestId, success: false, error });
+    if (revision !== `mock-${this.mockNetworkRevision}`) {
+      fail('Network settings changed. Reload them before applying.');
+      return;
+    }
+    const oldById = new Map(this.mockNetwork.wifi.networks.map(n => [n.id, n]));
+    const hotspotPassword = settings.wifi.hotspot.password || this.mockNetwork.wifi.hotspot.password;
+    if (settings.enabled && settings.wifi.enabled && !hotspotPassword) {
+      fail('A hotspot password is required before enabling Wi-Fi management.');
+      return;
+    }
+    this.mockNetwork = {
+      enabled: settings.enabled,
+      wifi: {
+        enabled: settings.wifi.enabled,
+        interface: settings.wifi.interface,
+        connectionTimeout: settings.wifi.connectionTimeout,
+        reconnectGrace: settings.wifi.reconnectGrace,
+        networks: settings.wifi.networks.map(n => ({
+          id: n.id, ssid: n.ssid, hidden: n.hidden,
+          password: n.password || oldById.get(n.id)?.password || null,
+        })),
+        hotspot: { ssid: settings.wifi.hotspot.ssid, address: settings.wifi.hotspot.address, password: hotspotPassword },
+      },
+      usb: { enabled: settings.usb.enabled },
+    };
+    this.mockNetworkRevision++;
+    const saved = this.mockNetworkSettings();
+    this.emit<NetworkSettingsResult>('network-settings-result', {
+      requestId, success: true, settings: saved.settings!, revision: saved.revision,
+    });
+    this.emit<NetworkSettingsData>('network-settings', saved);
+    this.emit<NetworkStatusData>('network-status', this.mockNetworkStatus());
   }
 
   override renameConfig(oldName: string, newName: string): void {
@@ -120,7 +240,7 @@ export class MockStrummerClient extends StrummerWebSocketClient {
     this.startTime = performance.now();
     this.lastStrumTime = this.startTime;
     queueMicrotask(() => {
-      this.emit<string>('connection-state', 'connected');
+      this.setConnectionState('connected');
       this.emit<DeviceStatusData>('device-status', {
         status: 'connected', deviceConnected: true,
         message: 'Mock tablet connected', timestamp: Date.now(),
@@ -140,7 +260,7 @@ export class MockStrummerClient extends StrummerWebSocketClient {
 
   override disconnect(): void {
     if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
-    this.emit<string>('connection-state', 'disconnected');
+    this.setConnectionState('disconnected');
   }
 
   override updateConfig(path: string, value: unknown): void {

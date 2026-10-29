@@ -2,7 +2,7 @@
  * SSL Certificate Generation Utility
  * 
  * Generates self-signed SSL certificates for HTTPS and WSS servers.
- * Used for captive portal detection on Android 10+ and secure WebSocket connections.
+ * Used for encrypted web dashboard and WebSocket connections.
  */
 
 import { execSync } from 'child_process';
@@ -99,4 +99,3 @@ export function loadSSLCert(): { cert: Buffer; key: Buffer } | null {
     return null;
   }
 }
-

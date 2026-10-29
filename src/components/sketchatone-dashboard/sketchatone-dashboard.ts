@@ -34,6 +34,7 @@ import '../midi-devices-config/midi-devices-config.js';
 
 // Server settings component
 import '../server-settings-panel/server-settings-panel.js';
+import '../network-settings-panel/network-settings-panel.js';
 
 // Chord progressions component
 import '../chord-progression-creator/chord-progression-creator.js';
@@ -1915,6 +1916,14 @@ export class SketchatoneDashboard extends LitElement {
                 @update-config=${(e: CustomEvent) => this.updateConfig(e.detail.path, e.detail.value)}
                 @restart-service=${this.handleRestartService}>
               </server-settings-panel>
+            </dashboard-panel>
+          ` : ''}
+
+          <!-- Device Network Settings Panel (device-level; not part of musical presets) -->
+          ${vis.networkSettings ? html`
+            <dashboard-panel title="Network Settings" panelId="networkSettings" .closable=${true} .draggable=${false} .minimizable=${false}
+              @panel-close=${() => this.handlePanelClose('networkSettings')}>
+              <network-settings-panel .client=${this.client}></network-settings-panel>
             </dashboard-panel>
           ` : ''}
 

@@ -17,7 +17,7 @@ class ServerConfig:
     Attributes:
         device: Path to device config file or directory for auto-detection (None = use default 'devices' folder)
         http_port: HTTP server port for serving webapps (None = disabled)
-        https_port: HTTPS server port for captive portal detection (None = disabled)
+        https_port: HTTPS server port for serving webapps (None = disabled)
         ws_port: WebSocket server port (None = disabled)
         wss_port: Secure WebSocket server port with SSL (None = disabled)
         ws_message_throttle: WebSocket message throttle interval in milliseconds (default: 150)

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
+import asyncio
+import threading
+import time
 
 import pytest
 
@@ -38,6 +41,7 @@ def _bridge_with_outbox():
     outbox = _FakeQueue()
     bridge._loop = _FakeLoop()
     bridge._send_queue = outbox
+    bridge._ws = object()
     return bridge, outbox
 
 
@@ -317,3 +321,250 @@ class TestUIBridgeTransport:
 
         assert bridge.duplicate_current_config() is None
         assert outbox.items == []
+
+
+class TestUIBridgeAttach:
+    @pytest.mark.parametrize('url', [
+        'http://localhost:8081', 'ws://', 'ws://localhost:99999',
+        'ws://localhost:bad', 'ws://localhost:8081/#fragment', 'not a URL',
+    ])
+    def test_invalid_endpoint_rejected(self, url):
+        with pytest.raises(ValueError, match='--connect'):
+            UIBridge(connect=url)
+
+    @pytest.mark.parametrize('kwargs', [
+        {'strummer_config_path': 'config.json'}, {'dev_mode': True},
+        {'ws_port': 8081}, {'throttle_ms': 20}, {'poll_ms': None},
+    ])
+    def test_backend_start_options_rejected(self, kwargs):
+        with pytest.raises(ValueError, match='--connect'):
+            UIBridge(connect='ws://localhost:8081', **kwargs)
+
+    def test_attach_never_spawns_and_stop_cancels_pending_connection(self, monkeypatch):
+        import websockets
+        attempting = threading.Event()
+
+        async def connect(*args, **kwargs):
+            attempting.set()
+            await asyncio.sleep(3600)
+
+        def forbidden(*args, **kwargs):
+            pytest.fail('Attach mode must not spawn or terminate a subprocess')
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        monkeypatch.setattr(bridge_mod.subprocess, 'Popen', forbidden)
+        bridge = UIBridge(connect='ws://127.0.0.1:8081')
+        bridge._process = type('Process', (), {'poll': forbidden})()
+        bridge.start()
+        assert attempting.wait(2)
+        started = time.monotonic()
+        thread = bridge._thread
+        bridge.stop()
+        assert time.monotonic() - started < 2
+        assert not thread.is_alive()
+        assert bridge._thread is None
+
+    def test_failed_connections_back_off_with_bounded_delay(self, monkeypatch):
+        import websockets
+        delays = []
+
+        async def connect(*args, **kwargs):
+            raise OSError('service unavailable')
+
+        async def sleep(delay):
+            delays.append(delay)
+            if len(delays) == 9:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        monkeypatch.setattr(bridge_mod.asyncio, 'sleep', sleep)
+        bridge = UIBridge(connect='ws://127.0.0.1:8081')
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(bridge._run())
+        assert delays == [0.25, 0.5, 1.0, 2.0, 4.0, 5.0, 5.0, 5.0, 5.0]
+        assert bridge._last_status['connected'] is False
+
+    def test_stop_interrupts_reconnect_delay(self, monkeypatch):
+        import websockets
+        sleeping = threading.Event()
+        original_sleep = asyncio.sleep
+
+        async def connect(*args, **kwargs):
+            raise OSError('offline')
+
+        async def sleep(delay):
+            sleeping.set()
+            await original_sleep(3600)
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        monkeypatch.setattr(bridge_mod.asyncio, 'sleep', sleep)
+        bridge = UIBridge(connect='ws://localhost:8081')
+        bridge.start()
+        assert sleeping.wait(2)
+        thread = bridge._thread
+        bridge.stop()
+        assert not thread.is_alive()
+
+    def test_reconnect_reads_fresh_config_and_discards_pending_edits(self, monkeypatch):
+        import websockets
+        bridge = UIBridge(connect='ws://localhost:8081')
+        configs = []
+        bridge.on('config', configs.append)
+        sockets = []
+        old_queue = None
+
+        class Socket:
+            def __init__(self, number):
+                self.number = number
+                self.closed = False
+                self.sent = []
+
+            def __aiter__(self):
+                return self.messages()
+
+            async def messages(self):
+                nonlocal old_queue
+                if self.number == 2:
+                    assert bridge._send_queue is not old_queue
+                yield json.dumps({
+                    'type': 'config',
+                    'data': {'currentConfigName': f'server-{self.number}.json'},
+                })
+                old_queue = bridge._send_queue
+                bridge._send_queue.put_nowait(f'mutation-{self.number}')
+                if self.number == 2:
+                    bridge._stopping.set()
+
+            async def send(self, msg):
+                self.sent.append(msg)
+
+            async def close(self):
+                self.closed = True
+
+        async def connect(url, **kwargs):
+            assert url == 'ws://localhost:8081'
+            assert bridge._last_config is None
+            socket = Socket(len(sockets) + 1)
+            sockets.append(socket)
+            return socket
+
+        async def no_wait(delay):
+            assert bridge._ws is None
+            assert bridge._send_queue is None
+            bridge.set_config('strummer.mode', 'offline edit')
+
+        async def run():
+            bridge._loop = asyncio.get_running_loop()
+            await bridge._run()
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        monkeypatch.setattr(bridge_mod.asyncio, 'sleep', no_wait)
+        asyncio.run(run())
+        assert configs == [
+            {'currentConfigName': 'server-1.json'},
+            {'currentConfigName': 'server-2.json'},
+        ]
+        assert len(sockets) == 2
+        assert all(socket.closed for socket in sockets)
+        assert 'mutation-1' not in sockets[1].sent
+        assert all('offline edit' not in str(socket.sent) for socket in sockets)
+
+    def test_scheduled_command_is_not_carried_across_reconnect(self):
+        callbacks = []
+
+        class DeferredLoop:
+            def call_soon_threadsafe(self, callback):
+                callbacks.append(callback)
+
+        bridge, old_queue = _bridge_with_outbox()
+        bridge._loop = DeferredLoop()
+        bridge.save_config()
+        bridge._ws = object()
+        bridge._send_queue = new_queue = _FakeQueue()
+        callbacks[0]()
+        assert old_queue.items == new_queue.items == []
+
+    def test_disconnected_commands_are_dropped(self):
+        bridge, outbox = _bridge_with_outbox()
+        bridge._ws = None
+        bridge.save_config()
+        bridge.set_config('strummer.mode', 'slide')
+        assert outbox.items == []
+
+    def test_unexpected_connection_error_is_not_retried(self, monkeypatch):
+        import websockets
+
+        async def connect(*args, **kwargs):
+            raise RuntimeError('programming error')
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        bridge = UIBridge(connect='ws://localhost:8081')
+        with pytest.raises(RuntimeError, match='programming error'):
+            asyncio.run(bridge._run())
+
+    def test_malformed_json_and_protocol_messages_are_logged(self, caplog):
+        class Socket:
+            def __aiter__(self):
+                return self.messages()
+
+            async def messages(self):
+                for message in ('{broken', '[]', '{"type": 12}',
+                                '{"type": "config", "data": {"config": {}}}'):
+                    yield message
+
+        bridge = UIBridge(connect='ws://localhost:8081')
+        asyncio.run(bridge._receive_loop(Socket()))
+        assert bridge._last_config == {'config': {}}
+        assert 'malformed backend WebSocket JSON' in caplog.text
+        assert caplog.text.count('without a string type') == 2
+
+    def test_dispatch_bug_propagates_and_connection_is_closed(self, monkeypatch):
+        class Socket:
+            closed = False
+
+            def __aiter__(self):
+                return self.messages()
+
+            async def messages(self):
+                yield '{"type": "config"}'
+
+            async def close(self):
+                self.closed = True
+
+        def dispatch(message):
+            raise RuntimeError('dispatch bug')
+
+        bridge = UIBridge(connect='ws://localhost:8081')
+        monkeypatch.setattr(bridge, '_dispatch_message', dispatch)
+        socket = Socket()
+        with pytest.raises(RuntimeError, match='dispatch bug'):
+            asyncio.run(bridge._serve_connection(socket))
+        assert socket.closed
+        assert bridge._ws is None
+        assert bridge._send_queue is None
+
+    def test_repeated_outage_logs_one_warning_then_debug(self, monkeypatch, caplog):
+        import logging
+        import websockets
+        attempts = 0
+
+        async def connect(*args, **kwargs):
+            raise OSError('offline')
+
+        async def sleep(delay):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 3:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr(websockets, 'connect', connect)
+        monkeypatch.setattr(bridge_mod.asyncio, 'sleep', sleep)
+        caplog.set_level(logging.DEBUG, logger=bridge_mod.__name__)
+        bridge = UIBridge(connect='ws://localhost:8081')
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(bridge._run())
+        records = [record for record in caplog.records
+                   if record.name == bridge_mod.__name__]
+        assert [record.levelno for record in records] == [
+            logging.WARNING, logging.DEBUG, logging.DEBUG,
+        ]

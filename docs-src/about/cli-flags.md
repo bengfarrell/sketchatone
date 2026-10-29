@@ -5,7 +5,12 @@ description: All command-line flags across the Node.js and Python implementation
 
 # CLI Flags Reference
 
-Sketchatone has two implementations — Node.js/TypeScript and Python — each with several CLI tools. This page lists every flag, which tools support it, and what it does.
+Python is Sketchatone's primary backend. The limited Node.js/TypeScript CLI is
+an alternative for manually launched core musical use and diagnostics, not an
+appliance runtime. Shared strumming, chord, and other musical behavior should
+stay synchronized; platform and appliance features may differ. See
+[Node.js CLI scope](/about/node-cli/#scope-and-maintenance) for the maintenance
+boundary. This page lists flags and tool-specific availability.
 
 **Legend:** ✓ supported &nbsp; — not available
 
@@ -23,7 +28,8 @@ The main WebSocket server that reads from the tablet and streams events to clien
 | `--ws-port` | | int | ✓ | ✓ | WebSocket server port (default: 8081) |
 | `--wss-port` | | int | ✓ | — | Secure WebSocket port (WSS with SSL) |
 | `--http-port` | | int | ✓ | ✓ | HTTP server port for serving the web dashboard |
-| `--https-port` | | int | ✓ | — | HTTPS server port for captive portal support |
+| `--https-port` | | int | ✓ | — | HTTPS server port for serving the web dashboard |
+| `--network-config` | | path | ✓ | — | Separate device networking JSON file; management is disabled by default and requires Linux NetworkManager |
 | `--no-http` | | flag | ✓ | — | Disable HTTP server regardless of config (used internally by the Kivy bridge) |
 | `--no-https` | | flag | ✓ | — | Disable HTTPS server regardless of config (used internally by the Kivy bridge) |
 | `--throttle` | `-t` | ms | ✓ | ✓ | Event throttle interval in milliseconds (default: 150) |
@@ -60,13 +66,15 @@ Converts tablet input to MIDI output directly, without a WebSocket server. Usefu
 
 ## ui (Python only)
 
-Native Kivy dashboard for the Raspberry Pi appliance. Runs the server as a subprocess and connects over a local WebSocket.
+Native Kivy dashboard for the Raspberry Pi appliance. Packaged launches attach
+to the shared service; the source CLI can attach explicitly or own a child backend.
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
 | `--config` | `-c` | path | Combined config file path |
-| `--enable-ws` | | flag | Also expose the server's WebSocket publicly (for browser dashboard or LAN access) |
-| `--ws-port` | | int | WebSocket port when `--enable-ws` is set (default: 8081) |
+| `--connect` | | URL | Attach to an existing backend without spawning/stopping it; incompatible with backend-start options |
+| `--enable-ws` | | flag | Legacy standalone-mode option (the child backend always uses WebSockets internally) |
+| `--ws-port` | | int | Standalone child backend's WebSocket port (default: 8081) |
 | `--throttle` | | ms | Event throttle interval in milliseconds (default: 150) |
 | `--poll` | | ms | Device poll interval; waits for tablet if not connected (default: 2000) |
 | `--fps` | | int | Kivy render framerate cap (default: 15). Lower values free more CPU for the audio path. |

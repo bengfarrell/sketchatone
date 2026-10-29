@@ -37,7 +37,7 @@ Every input is checked for JSON syntax and supported structure, including nested
 types, arrays, known fields, enums and common numeric ranges. Errors appear inline;
 invalid drafts are never sent to the server.
 
-**Apply** sends one complete replacement to either the Node or Python server.
+**Apply** sends one complete replacement to the backend server.
 The server validates again using its configuration loader, refreshes musical settings,
 notes, action rules, pitch/harmonic context, MIDI routing and throttle, and autosaves
 the currently loaded file. Omitted settings reset to server defaults; this is not a
@@ -147,11 +147,7 @@ configs/
 
 **Via Command Line:**
 ```bash
-# Node.js
-npm run server -- -s configs/ballad.json
-
-# Python
-python -m sketchatone.cli.server -s configs/ballad.json
+python -m sketchatone.cli.server -c configs/ballad.json
 ```
 
 **Via File System (Raspberry Pi):**
@@ -551,8 +547,6 @@ Selects which MIDI system to use:
 - **`"rtmidi"`** (default): Uses ALSA on Linux, CoreMIDI on macOS, Windows MIDI on Windows. Best for general use.
 - **`"jack"`**: Uses JACK Audio Connection Kit. Required for Zynthian and other JACK-based systems. Only available in Python server.
 
-**Note:** The Node.js server only supports `"rtmidi"`. If using JACK, you must use the Python server.
-
 ### midi_output_id and midi_input_id
 
 MIDI port selection supports multiple formats:
@@ -629,7 +623,7 @@ Server configuration.
 
 ### HTTPS and WSS Support
 
-HTTPS and secure WebSocket (WSS) support is provided for **Android 10+ captive portal detection**. When a device connects to a WiFi hotspot, Android checks for internet connectivity by requesting specific endpoints. Sketchatone responds to these requests to prevent the device from switching to mobile data.
+HTTPS and secure WebSocket (WSS) provide encrypted access to the web dashboard and its live connection. They do not provide internet connectivity or control whether a phone uses Wi-Fi or cellular data.
 
 **HTTPS Configuration:**
 ```json
@@ -649,19 +643,91 @@ HTTPS and secure WebSocket (WSS) support is provided for **Android 10+ captive p
 - Valid for 10 years
 - Browser warnings are expected (self-signed)
 
-**Captive Portal Endpoints:**
-The server responds to the following endpoints with `204 No Content`:
-- `/generate_204` (Android)
-- `/gen_204` (Alternative Android)
-- `/connecttest.txt` (Windows)
-- `/success.txt` (iOS)
+**Local-only networks:**
+Sketchatone serves application files without intercepting operating-system connectivity checks or reporting that an isolated network has internet access. Whether a phone keeps cellular internet active alongside a local Wi-Fi connection depends on the phone and its network settings.
 
 **Use Cases:**
-- **Raspberry Pi WiFi Hotspot**: Enable HTTPS/WSS to prevent Android devices from using mobile data
+- **Raspberry Pi WiFi Hotspot**: Access the dashboard over a hotspot configured by the operating system
 - **Development**: Use HTTP/WS only (simpler, no certificate warnings)
-- **Production Hotspot**: Use HTTPS/WSS for better Android compatibility
+- **Encrypted access**: Use HTTPS/WSS when secure browser connections are needed
 
 **Note:**
 - Setting ports to `null` disables that server
-- HTTPS requires port 443 or a custom port (certificate warnings on non-standard ports)
+- HTTPS can use port 443 or a custom port; self-signed certificates require browser trust regardless of port
 - WSS requires a separate port from WS (both can run simultaneously)
+
+## Device networking (separate file)
+
+Networking is not a `server` or musical-preset property. The Python web server
+reads it only when started with `--network-config PATH`; the packaged webapp
+service uses `/etc/sketchatone/network.json`. The file may initially be absent:
+management defaults to off until settings are explicitly saved.
+
+Example device configuration:
+
+```json
+{
+  "enabled": true,
+  "wifi": {
+    "enabled": true,
+    "interface": "wlan0",
+    "connectionTimeout": 15,
+    "reconnectGrace": 10,
+    "networks": [
+      {
+        "id": "home",
+        "ssid": "Home WiFi",
+        "hidden": false,
+        "password": "replace-with-home-password"
+      },
+      {
+        "id": "phone",
+        "ssid": "My Phone",
+        "hidden": false,
+        "password": "replace-with-phone-hotspot-password"
+      }
+    ],
+    "hotspot": {
+      "ssid": "Sketchatone",
+      "password": "replace-with-device-password",
+      "address": "192.168.50.1/24"
+    }
+  },
+  "usb": {
+    "enabled": true
+  }
+}
+```
+
+List order defines priority. Each Wi-Fi connection attempt has a bounded timeout.
+Success means obtaining a usable IP address, not proving internet connectivity.
+If all configured networks fail, the manager activates its own hotspot. A lost
+Wi-Fi connection gets a reconnect grace period before trying the list again.
+Fallback hotspot mode stays stable until explicitly reapplied; it does not
+repeatedly disconnect clients to search for networks.
+
+USB tethering is independent of Wi-Fi selection. It manages only USB-backed
+Ethernet interfaces, not the Pi's USB MIDI gadget. Phone permissions and tethering
+must be enabled on the phone. It does not guarantee dashboard reachability from
+every phone model.
+
+Linux NetworkManager must already be installed and running. Only Sketchatone's
+own connection profiles are created/updated. Explicitly connecting the selected
+Wi-Fi interface can replace its current connection, so use a dedicated appliance
+and keep a recovery route. Management off means no new connection attempts;
+it does not uninstall or disable the operating system's network stack.
+
+Network settings are applied at service startup or through the Network panel's
+explicit Apply action. Direct file edits take effect on restart. When disabled,
+the manager leaves networking alone. In USB-triggered autostart mode, management
+only runs while the Sketchatone service is running; select always-on for boot-time
+access without a tablet.
+
+The settings file and temporary credential files use owner-only permissions.
+Passwords supplied in JSON are plaintext secrets: do not commit or serve this
+file. Browser responses redact passwords and report `passwordSet` instead.
+Omitting a password preserves the stored credential for that network's stable
+`id`; changing the `id` creates a distinct saved-network entry. The fallback
+hotspot must have a valid password. Set a known hotspot password before relying
+on it for headless recovery. Musical preset save/load/import/export never
+contains this device configuration.

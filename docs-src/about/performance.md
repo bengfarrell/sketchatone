@@ -188,7 +188,7 @@ a large share of CPU for the audio path.
 **CLI flag:** `--fps N` (default: `15`)
 
 ```bash
-sketchatone-ui --fps 15 -c /opt/sketchatone-ui/configs/config.json
+sketchatone-ui --fps 15
 ```
 
 ### Single-panel event dispatch
@@ -245,7 +245,7 @@ rendering or from the server/OS layer. If the stutter disappears in shell mode
 but returns with the full UI, Kivy render work is the bottleneck.
 
 ```bash
-sketchatone-ui --shell -c /opt/sketchatone-ui/configs/config.json
+sketchatone-ui --shell
 ```
 
 ### `--fps` flag
@@ -253,7 +253,7 @@ sketchatone-ui --shell -c /opt/sketchatone-ui/configs/config.json
 Tune the Kivy render cap at launch without touching code:
 
 ```bash
-sketchatone-ui --fps 30 -c /opt/sketchatone-ui/configs/config.json
+sketchatone-ui --fps 30
 ```
 
 ---
